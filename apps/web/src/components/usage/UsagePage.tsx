@@ -75,11 +75,6 @@ export function UsagePage() {
     reportFailure: false,
   });
 
-  // Hold the content until every environment is terminal. Rendering merged
-  // totals while devices are still answering makes every number on the page
-  // jump as each one lands.
-  const settling = isPending || isPartial;
-
   const days = useMemo(
     () => enumerateDays(window.sinceDay, window.untilDay),
     [window.sinceDay, window.untilDay],
@@ -272,13 +267,16 @@ export function UsagePage() {
             ) : null}
             {showingLimits ? (
               <UsageLimitsSection />
-            ) : settling ? (
+            ) : isPending ? (
               <>
                 {environments.length > 1 ? <UsageDeviceStrip environments={environments} /> : null}
                 <UsageSkeleton />
               </>
             ) : (
               <>
+                {isPartial && environments.length > 1 ? (
+                  <UsageDeviceStrip environments={environments} />
+                ) : null}
                 <UsageCoverageNotice
                   environments={environments}
                   duplicateSources={merged.duplicateSources}
@@ -552,8 +550,7 @@ function Metric({ label, value }: { readonly label: string; readonly value: stri
 /**
  * Says plainly when the totals are incomplete: an environment that failed, or
  * one whose transcripts another environment already reported. Environments
- * that are still answering never reach this notice; the page shows the
- * loading skeleton until every one is terminal.
+ * that are still answering are reflected in the device strip above it.
  */
 function UsageCoverageNotice({
   environments,
@@ -575,10 +572,10 @@ function UsageCoverageNotice({
   return (
     <div className="flex flex-col gap-1 border border-border px-3 py-2 text-xs text-muted-foreground">
       {failed.map((environment) => (
-        <span key={environment.label}>{environment.label} could not report usage.</span>
+        <span key={environment.environmentId}>{environment.label} could not report usage.</span>
       ))}
       {stale.map((environment) => (
-        <span key={environment.label}>
+        <span key={environment.environmentId}>
           {environment.label} runs an older server version and is excluded from totals.
         </span>
       ))}
@@ -593,9 +590,8 @@ function UsageCoverageNotice({
 }
 
 /**
- * Per-device progress while the page waits for every environment to answer.
- * Only rendered with two or more devices; a lone device has nothing to
- * enumerate.
+ * Per-device progress while at least one environment is still answering. Only
+ * rendered with two or more devices; a lone device has nothing to enumerate.
  */
 function UsageDeviceStrip({
   environments,
@@ -651,7 +647,7 @@ function UsageDeviceStrip({
 /**
  * Stand-in with the loaded page's shape, using the shared `Skeleton` bars so it
  * breathes with the same `animate-skeleton` pulse as every other loading state.
- * Blocks fill in exactly once when the last device answers.
+ * Content appears when the first device answers.
  */
 function UsageSkeleton() {
   return (
