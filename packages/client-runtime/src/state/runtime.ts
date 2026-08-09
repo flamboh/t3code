@@ -1,5 +1,6 @@
 import { EnvironmentId, type EnvironmentId as EnvironmentIdType } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
@@ -7,7 +8,10 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 
-import type { ConnectionAttemptError } from "../connection/model.ts";
+import type {
+  ConnectionAttemptError,
+  SupervisorConnectionState,
+} from "../connection/model.ts";
 import { EnvironmentNotRegisteredError, EnvironmentRegistry } from "../connection/registry.ts";
 import {
   type EnvironmentRpcInput,
@@ -55,12 +59,53 @@ interface EnvironmentQueryAtomOptions<Input, A, E, R> extends EnvironmentAtomOpt
     readonly environmentId: EnvironmentIdType;
     readonly input: Input;
   }) => Atom.Atom<unknown> | undefined;
+  readonly timeout?: Duration.Input;
 }
 
 interface EnvironmentSubscriptionAtomOptions<Input, A, E, R> {
   readonly label: string;
   readonly subscribe: (input: Input) => Stream.Stream<A, E, R>;
   readonly idleTtlMs?: number;
+}
+
+type EnvironmentQueryConnection = readonly [
+  SupervisorConnectionState,
+  Option.Option<unknown>,
+];
+
+function environmentQueryConnectionEquals(
+  left: EnvironmentQueryConnection,
+  right: EnvironmentQueryConnection,
+): boolean {
+  const leftSession = Option.getOrNull(left[1]);
+  const rightSession = Option.getOrNull(right[1]);
+  const leftConnected = left[0].phase === "connected" && leftSession !== null;
+  const rightConnected = right[0].phase === "connected" && rightSession !== null;
+  if (leftConnected || rightConnected) {
+    return (
+      leftConnected &&
+      rightConnected &&
+      left[0].generation === right[0].generation &&
+      leftSession === rightSession
+    );
+  }
+
+  const leftFailed =
+    left[0].phase === "available" || left[0].phase === "offline" || left[0].phase === "blocked";
+  const rightFailed =
+    right[0].phase === "available" ||
+    right[0].phase === "offline" ||
+    right[0].phase === "blocked";
+  if (leftFailed || rightFailed) {
+    return (
+      leftFailed &&
+      rightFailed &&
+      left[0].lastFailure === right[0].lastFailure &&
+      (left[0].lastFailure !== null || left[0].phase === right[0].phase)
+    );
+  }
+
+  return true;
 }
 
 export type SettledAsyncResult<A, E> = AsyncResult.Success<A, E> | AsyncResult.Failure<A, E>;
@@ -515,6 +560,7 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
             Effect.map((supervisor) =>
               SubscriptionRef.changes(supervisor.state).pipe(
                 Stream.zipLatest(SubscriptionRef.changes(supervisor.session)),
+                Stream.changesWith(environmentQueryConnectionEquals),
               ),
             ),
           ),
@@ -569,10 +615,24 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
         }),
         Atom.setIdleTTL(idleTtlMs),
       );
+    const timeout = options.timeout;
+    const boundedQueryAtom =
+      timeout === undefined
+        ? queryAtom
+        : runtime.atom((get) =>
+            get.result(queryAtom, { suspendOnWaiting: true }).pipe(Effect.timeout(timeout)),
+          );
+    const refreshableQueryAtom =
+      timeout === undefined
+        ? boundedQueryAtom
+        : Atom.readable(
+            (get) => get(boundedQueryAtom),
+            (refresh) => refresh(queryAtom),
+          );
     const intervalQuery =
       options.refreshIntervalMs === undefined
-        ? queryAtom
-        : queryAtom.pipe(Atom.withRefresh(options.refreshIntervalMs));
+        ? refreshableQueryAtom
+        : refreshableQueryAtom.pipe(Atom.withRefresh(options.refreshIntervalMs));
     const refreshTrigger = options.refreshTrigger?.(target);
     return (
       refreshTrigger === undefined
@@ -628,6 +688,7 @@ export function createEnvironmentRpcQueryAtomFamily<R, ER, TTag extends Environm
       readonly environmentId: EnvironmentIdType;
       readonly input: EnvironmentRpcInput<TTag>;
     }) => Atom.Atom<unknown> | undefined;
+    readonly timeout?: Duration.Input;
   },
 ) {
   return createEnvironmentQueryAtomFamily(runtime, {
@@ -638,6 +699,7 @@ export function createEnvironmentRpcQueryAtomFamily<R, ER, TTag extends Environm
       ? {}
       : { refreshIntervalMs: options.refreshIntervalMs }),
     ...(options.refreshTrigger === undefined ? {} : { refreshTrigger: options.refreshTrigger }),
+    ...(options.timeout === undefined ? {} : { timeout: options.timeout }),
     execute: (input: EnvironmentRpcInput<TTag>) => request(options.tag, input),
   });
 }

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
 import { EnvironmentId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
+import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -12,6 +14,7 @@ import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
+import * as TestClock from "effect/testing/TestClock";
 import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 
 import {
@@ -81,6 +84,7 @@ function queryConnectionState(
 
 const makeEnvironmentQueryHarness = Effect.fn("TestEnvironmentQuery.makeHarness")(function* <A, E>(
   execute: Effect.Effect<A, E>,
+  timeout?: Duration.Input,
 ) {
   const supervisorState = yield* SubscriptionRef.make(queryConnectionState());
   const supervisorSession = yield* SubscriptionRef.make(Option.some(QUERY_RPC_SESSION));
@@ -104,12 +108,17 @@ const makeEnvironmentQueryHarness = Effect.fn("TestEnvironmentQuery.makeHarness"
     followStream,
     stateChanges: () => SubscriptionRef.changes(supervisorState),
   } as unknown as EnvironmentRegistry.EnvironmentRegistry["Service"]);
+  const clock = yield* Clock.Clock;
   const runtime = Atom.runtime(
-    Layer.succeed(EnvironmentRegistry.EnvironmentRegistry, environmentRegistry),
+    Layer.merge(
+      Layer.succeed(EnvironmentRegistry.EnvironmentRegistry, environmentRegistry),
+      Layer.succeed(Clock.Clock, clock),
+    ),
   );
   const family = createEnvironmentQueryAtomFamily(runtime, {
     label: "test.environment-query",
     staleTimeMs: 60_000,
+    ...(timeout === undefined ? {} : { timeout }),
     execute: () => execute,
   });
 
@@ -411,6 +420,52 @@ describe("environment query lifecycle", () => {
         expect(result.waiting).toBe(false);
         if (AsyncResult.isFailure(result) && expectedFailure !== null) {
           expect(Cause.squash(result.cause)).toBe(expectedFailure);
+        }
+      }),
+    ),
+  );
+
+  it.effect("keeps the timeout deadline while the connection state changes", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeEnvironmentQueryHarness(
+          Effect.succeed("connected"),
+          "30 seconds",
+        );
+        yield* SubscriptionRef.set(
+          harness.supervisorState,
+          queryConnectionState({ phase: "connecting", stage: "opening" }),
+        );
+        yield* SubscriptionRef.set(harness.supervisorSession, Option.none());
+        const registry = yield* mountEnvironmentQuery(harness.atom);
+
+        const resultFiber = yield* Effect.promise(() =>
+          executeAtomQuery(registry, harness.atom, {
+            reportDefect: false,
+            reportFailure: false,
+          }),
+        ).pipe(Effect.timeout("31 seconds"), Effect.forkChild({ startImmediately: true }));
+        yield* Effect.yieldNow;
+        yield* TestClock.adjust("20 seconds");
+        yield* SubscriptionRef.set(
+          harness.supervisorState,
+          queryConnectionState({
+            phase: "backoff",
+            stage: null,
+            lastFailure: new ConnectionTransientError({
+              reason: "transport",
+              detail: "Retrying.",
+            }),
+            retryAt: 21_000,
+          }),
+        );
+        yield* Effect.yieldNow;
+        yield* TestClock.adjust("11 seconds");
+        const result = yield* Fiber.join(resultFiber);
+
+        expect(AsyncResult.isFailure(result)).toBe(true);
+        if (AsyncResult.isFailure(result)) {
+          expect(Cause.squash(result.cause)).toMatchObject({ _tag: "TimeoutError" });
         }
       }),
     ),
