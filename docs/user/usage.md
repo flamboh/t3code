@@ -12,6 +12,9 @@ record are missing from the totals.
 If recent work is missing or a new model shows no cost, refresh to rescan session history and
 update model pricing.
 
+Results appear as each environment responds. An environment that cannot report within 30 seconds
+is marked unavailable without hiding results from other environments. Refresh to retry it.
+
 ## Set custom model prices
 
 On web or desktop, open **Usage → Model prices** to add, edit, or remove a model's estimated
