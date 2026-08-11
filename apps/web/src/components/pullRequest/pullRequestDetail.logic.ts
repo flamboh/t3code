@@ -6,6 +6,7 @@ import type {
   PullRequestComment,
   PullRequestDetailView,
   PullRequestMergeability,
+  PullRequestMergeMethod,
   PullRequestReaction,
   PullRequestReviewThread,
   PullRequestState,
@@ -62,6 +63,41 @@ export function describePullRequestState(state: PullRequestState, isDraft: boole
   if (state === "merged") return "Merged";
   if (state === "closed") return "Closed";
   return isDraft ? "Draft" : "Ready for review";
+}
+
+/** Copy for a pending PR action. With no pending action, there is no confirmation to render. */
+export function describePullRequestConfirmation(
+  action: "merge" | "close" | "enable-auto-merge" | null,
+  number: number,
+  mergeMethod: PullRequestMergeMethod,
+) {
+  if (action === null) return null;
+
+  if (action === "merge") {
+    return {
+      title: "Merge pull request?",
+      description: `This merges #${number} using ${mergeMethod}.`,
+      submitLabel: "Merge",
+      destructive: false,
+    };
+  }
+
+  if (action === "enable-auto-merge") {
+    return {
+      title: "Enable auto-merge?",
+      // The host may consider the pull request ready and merge it immediately.
+      description: `This merges #${number} using ${mergeMethod} as soon as the host considers it ready, which may be immediately.`,
+      submitLabel: "Enable auto-merge",
+      destructive: false,
+    };
+  }
+
+  return {
+    title: "Close pull request?",
+    description: `This closes #${number} without merging it.`,
+    submitLabel: "Close",
+    destructive: true,
+  };
 }
 
 /** Chronological ascending, oldest to newest — reversed for the "newest" reading order. */
