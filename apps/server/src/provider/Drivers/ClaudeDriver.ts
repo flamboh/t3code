@@ -24,11 +24,13 @@ import { HttpClient } from "effect/unstable/http";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import { makeClaudeTextGeneration } from "../../textGeneration/ClaudeTextGeneration.ts";
+import { TextGeneration } from "../../textGeneration/TextGeneration.ts";
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeClaudeAdapter } from "../Layers/ClaudeAdapter.ts";
+import { makeClaudeUsageLimitQueryFactory } from "../testFixtures/claudeUsageLimitQuery.ts";
 import {
   checkClaudeProviderStatus,
   makePendingClaudeProvider,
@@ -59,6 +61,18 @@ const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
 const DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
 const CAPABILITIES_PROBE_TTL = Duration.minutes(5);
+
+const claudeUsageLimitFixtureTextGeneration = TextGeneration.of({
+  generateCommitMessage: () =>
+    Effect.succeed({ subject: "test: exercise Claude usage-limit fixture", body: "" }),
+  generatePrContent: () =>
+    Effect.succeed({
+      title: "Test Claude usage-limit auto-continue",
+      body: "Exercises the local Claude usage-limit fixture.",
+    }),
+  generateBranchName: () => Effect.succeed({ branch: "t3code/claude-usage-limit-fixture" }),
+  generateThreadTitle: () => Effect.succeed({ title: "Claude usage-limit fixture" }),
+});
 
 function isClaudeNativeCommandPath(commandPath: string): boolean {
   const normalized = normalizeCommandPath(commandPath);
@@ -126,6 +140,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
       const serverSettings = yield* ServerSettingsService;
       const eventLoggers = yield* ProviderEventLoggers;
       const processEnv = mergeProviderInstanceEnvironment(environment);
+      const usageLimitFixtureEnabled = processEnv.T3CODE_CLAUDE_USAGE_LIMIT_FIXTURE === "1";
+      const fixtureResetDelayMs = Number.parseInt(
+        processEnv.T3CODE_CLAUDE_USAGE_LIMIT_FIXTURE_RESET_MS ?? "",
+        10,
+      );
       const fallbackContinuationIdentity = defaultProviderContinuationIdentity({
         driverKind: DRIVER_KIND,
         instanceId,
@@ -146,10 +165,21 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
       const adapterOptions = {
         instanceId,
         environment: processEnv,
+        ...(usageLimitFixtureEnabled
+          ? {
+              createQuery: makeClaudeUsageLimitQueryFactory({
+                ...(Number.isFinite(fixtureResetDelayMs) && fixtureResetDelayMs >= 0
+                  ? { resetDelayMs: fixtureResetDelayMs }
+                  : {}),
+              }),
+            }
+          : {}),
         ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
       };
       const adapter = yield* makeClaudeAdapter(effectiveConfig, adapterOptions);
-      const textGeneration = yield* makeClaudeTextGeneration(effectiveConfig, processEnv);
+      const textGeneration = usageLimitFixtureEnabled
+        ? claudeUsageLimitFixtureTextGeneration
+        : yield* makeClaudeTextGeneration(effectiveConfig, processEnv);
 
       // Per-instance capabilities cache: keyed on binary + resolved HOME so
       // account-specific probes never share auth metadata across instances.
@@ -163,17 +193,32 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
       });
       const capabilitiesCacheKey = yield* makeClaudeCapabilitiesCacheKey(effectiveConfig, cwd);
 
-      const checkProvider = checkClaudeProviderStatus(
-        effectiveConfig,
-        () => Cache.get(capabilitiesProbeCache, capabilitiesCacheKey),
-        processEnv,
-        cwd,
-      ).pipe(
-        Effect.map(stampIdentity),
-        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-        Effect.provideService(FileSystem.FileSystem, fileSystem),
-        Effect.provideService(Path.Path, path),
-      );
+      const checkProviderDraft = usageLimitFixtureEnabled
+        ? makePendingClaudeProvider(effectiveConfig).pipe(
+            Effect.map(({ message: _message, ...provider }) => ({
+              ...provider,
+              installed: true,
+              version: "usage-limit-fixture",
+              status: "ready" as const,
+              auth: {
+                status: "authenticated" as const,
+                type: "fixture",
+                label: "Claude usage-limit fixture",
+              },
+              message: "Using the local Claude usage-limit fixture.",
+            })),
+          )
+        : checkClaudeProviderStatus(
+            effectiveConfig,
+            () => Cache.get(capabilitiesProbeCache, capabilitiesCacheKey),
+            processEnv,
+            cwd,
+          ).pipe(
+            Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+            Effect.provideService(FileSystem.FileSystem, fileSystem),
+            Effect.provideService(Path.Path, path),
+          );
+      const checkProvider = checkProviderDraft.pipe(Effect.map(stampIdentity));
 
       const snapshotSettings = makeProviderSnapshotSettingsSource(effectiveConfig, serverSettings);
       const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<ClaudeSettings>>({

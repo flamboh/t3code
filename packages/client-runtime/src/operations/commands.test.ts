@@ -1,6 +1,7 @@
 import {
   CommandId,
   EnvironmentId,
+  EventId,
   ORCHESTRATION_WS_METHODS,
   ProjectId,
   ThreadId,
@@ -25,6 +26,7 @@ import {
   archiveThread,
   createProject,
   settleThread,
+  setThreadUsageLimitAutoContinue,
   stopThreadSession,
   unsettleThread,
 } from "./commands.ts";
@@ -116,6 +118,32 @@ describe("environment commands", () => {
           commandId: "queued-command",
           threadId: "thread-1",
           createdAt: "2026-06-06T00:01:00.000Z",
+        },
+      ]);
+    }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
+  );
+
+  it.effect("dispatches a usage-limit auto-continue preference with typed metadata", () =>
+    Effect.gen(function* () {
+      const dispatched: ClientOrchestrationCommand[] = [];
+      const supervisor = yield* makeSupervisor(dispatched);
+
+      yield* setThreadUsageLimitAutoContinue({
+        commandId: CommandId.make("usage-limit-command"),
+        threadId: ThreadId.make("thread-1"),
+        expectedOccurrenceId: EventId.make("usage-limit-1"),
+        enabled: true,
+        createdAt: "2026-06-06T00:02:00.000Z",
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+
+      expect(dispatched).toEqual([
+        {
+          type: "thread.usage-limit.auto-continue.set",
+          commandId: "usage-limit-command",
+          threadId: "thread-1",
+          expectedOccurrenceId: "usage-limit-1",
+          enabled: true,
+          createdAt: "2026-06-06T00:02:00.000Z",
         },
       ]);
     }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),

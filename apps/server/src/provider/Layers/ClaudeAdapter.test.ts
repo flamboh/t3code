@@ -161,6 +161,7 @@ function makeHarness(config?: {
   readonly baseDir?: string;
   readonly claudeConfig?: Partial<ClaudeSettings>;
   readonly instanceId?: ProviderInstanceId;
+  readonly environment?: NodeJS.ProcessEnv;
 }) {
   const query = new FakeClaudeQuery();
   let createInput:
@@ -172,6 +173,7 @@ function makeHarness(config?: {
 
   const adapterOptions: ClaudeAdapterLiveOptions = {
     ...(config?.instanceId ? { instanceId: config.instanceId } : {}),
+    ...(config?.environment ? { environment: config.environment } : {}),
     createQuery: (input) => {
       createInput = input;
       return query;
@@ -355,6 +357,44 @@ describe("ClaudeAdapterLive", () => {
       assert.deepEqual(createInput?.options.settingSources, ["user", "project", "local"]);
       assert.equal(createInput?.options.permissionMode, "bypassPermissions");
       assert.equal(createInput?.options.allowDangerouslySkipPermissions, true);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("enables interrupted-turn watchdog only for native resume", () => {
+    const harness = makeHarness({
+      environment: {
+        CLAUDE_CODE_RETRY_WATCHDOG: "preserve-me",
+        CUSTOM_CLAUDE_ENV: "preserve-me-too",
+      },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const nativeResume = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+        resumeCursor: { resume: "123e4567-e89b-12d3-a456-426614174000" },
+        resumeInterruptedTurn: true,
+      });
+
+      const nativeEnv = harness.getLastCreateQueryInput()?.options.env;
+      assert.equal(nativeEnv?.CLAUDE_CODE_RETRY_WATCHDOG, "1");
+      assert.equal(nativeEnv?.CLAUDE_CODE_RESUME_INTERRUPTED_TURN, "1");
+      assert.equal(nativeEnv?.CUSTOM_CLAUDE_ENV, "preserve-me-too");
+
+      yield* adapter.startSession({
+        threadId: nativeResume.threadId,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+        resumeInterruptedTurn: true,
+      });
+      const freshEnv = harness.getLastCreateQueryInput()?.options.env;
+      assert.equal(freshEnv?.CLAUDE_CODE_RETRY_WATCHDOG, "preserve-me");
+      assert.equal(freshEnv?.CLAUDE_CODE_RESUME_INTERRUPTED_TURN, undefined);
+      assert.equal(freshEnv?.CUSTOM_CLAUDE_ENV, "preserve-me-too");
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

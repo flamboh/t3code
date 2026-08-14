@@ -3,11 +3,18 @@ export interface UsageLimitNotice {
   readonly provider: string;
   readonly resetsAt?: number;
   readonly message: string;
+  readonly autoContinue?: boolean;
 }
 
 export interface UsageLimitPresentation {
   readonly title: string;
   readonly detail: string;
+  readonly autoContinueEnabled: boolean;
+  readonly autoContinueLabel: string;
+}
+
+export function usageLimitAutoContinueEnabled(notice: UsageLimitNotice): boolean {
+  return notice.autoContinue === true;
 }
 
 function providerLabel(provider: string): string {
@@ -22,6 +29,10 @@ export function usageLimitPresentation(notice: UsageLimitNotice): UsageLimitPres
   return {
     title: `${providerLabel(notice.provider)} usage limit reached`,
     detail: reset ? `${notice.message} Resets ${reset}.` : notice.message,
+    autoContinueEnabled: usageLimitAutoContinueEnabled(notice),
+    autoContinueLabel: usageLimitAutoContinueEnabled(notice)
+      ? "Disable auto-continue"
+      : "Enable auto-continue",
   };
 }
 
@@ -48,5 +59,6 @@ export function readUsageLimit(value: unknown): UsageLimitNotice | null {
     ...(typeof notice.resetsAt === "number" && Number.isFinite(notice.resetsAt)
       ? { resetsAt: notice.resetsAt }
       : {}),
+    ...(typeof notice.autoContinue === "boolean" ? { autoContinue: notice.autoContinue } : {}),
   };
 }

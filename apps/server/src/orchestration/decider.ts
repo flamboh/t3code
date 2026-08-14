@@ -1213,6 +1213,48 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       return [unsettledEvent, sessionSetEvent];
     }
 
+    case "thread.usage-limit.auto-continue.set": {
+      const thread = yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      const usageLimit = thread.session?.usageLimit;
+      if (usageLimit === undefined || usageLimit === null) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `thread ${command.threadId} has no usage-limit marker`,
+        });
+      }
+      if (usageLimit.occurrenceId !== command.expectedOccurrenceId) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `thread ${command.threadId} usage-limit marker does not match expected occurrence`,
+        });
+      }
+      if (usageLimit.provider !== "claudeAgent") {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `thread ${command.threadId} usage-limit auto-continue is not supported for ${usageLimit.provider}`,
+        });
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.usage-limit-auto-continue-set",
+        payload: {
+          threadId: command.threadId,
+          expectedOccurrenceId: command.expectedOccurrenceId,
+          enabled: command.enabled,
+          createdAt: command.createdAt,
+        },
+      };
+    }
+
     case "thread.message.assistant.delta": {
       yield* requireThread({
         readModel,

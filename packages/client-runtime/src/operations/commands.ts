@@ -51,6 +51,8 @@ export type RespondToThreadApprovalInput = CommandInput<"thread.approval.respond
 export type RespondToThreadUserInputInput = CommandInput<"thread.user-input.respond">;
 export type RevertThreadCheckpointInput = CommandInput<"thread.checkpoint.revert">;
 export type StopThreadSessionInput = CommandInput<"thread.session.stop">;
+export type SetThreadUsageLimitAutoContinueInput =
+  CommandInput<"thread.usage-limit.auto-continue.set">;
 
 type DispatchTag = typeof ORCHESTRATION_WS_METHODS.dispatchCommand;
 type CommandEffect = Effect.Effect<
@@ -331,3 +333,17 @@ export const stopThreadSession: (input: StopThreadSessionInput) => CommandEffect
     createdAt: metadata.createdAt,
   });
 });
+
+export const setThreadUsageLimitAutoContinue: (
+  input: SetThreadUsageLimitAutoContinueInput,
+) => CommandEffect = Effect.fn("EnvironmentCommands.setThreadUsageLimitAutoContinue")(
+  function* (input) {
+    const metadata = yield* timestampedCommandMetadata(input);
+    return yield* dispatch({
+      ...input,
+      type: "thread.usage-limit.auto-continue.set",
+      commandId: metadata.commandId,
+      createdAt: metadata.createdAt,
+    });
+  },
+);

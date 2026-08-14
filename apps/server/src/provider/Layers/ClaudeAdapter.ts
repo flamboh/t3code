@@ -4154,7 +4154,15 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(newSessionId ? { sessionId: newSessionId } : {}),
         includePartialMessages: true,
         canUseTool,
-        env: claudeEnvironment,
+        env: {
+          ...claudeEnvironment,
+          ...(input.resumeInterruptedTurn && existingResumeSessionId
+            ? {
+                CLAUDE_CODE_RETRY_WATCHDOG: "1",
+                CLAUDE_CODE_RESUME_INTERRUPTED_TURN: "1",
+              }
+            : {}),
+        },
         additionalDirectories,
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
         ...(mcpSession

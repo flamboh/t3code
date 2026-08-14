@@ -343,6 +343,108 @@ describe("orchestration projector", () => {
     expect(settledThread?.latestTurn?.completedAt).toBe(settledAt);
   });
 
+  it("updates auto-continue only for the matching usage-limit occurrence", async () => {
+    const now = "2026-02-23T08:00:00.000Z";
+    const afterCreate = await Effect.runPromise(
+      projectEvent(
+        createEmptyReadModel(now),
+        makeEvent({
+          sequence: 1,
+          type: "thread.created",
+          aggregateKind: "thread",
+          aggregateId: "thread-usage-limit",
+          occurredAt: now,
+          commandId: "cmd-create-usage-limit",
+          payload: {
+            threadId: "thread-usage-limit",
+            projectId: "project-1",
+            title: "usage limit",
+            modelSelection: {
+              provider: ProviderDriverKind.make("claudeAgent"),
+              model: "claude-sonnet-4-6",
+            },
+            runtimeMode: "full-access",
+            branch: null,
+            worktreePath: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      ),
+    );
+    const afterSession = await Effect.runPromise(
+      projectEvent(
+        afterCreate,
+        makeEvent({
+          sequence: 2,
+          type: "thread.session-set",
+          aggregateKind: "thread",
+          aggregateId: "thread-usage-limit",
+          occurredAt: now,
+          commandId: "cmd-set-usage-limit",
+          payload: {
+            threadId: "thread-usage-limit",
+            session: {
+              threadId: "thread-usage-limit",
+              status: "interrupted",
+              providerName: "claudeAgent",
+              runtimeMode: "full-access",
+              activeTurnId: null,
+              lastError: null,
+              usageLimit: {
+                occurrenceId: "usage-limit-current",
+                provider: "claudeAgent",
+                message: "Claude usage limit reached.",
+              },
+              updatedAt: now,
+            },
+          },
+        }),
+      ),
+    );
+    const afterMatching = await Effect.runPromise(
+      projectEvent(
+        afterSession,
+        makeEvent({
+          sequence: 3,
+          type: "thread.usage-limit-auto-continue-set",
+          aggregateKind: "thread",
+          aggregateId: "thread-usage-limit",
+          occurredAt: now,
+          commandId: "cmd-enable-auto-continue",
+          payload: {
+            threadId: "thread-usage-limit",
+            expectedOccurrenceId: "usage-limit-current",
+            enabled: true,
+            createdAt: now,
+          },
+        }),
+      ),
+    );
+    const afterStale = await Effect.runPromise(
+      projectEvent(
+        afterMatching,
+        makeEvent({
+          sequence: 4,
+          type: "thread.usage-limit-auto-continue-set",
+          aggregateKind: "thread",
+          aggregateId: "thread-usage-limit",
+          occurredAt: now,
+          commandId: "cmd-stale-auto-continue",
+          payload: {
+            threadId: "thread-usage-limit",
+            expectedOccurrenceId: "usage-limit-stale",
+            enabled: false,
+            createdAt: now,
+          },
+        }),
+      ),
+    );
+
+    expect(afterMatching.threads[0]?.session?.usageLimit?.autoContinue).toBe(true);
+    expect(afterStale.threads[0]?.session?.usageLimit?.autoContinue).toBe(true);
+  });
+
   it("updates canonical thread runtime mode from thread.runtime-mode-set", async () => {
     const createdAt = "2026-02-23T08:00:00.000Z";
     const updatedAt = "2026-02-23T08:00:05.000Z";

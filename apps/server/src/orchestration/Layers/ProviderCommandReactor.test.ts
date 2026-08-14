@@ -143,6 +143,117 @@ describe("ProviderCommandReactor", () => {
     });
   });
 
+  it("restarts a Claude query for native usage-limit auto-continue without sending a turn", async () => {
+    const harness = await createHarness({
+      threadModelSelection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-sonnet-4-6",
+      },
+    });
+    const threadId = ThreadId.make("thread-1");
+    const occurrenceId = EventId.make("usage-limit-1");
+    harness.runtimeSessions.push({
+      threadId,
+      provider: ProviderDriverKind.make("claudeAgent"),
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+      status: "ready",
+      runtimeMode: "approval-required",
+      model: "claude-sonnet-4-6",
+      resumeCursor: { resume: "claude-session-1", resumeSessionAt: "assistant-1" },
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cmd-usage-limit-session"),
+        threadId,
+        session: {
+          threadId,
+          status: "interrupted",
+          providerName: "claudeAgent",
+          providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+          runtimeMode: "approval-required",
+          activeTurnId: null,
+          lastError: null,
+          usageLimit: {
+            occurrenceId,
+            provider: ProviderDriverKind.make("claudeAgent"),
+            resetsAt: 1_800_000_000_000,
+            message: "Claude usage limit reached.",
+          },
+          updatedAt: "2026-01-01T00:00:01.000Z",
+        },
+        createdAt: "2026-01-01T00:00:01.000Z",
+      }),
+    );
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.usage-limit.auto-continue.set",
+        commandId: CommandId.make("cmd-enable-usage-limit-auto-continue"),
+        threadId,
+        expectedOccurrenceId: occurrenceId,
+        enabled: true,
+        createdAt: "2026-01-01T00:00:02.000Z",
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+      threadId,
+      provider: ProviderDriverKind.make("claudeAgent"),
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+      resumeCursor: { resume: "claude-session-1", resumeSessionAt: "assistant-1" },
+      resumeInterruptedTurn: true,
+    });
+    expect(harness.sendTurn).not.toHaveBeenCalled();
+
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === threadId);
+    expect(thread?.session).toMatchObject({
+      status: "starting",
+      usageLimit: { occurrenceId, autoContinue: true },
+    });
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.usage-limit.auto-continue.set",
+        commandId: CommandId.make("cmd-disable-usage-limit-auto-continue"),
+        threadId,
+        expectedOccurrenceId: occurrenceId,
+        enabled: false,
+        createdAt: "2026-01-01T00:00:03.000Z",
+      }),
+    );
+
+    await waitFor(() => harness.stopSession.mock.calls.length === 1);
+    await harness.drain();
+    const disabledReadModel = await harness.readModel();
+    const disabledThread = disabledReadModel.threads.find((entry) => entry.id === threadId);
+    expect(disabledThread?.session).toMatchObject({
+      status: "interrupted",
+      usageLimit: { occurrenceId, autoContinue: false },
+    });
+  });
+
+  it("restores an opted-in Claude watchdog query when the reactor starts", async () => {
+    const harness = await createHarness({
+      threadModelSelection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-sonnet-4-6",
+      },
+      usageLimitAutoContinueBeforeStart: true,
+    });
+
+    expect(harness.startSession).toHaveBeenCalledTimes(1);
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+      resumeCursor: { resume: "claude-session-before-reactor-start" },
+      resumeInterruptedTurn: true,
+    });
+    expect(harness.sendTurn).not.toHaveBeenCalled();
+  });
+
   async function createHarness(input?: {
     readonly baseDir?: string;
     readonly threadModelSelection?: ModelSelection;
@@ -150,6 +261,7 @@ describe("ProviderCommandReactor", () => {
     readonly requiresNewThreadForModelChange?: boolean;
     readonly titleRegenerationCompletionDispatchFailures?: number;
     readonly titleRegenerationBeforeStart?: "one" | "two";
+    readonly usageLimitAutoContinueBeforeStart?: boolean;
     readonly startSessionEffect?: (
       session: ProviderSession,
     ) => Effect.Effect<ProviderSession, ProviderAdapterRequestError>;
@@ -481,6 +593,42 @@ describe("ProviderCommandReactor", () => {
           ),
           threadId,
           regenerateTitle: true,
+        }),
+      );
+    }
+    if (input?.usageLimitAutoContinueBeforeStart === true) {
+      runtimeSessions.push({
+        threadId: ThreadId.make("thread-1"),
+        provider: ProviderDriverKind.make("claudeAgent"),
+        providerInstanceId: modelSelection.instanceId,
+        status: "ready",
+        runtimeMode: "approval-required",
+        resumeCursor: { resume: "claude-session-before-reactor-start" },
+        createdAt: now,
+        updatedAt: now,
+      });
+      await Effect.runPromise(
+        engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make("cmd-usage-limit-before-reactor-start"),
+          threadId: ThreadId.make("thread-1"),
+          session: {
+            threadId: ThreadId.make("thread-1"),
+            status: "interrupted",
+            providerName: "claudeAgent",
+            providerInstanceId: modelSelection.instanceId,
+            runtimeMode: "approval-required",
+            activeTurnId: null,
+            lastError: null,
+            usageLimit: {
+              occurrenceId: EventId.make("usage-limit-before-reactor-start"),
+              provider: ProviderDriverKind.make("claudeAgent"),
+              message: "Claude usage limit reached.",
+              autoContinue: true,
+            },
+            updatedAt: now,
+          },
+          createdAt: now,
         }),
       );
     }

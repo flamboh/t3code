@@ -18,6 +18,7 @@ import {
   type SnoozeThreadInput,
   type StartThreadTurnInput,
   type StopThreadSessionInput,
+  type SetThreadUsageLimitAutoContinueInput,
   type UnarchiveThreadInput,
   type UnpinThreadInput,
   type UnsettleThreadInput,
@@ -38,6 +39,7 @@ import {
   snoozeThread,
   startThreadTurn,
   stopThreadSession,
+  setThreadUsageLimitAutoContinue,
   unarchiveThread,
   unpinThread,
   unsettleThread,
@@ -62,6 +64,7 @@ export type {
   SnoozeThreadInput,
   StartThreadTurnInput,
   StopThreadSessionInput,
+  SetThreadUsageLimitAutoContinueInput,
   UnarchiveThreadInput,
   UnpinThreadInput,
   UnsettleThreadInput,
@@ -196,6 +199,13 @@ export function createThreadEnvironmentAtoms<R, E>(
     stopSession: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:stop-session",
       execute: (input: StopThreadSessionInput) => stopThreadSession(input),
+      scheduler,
+      concurrency,
+    }),
+    setUsageLimitAutoContinue: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:set-usage-limit-auto-continue",
+      execute: (input: SetThreadUsageLimitAutoContinueInput) =>
+        setThreadUsageLimitAutoContinue(input),
       scheduler,
       concurrency,
     }),

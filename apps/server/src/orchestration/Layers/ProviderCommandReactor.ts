@@ -58,7 +58,8 @@ type ProviderIntentEvent = Extract<
       | "thread.turn-interrupt-requested"
       | "thread.approval-response-requested"
       | "thread.user-input-response-requested"
-      | "thread.session-stop-requested";
+      | "thread.session-stop-requested"
+      | "thread.usage-limit-auto-continue-set";
   }
 >;
 
@@ -328,6 +329,7 @@ const make = Effect.gen(function* () {
     timeToLive: HANDLED_TURN_START_KEY_TTL,
     lookup: () => Effect.succeed(true),
   });
+  const autoContinuingUsageLimitOccurrences = new Map<ThreadId, EventId>();
 
   const hasHandledTurnStartRecently = (key: string) =>
     Cache.getOption(handledTurnStartKeys, key).pipe(
@@ -484,6 +486,7 @@ const make = Effect.gen(function* () {
     options?: {
       readonly modelSelection?: ModelSelection;
       readonly pendingTurnStart?: boolean;
+      readonly resumeInterruptedTurn?: boolean;
     },
   ) {
     const thread = yield* resolveThread(threadId);
@@ -558,7 +561,10 @@ const make = Effect.gen(function* () {
       });
     }
     const preferredProvider: ProviderDriverKind = desiredDriverKind;
-    if (options?.pendingTurnStart === true && thread.session?.status !== "running") {
+    if (
+      (options?.pendingTurnStart === true || options?.resumeInterruptedTurn === true) &&
+      thread.session?.status !== "running"
+    ) {
       yield* setThreadSession({
         threadId,
         session: {
@@ -569,6 +575,9 @@ const make = Effect.gen(function* () {
           runtimeMode: desiredRuntimeMode,
           activeTurnId: null,
           lastError: null,
+          ...(options?.resumeInterruptedTurn === true
+            ? { usageLimit: thread.session?.usageLimit ?? null }
+            : {}),
           updatedAt: createdAt,
         },
         createdAt,
@@ -620,6 +629,7 @@ const make = Effect.gen(function* () {
     const startProviderSession = (input?: {
       readonly resumeCursor?: unknown;
       readonly provider?: ProviderDriverKind;
+      readonly resumeInterruptedTurn?: boolean;
     }) =>
       providerService.startSession(threadId, {
         threadId,
@@ -628,6 +638,7 @@ const make = Effect.gen(function* () {
         ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
         modelSelection: desiredModelSelection,
         ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
+        ...(input?.resumeInterruptedTurn === true ? { resumeInterruptedTurn: true } : {}),
         runtimeMode: desiredRuntimeMode,
       });
 
@@ -645,7 +656,8 @@ const make = Effect.gen(function* () {
           session: {
             threadId,
             status:
-              options?.pendingTurnStart === true && session.status === "ready"
+              (options?.pendingTurnStart === true || options?.resumeInterruptedTurn === true) &&
+              session.status === "ready"
                 ? "starting"
                 : mapProviderSessionStatusToOrchestrationStatus(session.status),
             providerName: session.provider,
@@ -654,6 +666,9 @@ const make = Effect.gen(function* () {
             // Provider turn ids are not orchestration turn ids.
             activeTurnId: null,
             lastError: session.lastError ?? null,
+            ...(options?.resumeInterruptedTurn === true
+              ? { usageLimit: thread.session?.usageLimit ?? null }
+              : {}),
             updatedAt: session.updatedAt,
           },
           createdAt,
@@ -685,7 +700,8 @@ const make = Effect.gen(function* () {
         !cwdChanged &&
         !instanceChanged &&
         !shouldRestartForModelChange &&
-        !shouldRestartForModelSelectionChange
+        !shouldRestartForModelSelectionChange &&
+        options?.resumeInterruptedTurn !== true
       ) {
         return existingSessionThreadId;
       }
@@ -710,10 +726,16 @@ const make = Effect.gen(function* () {
         instanceChanged,
         shouldRestartForModelChange,
         shouldRestartForModelSelectionChange,
+        resumeInterruptedTurn: options?.resumeInterruptedTurn === true,
         hasResumeCursor: resumeCursor !== undefined,
       });
       const restartedSession = yield* startProviderSession(
-        resumeCursor !== undefined ? { resumeCursor } : undefined,
+        resumeCursor !== undefined || options?.resumeInterruptedTurn === true
+          ? {
+              ...(resumeCursor !== undefined ? { resumeCursor } : {}),
+              ...(options?.resumeInterruptedTurn === true ? { resumeInterruptedTurn: true } : {}),
+            }
+          : undefined,
       );
       yield* Effect.logInfo("provider command reactor restarted provider session", {
         threadId,
@@ -727,7 +749,9 @@ const make = Effect.gen(function* () {
       return restartedSession.threadId;
     }
 
-    const startedSession = yield* startProviderSession(undefined);
+    const startedSession = yield* startProviderSession(
+      options?.resumeInterruptedTurn === true ? { resumeInterruptedTurn: true } : undefined,
+    );
     yield* bindSessionToThread(startedSession);
     return startedSession.threadId;
   });
@@ -1326,6 +1350,87 @@ const make = Effect.gen(function* () {
     });
   });
 
+  const resumeUsageLimitedThread = Effect.fn("resumeUsageLimitedThread")(function* (input: {
+    readonly threadId: ThreadId;
+    readonly expectedOccurrenceId: EventId;
+    readonly createdAt: string;
+  }) {
+    const thread = yield* resolveThread(input.threadId);
+    const usageLimit = thread?.session?.usageLimit;
+    if (
+      usageLimit?.occurrenceId !== input.expectedOccurrenceId ||
+      usageLimit.autoContinue !== true ||
+      usageLimit.provider !== "claudeAgent"
+    ) {
+      return;
+    }
+
+    if (autoContinuingUsageLimitOccurrences.get(input.threadId) === input.expectedOccurrenceId) {
+      return;
+    }
+    autoContinuingUsageLimitOccurrences.set(input.threadId, input.expectedOccurrenceId);
+    yield* ensureSessionForThread(input.threadId, input.createdAt, {
+      resumeInterruptedTurn: true,
+    }).pipe(
+      Effect.onError(() =>
+        Effect.sync(() => {
+          if (
+            autoContinuingUsageLimitOccurrences.get(input.threadId) === input.expectedOccurrenceId
+          ) {
+            autoContinuingUsageLimitOccurrences.delete(input.threadId);
+          }
+        }),
+      ),
+    );
+  });
+
+  const processUsageLimitAutoContinueSet = Effect.fn("processUsageLimitAutoContinueSet")(function* (
+    event: Extract<ProviderIntentEvent, { type: "thread.usage-limit-auto-continue-set" }>,
+  ) {
+    const input = {
+      threadId: event.payload.threadId,
+      expectedOccurrenceId: event.payload.expectedOccurrenceId,
+      createdAt: event.payload.createdAt,
+    };
+    if (event.payload.enabled) {
+      yield* resumeUsageLimitedThread(input);
+      return;
+    }
+
+    if (autoContinuingUsageLimitOccurrences.get(input.threadId) === input.expectedOccurrenceId) {
+      autoContinuingUsageLimitOccurrences.delete(input.threadId);
+    }
+    const limitedThread = yield* resolveThread(input.threadId);
+    if (
+      limitedThread?.session?.usageLimit?.occurrenceId !== input.expectedOccurrenceId ||
+      limitedThread.session.usageLimit.autoContinue !== false
+    ) {
+      return;
+    }
+    const activeSession = (yield* providerService.listSessions()).find(
+      (session) => session.threadId === input.threadId,
+    );
+    if (activeSession) {
+      yield* providerService.stopSession({ threadId: input.threadId });
+    }
+
+    const thread = yield* resolveThread(input.threadId);
+    if (thread?.session?.usageLimit?.occurrenceId !== input.expectedOccurrenceId) {
+      return;
+    }
+    yield* setThreadSession({
+      threadId: input.threadId,
+      session: {
+        ...thread.session,
+        status: "interrupted",
+        activeTurnId: null,
+        lastError: null,
+        updatedAt: input.createdAt,
+      },
+      createdAt: input.createdAt,
+    });
+  });
+
   const processDomainEvent = Effect.fn("processDomainEvent")(function* (
     event: ProviderIntentEvent,
   ) {
@@ -1369,6 +1474,9 @@ const make = Effect.gen(function* () {
       case "thread.session-stop-requested":
         yield* processSessionStopRequested(event);
         return;
+      case "thread.usage-limit-auto-continue-set":
+        yield* processUsageLimitAutoContinueSet(event);
+        return;
     }
   });
 
@@ -1407,13 +1515,45 @@ const make = Effect.gen(function* () {
         event.type === "thread.turn-interrupt-requested" ||
         event.type === "thread.approval-response-requested" ||
         event.type === "thread.user-input-response-requested" ||
-        event.type === "thread.session-stop-requested"
+        event.type === "thread.session-stop-requested" ||
+        event.type === "thread.usage-limit-auto-continue-set"
       ) {
         return yield* worker.enqueue(event);
       }
     });
 
     yield* forkParked(Stream.runForEach(orchestrationEngine.streamDomainEvents, processEvent));
+
+    // The event stream is hot. Restore opted-in watchdog queries from the
+    // durable projection after subscribing so a concurrent disable cannot be
+    // missed between the snapshot read and stream attachment.
+    yield* Effect.gen(function* () {
+      const snapshot = yield* projectionSnapshotQuery.getSnapshot();
+      yield* Effect.forEach(
+        snapshot.threads,
+        (thread) => {
+          const usageLimit = thread.session?.usageLimit;
+          return usageLimit?.autoContinue === true && usageLimit.provider === "claudeAgent"
+            ? resumeUsageLimitedThread({
+                threadId: thread.id,
+                expectedOccurrenceId: usageLimit.occurrenceId,
+                createdAt: thread.session?.updatedAt ?? thread.updatedAt,
+              })
+            : Effect.void;
+        },
+        { discard: true },
+      );
+    }).pipe(
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) {
+          return Effect.interrupt;
+        }
+        return Effect.logWarning(
+          "provider command reactor failed to restore usage-limit auto-continue",
+          { cause: Cause.pretty(cause) },
+        );
+      }),
+    );
 
     // The domain event stream is hot, so work pending before this reactor
     // starts cannot be resumed. Correlated completions only clear the request

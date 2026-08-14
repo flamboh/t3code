@@ -1,4 +1,9 @@
-import type { OrchestrationEvent, OrchestrationReadModel, ThreadId } from "@t3tools/contracts";
+import {
+  ThreadUsageLimitAutoContinueSetPayload,
+  type OrchestrationEvent,
+  type OrchestrationReadModel,
+  type ThreadId,
+} from "@t3tools/contracts";
 import {
   OrchestrationCheckpointSummary,
   OrchestrationMessage,
@@ -607,6 +612,33 @@ export function projectEvent(
                       completedAt: session.updatedAt,
                     }
                   : thread.latestTurn,
+            updatedAt: event.occurredAt,
+          }),
+        };
+      });
+
+    case "thread.usage-limit-auto-continue-set":
+      return Effect.gen(function* () {
+        const payload = yield* decodeForEvent(
+          ThreadUsageLimitAutoContinueSetPayload,
+          event.payload,
+          event.type,
+          "payload",
+        );
+        const thread = nextBase.threads.find((entry) => entry.id === payload.threadId);
+        if (!thread || thread.session?.usageLimit?.occurrenceId !== payload.expectedOccurrenceId) {
+          return nextBase;
+        }
+        return {
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            session: {
+              ...thread.session,
+              usageLimit: {
+                ...thread.session.usageLimit,
+                autoContinue: payload.enabled,
+              },
+            },
             updatedAt: event.occurredAt,
           }),
         };

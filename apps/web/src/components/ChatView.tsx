@@ -3,6 +3,7 @@ import {
   DEFAULT_MODEL,
   defaultInstanceIdForDriver,
   type EnvironmentId,
+  EventId,
   type MessageId,
   type ModelSelection,
   type ProjectScript,
@@ -276,7 +277,12 @@ import {
 } from "./chat/ThreadErrorBanner";
 import { resolveThreadPr } from "./ThreadStatusIndicators";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
-import { readUsageLimit, usageLimitBannerItem } from "./chat/usageLimitBanner";
+import {
+  readUsageLimit,
+  usageLimitAutoContinueEnabled,
+  usageLimitAutoContinueLabel,
+  usageLimitBannerItem,
+} from "./chat/usageLimitBanner";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
@@ -1227,6 +1233,9 @@ function ChatViewContent(props: ChatViewProps) {
   });
   const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
   const interruptThreadTurn = useAtomCommand(threadEnvironment.interruptTurn, {
+    reportFailure: false,
+  });
+  const setUsageLimitAutoContinue = useAtomCommand(threadEnvironment.setUsageLimitAutoContinue, {
     reportFailure: false,
   });
   const respondToThreadApproval = useAtomCommand(threadEnvironment.respondToApproval, {
@@ -4444,10 +4453,34 @@ function ChatViewContent(props: ChatViewProps) {
     isStoppingBackgroundWork,
   ]);
   const usageLimitBanner = useMemo<ComposerBannerStackItem | null>(() => {
-    const session = activeThread?.session as { usageLimit?: unknown } | null | undefined;
-    const notice = readUsageLimit(session?.usageLimit);
-    return notice ? usageLimitBannerItem(notice) : null;
-  }, [activeThread?.session]);
+    const notice = readUsageLimit(activeThread?.session?.usageLimit);
+    if (!notice) return null;
+    if (notice.provider !== "claudeAgent" || !activeThreadRef) {
+      return usageLimitBannerItem(notice);
+    }
+    const enabled = usageLimitAutoContinueEnabled(notice);
+    return {
+      ...usageLimitBannerItem(notice),
+      actions: (
+        <Button
+          size="xs"
+          variant="outline"
+          onClick={() => {
+            void setUsageLimitAutoContinue({
+              environmentId: activeThreadRef.environmentId,
+              input: {
+                threadId: activeThreadRef.threadId,
+                expectedOccurrenceId: EventId.make(notice.occurrenceId),
+                enabled: !enabled,
+              },
+            });
+          }}
+        >
+          {usageLimitAutoContinueLabel(notice)}
+        </Button>
+      ),
+    };
+  }, [activeThread?.session, activeThreadRef, setUsageLimitAutoContinue]);
   // A woken thread announces itself in the open view, not just the sidebar
   // pill. Dismissing marks the wake as seen (same acknowledgment as the
   // pill); sending a message clears it as a side effect of the send path.

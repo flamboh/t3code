@@ -293,6 +293,7 @@ export const OrchestrationSessionUsageLimit = Schema.Struct({
   windowType: Schema.optional(TrimmedNonEmptyString),
   resetsAt: Schema.optional(Schema.Number),
   message: TrimmedNonEmptyString,
+  autoContinue: Schema.optional(Schema.Boolean),
 });
 export type OrchestrationSessionUsageLimit = typeof OrchestrationSessionUsageLimit.Type;
 
@@ -910,6 +911,15 @@ const ThreadSessionStopCommand = Schema.Struct({
   onlyIfSettled: Schema.optional(Schema.Boolean),
 });
 
+export const ThreadUsageLimitAutoContinueSetCommand = Schema.Struct({
+  type: Schema.Literal("thread.usage-limit.auto-continue.set"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  expectedOccurrenceId: EventId,
+  enabled: Schema.Boolean,
+  createdAt: IsoDateTime,
+});
+
 const DispatchableClientOrchestrationCommand = Schema.Union([
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
@@ -934,6 +944,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadUserInputRespondCommand,
   ThreadCheckpointRevertCommand,
   ThreadSessionStopCommand,
+  ThreadUsageLimitAutoContinueSetCommand,
 ]);
 export type DispatchableClientOrchestrationCommand =
   typeof DispatchableClientOrchestrationCommand.Type;
@@ -962,6 +973,7 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadUserInputRespondCommand,
   ThreadCheckpointRevertCommand,
   ThreadSessionStopCommand,
+  ThreadUsageLimitAutoContinueSetCommand,
 ]);
 export type ClientOrchestrationCommand = typeof ClientOrchestrationCommand.Type;
 
@@ -970,6 +982,13 @@ const ThreadSessionSetCommand = Schema.Struct({
   commandId: CommandId,
   threadId: ThreadId,
   session: OrchestrationSession,
+  createdAt: IsoDateTime,
+});
+
+export const ThreadUsageLimitAutoContinueSetPayload = Schema.Struct({
+  threadId: ThreadId,
+  expectedOccurrenceId: EventId,
+  enabled: Schema.Boolean,
   createdAt: IsoDateTime,
 });
 
@@ -1083,6 +1102,7 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.reverted",
   "thread.session-stop-requested",
   "thread.session-set",
+  "thread.usage-limit-auto-continue-set",
   "thread.proposed-plan-upserted",
   "thread.turn-diff-completed",
   "thread.activity-appended",
@@ -1471,6 +1491,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.session-set"),
     payload: ThreadSessionSetPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.usage-limit-auto-continue-set"),
+    payload: ThreadUsageLimitAutoContinueSetPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

@@ -6,6 +6,15 @@ export interface UsageLimitNotice {
   readonly windowType?: string;
   readonly resetsAt?: number;
   readonly message: string;
+  readonly autoContinue?: boolean;
+}
+
+export function usageLimitAutoContinueEnabled(notice: UsageLimitNotice): boolean {
+  return notice.autoContinue === true;
+}
+
+export function usageLimitAutoContinueLabel(notice: UsageLimitNotice): string {
+  return usageLimitAutoContinueEnabled(notice) ? "Disable auto-continue" : "Enable auto-continue";
 }
 
 function providerLabel(provider: string): string {
@@ -50,5 +59,6 @@ export function readUsageLimit(value: unknown): UsageLimitNotice | null {
     ...(typeof notice.resetsAt === "number" && Number.isFinite(notice.resetsAt)
       ? { resetsAt: notice.resetsAt }
       : {}),
+    ...(typeof notice.autoContinue === "boolean" ? { autoContinue: notice.autoContinue } : {}),
   };
 }

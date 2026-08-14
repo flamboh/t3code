@@ -7,6 +7,7 @@ import type {
   RuntimeMode,
   ServerConfig as T3ServerConfig,
 } from "@t3tools/contracts";
+import { EventId } from "@t3tools/contracts";
 import {
   detectComposerTrigger,
   replaceTextRange,
@@ -35,6 +36,8 @@ import Animated, {
   LinearTransition,
 } from "react-native-reanimated";
 import { useThemeColor } from "../../lib/useThemeColor";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { threadEnvironment } from "../../state/threads";
 import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/remoteRegistration";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { readUsageLimit, usageLimitPresentation } from "./usageLimitPresentation";
@@ -289,10 +292,30 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   // while focus moves between its native editor and the settings picker.
   const isExpanded = isFocused || settingsSheetPresentation.isActive;
   const canSend = hasContent;
-  const usageLimit = readUsageLimit(
-    (props.selectedThread.session as { usageLimit?: unknown } | null | undefined)?.usageLimit,
-  );
+  const usageLimit = readUsageLimit(props.selectedThread.session?.usageLimit);
   const usageLimitCopy = usageLimit ? usageLimitPresentation(usageLimit) : null;
+  const setUsageLimitAutoContinue = useAtomCommand(threadEnvironment.setUsageLimitAutoContinue, {
+    reportFailure: false,
+  });
+  const isClaudeUsageLimit = usageLimit?.provider === "claudeAgent";
+  const handleUsageLimitAutoContinue = useCallback(() => {
+    if (!usageLimit || !isClaudeUsageLimit) return;
+    void setUsageLimitAutoContinue({
+      environmentId: props.environmentId,
+      input: {
+        threadId: props.selectedThread.id,
+        expectedOccurrenceId: EventId.make(usageLimit.occurrenceId),
+        enabled: !usageLimitCopy?.autoContinueEnabled,
+      },
+    });
+  }, [
+    isClaudeUsageLimit,
+    props.environmentId,
+    props.selectedThread.id,
+    setUsageLimitAutoContinue,
+    usageLimit,
+    usageLimitCopy?.autoContinueEnabled,
+  ]);
 
   // Notify the parent from the derived value, not focus events: the parent
   // sizes the feed inset from this, and blur-during-sheet would otherwise
@@ -733,6 +756,18 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
               <Text className="text-xs leading-snug text-red-700/80 dark:text-red-200/80">
                 {usageLimitCopy.detail}
               </Text>
+              {isClaudeUsageLimit ? (
+                <Pressable
+                  accessibilityLabel={usageLimitCopy.autoContinueLabel}
+                  accessibilityRole="button"
+                  className="mt-1 self-start"
+                  onPress={handleUsageLimitAutoContinue}
+                >
+                  <Text className="text-xs font-t3-bold text-red-700 underline dark:text-red-200">
+                    {usageLimitCopy.autoContinueLabel}
+                  </Text>
+                </Pressable>
+              ) : null}
             </View>
           </View>
         ) : null}

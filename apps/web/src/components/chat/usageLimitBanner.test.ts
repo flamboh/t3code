@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
-import { formatUsageLimitReset, readUsageLimit, usageLimitBannerItem } from "./usageLimitBanner";
+import {
+  formatUsageLimitReset,
+  readUsageLimit,
+  usageLimitAutoContinueLabel,
+  usageLimitBannerItem,
+} from "./usageLimitBanner";
 
 describe("usage limit banner", () => {
   it("shows provider, supplied message, and localized reset time", () => {
@@ -25,5 +30,16 @@ describe("usage limit banner", () => {
     ).toBe("Limit hit.");
     expect(readUsageLimit(null)).toBeNull();
     expect(readUsageLimit({ provider: "Codex" })).toBeNull();
+  });
+
+  it("exposes a reversible auto-continue label from the server marker", () => {
+    expect(
+      usageLimitAutoContinueLabel({
+        occurrenceId: "abc",
+        provider: "claudeAgent",
+        message: "Limit hit.",
+        autoContinue: true,
+      }),
+    ).toBe("Disable auto-continue");
   });
 });

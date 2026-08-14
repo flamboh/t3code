@@ -12,6 +12,8 @@ describe("usage limit presentation", () => {
     expect(usageLimitPresentation(notice)).toEqual({
       title: "Claude usage limit reached",
       detail: `Your plan is at its limit. Resets ${formatUsageLimitReset(notice.resetsAt)}.`,
+      autoContinueEnabled: false,
+      autoContinueLabel: "Enable auto-continue",
     });
   });
 });

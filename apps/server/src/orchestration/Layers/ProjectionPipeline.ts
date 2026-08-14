@@ -1130,6 +1130,29 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const applyThreadSessionsProjection: ProjectorDefinition["apply"] = Effect.fn(
       "applyThreadSessionsProjection",
     )(function* (event, _attachmentSideEffects) {
+      if (event.type === "thread.usage-limit-auto-continue-set") {
+        const existingRow = yield* projectionThreadSessionRepository.getByThreadId({
+          threadId: event.payload.threadId,
+        });
+        if (Option.isNone(existingRow)) {
+          return;
+        }
+        if (
+          existingRow.value.usageLimit === null ||
+          existingRow.value.usageLimit.occurrenceId !== event.payload.expectedOccurrenceId
+        ) {
+          return;
+        }
+        yield* projectionThreadSessionRepository.upsert({
+          ...existingRow.value,
+          usageLimit: {
+            ...existingRow.value.usageLimit,
+            autoContinue: event.payload.enabled,
+          },
+          updatedAt: event.occurredAt,
+        });
+        return;
+      }
       if (event.type !== "thread.session-set") {
         return;
       }
