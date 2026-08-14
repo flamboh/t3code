@@ -276,6 +276,7 @@ import {
 } from "./chat/ThreadErrorBanner";
 import { resolveThreadPr } from "./ThreadStatusIndicators";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
+import { readUsageLimit, usageLimitBannerItem } from "./chat/usageLimitBanner";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
@@ -4442,6 +4443,11 @@ function ChatViewContent(props: ChatViewProps) {
     handleStopBackgroundWork,
     isStoppingBackgroundWork,
   ]);
+  const usageLimitBanner = useMemo<ComposerBannerStackItem | null>(() => {
+    const session = activeThread?.session as { usageLimit?: unknown } | null | undefined;
+    const notice = readUsageLimit(session?.usageLimit);
+    return notice ? usageLimitBannerItem(notice) : null;
+  }, [activeThread?.session]);
   // A woken thread announces itself in the open view, not just the sidebar
   // pill. Dismissing marks the wake as seen (same acknowledgment as the
   // pill); sending a message clears it as a side effect of the send path.
@@ -4521,11 +4527,13 @@ function ChatViewContent(props: ChatViewProps) {
     const calmSystemItems = systemComposerBannerItems.filter((item) => !isUrgentSystemItem(item));
     const backgroundLivenessItems =
       backgroundLivenessBannerItem === null ? [] : [backgroundLivenessBannerItem];
+    const usageLimitItems = usageLimitBanner === null ? [] : [usageLimitBanner];
     const wokeThreadItems = wokeThreadBannerItem === null ? [] : [wokeThreadBannerItem];
     const parkedThreadItems = parkedThreadBannerItem === null ? [] : [parkedThreadBannerItem];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
       return [
         ...urgentSystemItems,
+        ...usageLimitItems,
         ...backgroundLivenessItems,
         ...calmSystemItems,
         ...wokeThreadItems,
@@ -4534,6 +4542,7 @@ function ChatViewContent(props: ChatViewProps) {
     }
     return [
       ...urgentSystemItems,
+      ...usageLimitItems,
       ...backgroundLivenessItems,
       ...calmSystemItems,
       ...wokeThreadItems,
@@ -4587,6 +4596,7 @@ function ChatViewContent(props: ChatViewProps) {
     parkedThreadBannerItem,
     showBranchMismatchBanner,
     systemComposerBannerItems,
+    usageLimitBanner,
     wokeThreadBannerItem,
   ]);
 

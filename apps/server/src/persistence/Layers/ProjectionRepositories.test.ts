@@ -1,4 +1,10 @@
-import { ProjectId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
+import {
+  EventId,
+  ProjectId,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -8,18 +14,63 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { SqlitePersistenceMemory } from "./Sqlite.ts";
 import { ProjectionProjectRepositoryLive } from "./ProjectionProjects.ts";
 import { ProjectionThreadRepositoryLive } from "./ProjectionThreads.ts";
+import { ProjectionThreadSessionRepositoryLive } from "./ProjectionThreadSessions.ts";
 import { ProjectionProjectRepository } from "../Services/ProjectionProjects.ts";
 import { ProjectionThreadRepository } from "../Services/ProjectionThreads.ts";
+import { ProjectionThreadSessionRepository } from "../Services/ProjectionThreadSessions.ts";
 
 const projectionRepositoriesLayer = it.layer(
   Layer.mergeAll(
     ProjectionProjectRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
     ProjectionThreadRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
+    ProjectionThreadSessionRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
     SqlitePersistenceMemory,
   ),
 );
 
 projectionRepositoriesLayer("Projection repositories", (it) => {
+  it.effect("round-trips structured thread-session usage limits as JSON", () =>
+    Effect.gen(function* () {
+      const sessions = yield* ProjectionThreadSessionRepository;
+      const sql = yield* SqlClient.SqlClient;
+      const usageLimit = {
+        occurrenceId: EventId.make("usage-limit-1"),
+        provider: ProviderDriverKind.make("claudeAgent"),
+        windowType: "five_hour",
+        resetsAt: 1_800_000_000_000,
+        message: "Claude usage limit reached.",
+      };
+
+      yield* sessions.upsert({
+        threadId: ThreadId.make("thread-usage-limit"),
+        status: "interrupted",
+        providerName: "claudeAgent",
+        providerInstanceId: null,
+        runtimeMode: "full-access",
+        activeTurnId: null,
+        lastError: null,
+        usageLimit,
+        updatedAt: "2026-03-24T00:00:00.000Z",
+      });
+
+      const rows = yield* sql<{ readonly usageLimit: string | null }>`
+        SELECT usage_limit AS "usageLimit"
+        FROM projection_thread_sessions
+        WHERE thread_id = 'thread-usage-limit'
+      `;
+      assert.strictEqual(
+        rows[0]?.usageLimit,
+        // @effect-diagnostics-next-line preferSchemaOverJson:off
+        JSON.stringify(usageLimit),
+      );
+
+      const persisted = yield* sessions.getByThreadId({
+        threadId: ThreadId.make("thread-usage-limit"),
+      });
+      assert.deepStrictEqual(Option.getOrNull(persisted)?.usageLimit, usageLimit);
+    }),
+  );
+
   it.effect("stores SQL NULL for missing project model options", () =>
     Effect.gen(function* () {
       const projects = yield* ProjectionProjectRepository;

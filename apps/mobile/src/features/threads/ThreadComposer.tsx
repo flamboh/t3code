@@ -37,6 +37,7 @@ import Animated, {
 import { useThemeColor } from "../../lib/useThemeColor";
 import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/remoteRegistration";
 import { scopedThreadKey } from "../../lib/scopedEntities";
+import { readUsageLimit, usageLimitPresentation } from "./usageLimitPresentation";
 
 import { AppText as Text } from "../../components/AppText";
 import { ComposerAttachmentStrip } from "../../components/ComposerAttachmentStrip";
@@ -288,6 +289,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   // while focus moves between its native editor and the settings picker.
   const isExpanded = isFocused || settingsSheetPresentation.isActive;
   const canSend = hasContent;
+  const usageLimit = readUsageLimit(
+    (props.selectedThread.session as { usageLimit?: unknown } | null | undefined)?.usageLimit,
+  );
+  const usageLimitCopy = usageLimit ? usageLimitPresentation(usageLimit) : null;
 
   // Notify the parent from the derived value, not focus events: the parent
   // sizes the feed inset from this, and blur-during-sheet would otherwise
@@ -715,6 +720,22 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         layout={COMPOSER_LAYOUT_TRANSITION}
         style={{ maxWidth: props.contentMaxWidth }}
       >
+        {usageLimitCopy ? (
+          <View
+            accessibilityRole="alert"
+            className="mb-2 flex-row items-start gap-2 rounded-2xl border border-red-500/30 bg-red-500/10 px-3 py-2"
+          >
+            <Text className="text-sm font-t3-bold text-red-600 dark:text-red-300">!</Text>
+            <View className="min-w-0 flex-1">
+              <Text className="text-sm font-t3-bold text-red-700 dark:text-red-200">
+                {usageLimitCopy.title}
+              </Text>
+              <Text className="text-xs leading-snug text-red-700/80 dark:text-red-200/80">
+                {usageLimitCopy.detail}
+              </Text>
+            </View>
+          </View>
+        ) : null}
         {composerTrigger && composerMenuItems.length > 0 ? (
           <View className="absolute inset-x-0 bottom-full z-10 mb-2">
             <ComposerCommandPopover

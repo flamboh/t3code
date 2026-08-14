@@ -21,7 +21,7 @@ import {
   TrimmedString,
   TurnId,
 } from "./baseSchemas.ts";
-import { ProviderInstanceId } from "./providerInstance.ts";
+import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -282,6 +282,20 @@ export const OrchestrationSessionStatus = Schema.Literals([
 ]);
 export type OrchestrationSessionStatus = typeof OrchestrationSessionStatus.Type;
 
+/**
+ * Durable attribution for a provider turn that paused because its account
+ * usage window closed. Reset timestamps are epoch milliseconds so every
+ * client can format them in the viewer's locale.
+ */
+export const OrchestrationSessionUsageLimit = Schema.Struct({
+  occurrenceId: EventId,
+  provider: ProviderDriverKind,
+  windowType: Schema.optional(TrimmedNonEmptyString),
+  resetsAt: Schema.optional(Schema.Number),
+  message: TrimmedNonEmptyString,
+});
+export type OrchestrationSessionUsageLimit = typeof OrchestrationSessionUsageLimit.Type;
+
 export const OrchestrationSession = Schema.Struct({
   threadId: ThreadId,
   status: OrchestrationSessionStatus,
@@ -290,6 +304,7 @@ export const OrchestrationSession = Schema.Struct({
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),
   activeTurnId: Schema.NullOr(TurnId),
   lastError: Schema.NullOr(TrimmedNonEmptyString),
+  usageLimit: Schema.optional(Schema.NullOr(OrchestrationSessionUsageLimit)),
   updatedAt: IsoDateTime,
 });
 export type OrchestrationSession = typeof OrchestrationSession.Type;

@@ -7,6 +7,7 @@ import {
   OrchestrationCheckpointFile,
   OrchestrationProposedPlanId,
   OrchestrationReadModel,
+  OrchestrationSessionUsageLimit,
   OrchestrationThreadSearchSource,
   OrchestrationShellSnapshot,
   OrchestrationThread,
@@ -93,7 +94,11 @@ const ProjectionThreadActivityDbRowSchema = ProjectionThreadActivity.mapFields(
     sequence: Schema.NullOr(NonNegativeInt),
   }),
 );
-const ProjectionThreadSessionDbRowSchema = ProjectionThreadSession;
+const ProjectionThreadSessionDbRowSchema = ProjectionThreadSession.mapFields(
+  Struct.assign({
+    usageLimit: Schema.NullOr(Schema.fromJsonString(OrchestrationSessionUsageLimit)),
+  }),
+);
 const ProjectionCheckpointDbRowSchema = ProjectionCheckpoint.mapFields(
   Struct.assign({
     files: Schema.fromJsonString(Schema.Array(OrchestrationCheckpointFile)),
@@ -302,6 +307,7 @@ function mapSessionRow(
     runtimeMode: row.runtimeMode,
     activeTurnId: row.activeTurnId,
     lastError: row.lastError,
+    ...(row.usageLimit !== null ? { usageLimit: row.usageLimit } : {}),
     updatedAt: row.updatedAt,
   };
 }
@@ -594,6 +600,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           runtime_mode AS "runtimeMode",
           active_turn_id AS "activeTurnId",
           last_error AS "lastError",
+          usage_limit AS "usageLimit",
           updated_at AS "updatedAt"
         FROM projection_thread_sessions
         ORDER BY thread_id ASC
@@ -615,6 +622,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           sessions.runtime_mode AS "runtimeMode",
           sessions.active_turn_id AS "activeTurnId",
           sessions.last_error AS "lastError",
+          sessions.usage_limit AS "usageLimit",
           sessions.updated_at AS "updatedAt"
         FROM projection_thread_sessions sessions
         INNER JOIN projection_threads threads
@@ -640,6 +648,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           sessions.runtime_mode AS "runtimeMode",
           sessions.active_turn_id AS "activeTurnId",
           sessions.last_error AS "lastError",
+          sessions.usage_limit AS "usageLimit",
           sessions.updated_at AS "updatedAt"
         FROM projection_thread_sessions sessions
         INNER JOIN projection_threads threads
@@ -678,7 +687,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         SELECT
           turns.thread_id AS "threadId",
           turns.turn_id AS "turnId",
-          turns.state,
+          CASE WHEN sessions.status = 'interrupted' THEN 'interrupted' ELSE turns.state END AS state,
           turns.requested_at AS "requestedAt",
           turns.started_at AS "startedAt",
           turns.completed_at AS "completedAt",
@@ -689,6 +698,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         JOIN projection_turns turns
           ON turns.thread_id = threads.thread_id
           AND turns.turn_id = threads.latest_turn_id
+        LEFT JOIN projection_thread_sessions sessions
+          ON sessions.thread_id = threads.thread_id
         WHERE threads.latest_turn_id IS NOT NULL
         ORDER BY turns.thread_id ASC
       `,
@@ -702,7 +713,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         SELECT
           turns.thread_id AS "threadId",
           turns.turn_id AS "turnId",
-          turns.state,
+          CASE WHEN sessions.status = 'interrupted' THEN 'interrupted' ELSE turns.state END AS state,
           turns.requested_at AS "requestedAt",
           turns.started_at AS "startedAt",
           turns.completed_at AS "completedAt",
@@ -713,6 +724,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         JOIN projection_turns turns
           ON turns.thread_id = threads.thread_id
           AND turns.turn_id = threads.latest_turn_id
+        LEFT JOIN projection_thread_sessions sessions
+          ON sessions.thread_id = threads.thread_id
         WHERE threads.deleted_at IS NULL
           AND threads.archived_at IS NULL
           AND threads.latest_turn_id IS NOT NULL
@@ -728,7 +741,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         SELECT
           turns.thread_id AS "threadId",
           turns.turn_id AS "turnId",
-          turns.state,
+          CASE WHEN sessions.status = 'interrupted' THEN 'interrupted' ELSE turns.state END AS state,
           turns.requested_at AS "requestedAt",
           turns.started_at AS "startedAt",
           turns.completed_at AS "completedAt",
@@ -739,6 +752,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         JOIN projection_turns turns
           ON turns.thread_id = threads.thread_id
           AND turns.turn_id = threads.latest_turn_id
+        LEFT JOIN projection_thread_sessions sessions
+          ON sessions.thread_id = threads.thread_id
         WHERE threads.deleted_at IS NULL
           AND threads.archived_at IS NOT NULL
           AND threads.latest_turn_id IS NOT NULL
@@ -1037,6 +1052,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           runtime_mode AS "runtimeMode",
           active_turn_id AS "activeTurnId",
           last_error AS "lastError",
+          usage_limit AS "usageLimit",
           updated_at AS "updatedAt"
         FROM projection_thread_sessions
         WHERE thread_id = ${threadId}
@@ -1052,7 +1068,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         SELECT
           turns.thread_id AS "threadId",
           turns.turn_id AS "turnId",
-          turns.state,
+          CASE WHEN sessions.status = 'interrupted' THEN 'interrupted' ELSE turns.state END AS state,
           turns.requested_at AS "requestedAt",
           turns.started_at AS "startedAt",
           turns.completed_at AS "completedAt",
@@ -1063,6 +1079,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         JOIN projection_turns turns
           ON turns.thread_id = threads.thread_id
           AND turns.turn_id = threads.latest_turn_id
+        LEFT JOIN projection_thread_sessions sessions
+          ON sessions.thread_id = threads.thread_id
         WHERE threads.thread_id = ${threadId}
           AND threads.deleted_at IS NULL
           AND threads.archived_at IS NULL
@@ -1535,6 +1553,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   runtimeMode: row.runtimeMode,
                   activeTurnId: row.activeTurnId,
                   lastError: row.lastError,
+                  ...(row.usageLimit !== null ? { usageLimit: row.usageLimit } : {}),
                   updatedAt: row.updatedAt,
                 });
               }

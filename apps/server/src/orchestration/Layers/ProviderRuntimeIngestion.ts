@@ -368,6 +368,37 @@ export function runtimeEventToActivities(
       : {};
   })();
   switch (event.type) {
+    case "turn.completed": {
+      if (event.payload.usageLimit === undefined) {
+        return [];
+      }
+      const message =
+        event.payload.usageLimit.message ??
+        event.payload.errorMessage ??
+        "Claude usage limit reached.";
+      return [
+        {
+          id: event.eventId,
+          createdAt: event.createdAt,
+          tone: "info",
+          kind: "usage-limit.reached",
+          summary: message,
+          payload: {
+            provider: event.provider,
+            message,
+            ...(event.payload.usageLimit.windowType !== undefined
+              ? { windowType: event.payload.usageLimit.windowType }
+              : {}),
+            ...(event.payload.usageLimit.resetsAt !== undefined
+              ? { resetsAt: event.payload.usageLimit.resetsAt }
+              : {}),
+          },
+          turnId: toTurnId(event.turnId) ?? null,
+          ...maybeSequence,
+        },
+      ];
+    }
+
     case "request.opened": {
       if (event.payload.requestType === "tool_user_input") {
         return [];
@@ -1566,11 +1597,13 @@ const make = Effect.gen(function* () {
             case "turn.started":
               return "running";
             case "session.exited":
-              return "stopped";
+              return thread.session?.usageLimit ? "interrupted" : "stopped";
             case "turn.completed":
-              return normalizeRuntimeTurnState(event.payload.state) === "failed"
-                ? "error"
-                : "ready";
+              return event.payload.usageLimit !== undefined
+                ? "interrupted"
+                : normalizeRuntimeTurnState(event.payload.state) === "failed"
+                  ? "error"
+                  : "ready";
             case "session.started":
             case "thread.started":
               // Provider thread/session start notifications can arrive during an
@@ -1592,12 +1625,33 @@ const make = Effect.gen(function* () {
         const lastError =
           event.type === "session.state.changed" && event.payload.state === "error"
             ? (event.payload.reason ?? thread.session?.lastError ?? "Provider session error")
-            : event.type === "turn.completed" &&
-                normalizeRuntimeTurnState(event.payload.state) === "failed"
-              ? (event.payload.errorMessage ?? thread.session?.lastError ?? "Turn failed")
-              : status === "ready"
-                ? null
-                : (thread.session?.lastError ?? null);
+            : event.type === "turn.completed" && event.payload.usageLimit !== undefined
+              ? null
+              : event.type === "turn.completed" &&
+                  normalizeRuntimeTurnState(event.payload.state) === "failed"
+                ? (event.payload.errorMessage ?? thread.session?.lastError ?? "Turn failed")
+                : status === "ready"
+                  ? null
+                  : (thread.session?.lastError ?? null);
+        const usageLimit =
+          event.type === "turn.started"
+            ? null
+            : event.type === "turn.completed" && event.payload.usageLimit !== undefined
+              ? {
+                  occurrenceId: event.eventId,
+                  provider: event.provider,
+                  ...(event.payload.usageLimit.windowType !== undefined
+                    ? { windowType: event.payload.usageLimit.windowType }
+                    : {}),
+                  ...(event.payload.usageLimit.resetsAt !== undefined
+                    ? { resetsAt: event.payload.usageLimit.resetsAt }
+                    : {}),
+                  message:
+                    event.payload.usageLimit.message ??
+                    event.payload.errorMessage ??
+                    "Claude usage limit reached.",
+                }
+              : (thread.session?.usageLimit ?? null);
 
         if (shouldApplyThreadLifecycle) {
           if (event.type === "turn.started" && acceptedTurnStartedSourcePlan !== null) {
@@ -1634,6 +1688,7 @@ const make = Effect.gen(function* () {
               runtimeMode: thread.session?.runtimeMode ?? "full-access",
               activeTurnId: nextActiveTurnId,
               lastError,
+              usageLimit,
               updatedAt: now,
             },
             createdAt: now,
@@ -1884,6 +1939,7 @@ const make = Effect.gen(function* () {
               runtimeMode: thread.session?.runtimeMode ?? "full-access",
               activeTurnId: eventTurnId ?? null,
               lastError: runtimeErrorMessage,
+              usageLimit: thread.session?.usageLimit ?? null,
               updatedAt: now,
             },
             createdAt: now,

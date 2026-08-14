@@ -245,7 +245,14 @@ interface ClaudeSessionContext {
   lastKnownTotalProcessedTokens: number | undefined;
   lastAssistantUuid: string | undefined;
   lastThreadStartedId: string | undefined;
+  usageLimit: ClaudeUsageLimit | undefined;
   stopped: boolean;
+}
+
+interface ClaudeUsageLimit {
+  readonly windowType?: string;
+  readonly resetsAt?: number;
+  readonly message?: string;
 }
 
 interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
@@ -367,7 +374,9 @@ function isInterruptedResult(result: SDKResultMessage): boolean {
   // is_error: true), interrupting mid-stream yields "aborted_streaming".
   if (
     result.terminal_reason === "aborted_tools" ||
-    result.terminal_reason === "aborted_streaming"
+    result.terminal_reason === "aborted_streaming" ||
+    result.terminal_reason === "blocking_limit" ||
+    result.terminal_reason === "rapid_refill_breaker"
   ) {
     return true;
   }
@@ -2170,6 +2179,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     status: ProviderRuntimeTurnStatus,
     errorMessage?: string,
     result?: SDKResultMessage,
+    usageLimit?: ClaudeUsageLimit,
   ) {
     const resultContextWindow = maxClaudeContextWindowFromModelUsage(result?.modelUsage);
     if (resultContextWindow !== undefined) {
@@ -2339,6 +2349,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           ? { totalCostUsd: result.total_cost_usd }
           : {}),
         ...(errorMessage ? { errorMessage } : {}),
+        ...(usageLimit ? { usageLimit } : {}),
       },
       providerRefs: nativeProviderRefs(context),
     });
@@ -2943,12 +2954,17 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     const status = turnStatusFromResult(message);
     const errorMessage = resultUserFacingError(message);
+    const usageLimit =
+      message.terminal_reason === "blocking_limit" ||
+      message.terminal_reason === "rapid_refill_breaker"
+        ? context.usageLimit
+        : undefined;
 
     if (status === "failed") {
       yield* emitRuntimeError(context, errorMessage ?? "Claude turn failed.");
     }
 
-    yield* completeTurn(context, status, errorMessage, message);
+    yield* completeTurn(context, status, errorMessage, message, usageLimit);
   });
 
   /**
@@ -3472,6 +3488,18 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     if (message.type === "rate_limit_event") {
+      const rateLimitInfo = message.rate_limit_info;
+      if (rateLimitInfo.status === "rejected") {
+        context.usageLimit = {
+          ...(rateLimitInfo.rateLimitType ? { windowType: rateLimitInfo.rateLimitType } : {}),
+          ...(typeof rateLimitInfo.resetsAt === "number" && Number.isFinite(rateLimitInfo.resetsAt)
+            ? { resetsAt: rateLimitInfo.resetsAt }
+            : {}),
+          message: "Claude usage limit reached.",
+        };
+      } else if (rateLimitInfo.status === "allowed") {
+        context.usageLimit = undefined;
+      }
       yield* offerRuntimeEvent({
         ...base,
         type: "account.rate-limits.updated",
@@ -3584,7 +3612,13 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         yield* completeTurn(context, "failed", message);
       }
     } else if (context.turnState) {
-      yield* completeTurn(context, "interrupted", "Claude runtime stream ended.");
+      yield* completeTurn(
+        context,
+        "interrupted",
+        "Claude runtime stream ended.",
+        undefined,
+        context.usageLimit,
+      );
     }
 
     yield* stopSessionInternal(context, {
@@ -4221,6 +4255,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         lastKnownTotalProcessedTokens: undefined,
         lastAssistantUuid: resumeState?.resumeSessionAt,
         lastThreadStartedId: undefined,
+        usageLimit: undefined,
         stopped: false,
       };
       yield* Ref.set(contextRef, context);

@@ -364,6 +364,93 @@ describe("ProviderRuntimeIngestion", () => {
     expect(thread.session?.lastError).toBe("turn failed");
   });
 
+  it("projects a Claude usage-limit stop as an interrupted, non-error session", async () => {
+    const harness = await createHarness();
+    const startedAt = "2026-01-01T00:00:00.000Z";
+    const completedAt = "2026-01-01T00:00:05.000Z";
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-claude-limit-started"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      threadId: asThreadId("thread-1"),
+      createdAt: startedAt,
+      turnId: asTurnId("turn-claude-limit"),
+    });
+
+    await waitForThread(
+      harness.readModel,
+      (thread) =>
+        thread.session?.status === "running" && thread.session.activeTurnId === "turn-claude-limit",
+    );
+
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-claude-limit-completed"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      threadId: asThreadId("thread-1"),
+      createdAt: completedAt,
+      turnId: asTurnId("turn-claude-limit"),
+      payload: {
+        state: "interrupted",
+        errorMessage: "5-hour Claude usage limit reached.",
+        usageLimit: {
+          windowType: "five_hour",
+          resetsAt: 1_800_000_000_000,
+          message: "5-hour Claude usage limit reached.",
+        },
+      },
+    });
+
+    const thread = await waitForThread(
+      harness.readModel,
+      (entry) => entry.session?.usageLimit?.occurrenceId === "evt-claude-limit-completed",
+    );
+
+    expect(thread.session).toMatchObject({
+      status: "interrupted",
+      activeTurnId: null,
+      lastError: null,
+      usageLimit: {
+        occurrenceId: "evt-claude-limit-completed",
+        provider: "claudeAgent",
+        windowType: "five_hour",
+        resetsAt: 1_800_000_000_000,
+        message: "5-hour Claude usage limit reached.",
+      },
+    });
+    expect(thread.latestTurn).toMatchObject({
+      turnId: "turn-claude-limit",
+      state: "interrupted",
+      completedAt,
+    });
+    expect(thread.activities).toContainEqual(
+      expect.objectContaining({
+        kind: "usage-limit.reached",
+        tone: "info",
+        turnId: "turn-claude-limit",
+      }),
+    );
+
+    harness.emit({
+      type: "session.exited",
+      eventId: asEventId("evt-claude-limit-exited"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      threadId: asThreadId("thread-1"),
+      createdAt: "2026-01-01T00:00:06.000Z",
+      payload: {},
+    });
+
+    const exitedThread = await waitForThread(
+      harness.readModel,
+      (entry) => entry.session?.updatedAt === "2026-01-01T00:00:06.000Z",
+    );
+    expect(exitedThread.session).toMatchObject({
+      status: "interrupted",
+      usageLimit: { occurrenceId: "evt-claude-limit-completed" },
+    });
+  });
+
   it("applies provider session.state.changed transitions directly", async () => {
     const harness = await createHarness();
     const waitingAt = "2026-01-01T00:00:00.000Z";
