@@ -4,6 +4,7 @@ import {
   collectWrappedTerminalLinkLine,
   extractTerminalLinks,
   isTerminalLinkActivation,
+  isTerminalUrl,
   resolvePathLinkTarget,
   resolveWrappedTerminalLinkRange,
   wrappedTerminalLinkRangeIntersectsBufferLine,
@@ -35,6 +36,13 @@ describe("extractTerminalLinks", () => {
         end: 81,
       },
     ]);
+  });
+
+  it("classifies uppercase schemes as URLs at activation time too", () => {
+    expect(isTerminalUrl("HTTPS://example.com/docs")).toBe(true);
+    expect(isTerminalUrl("Http://example.com")).toBe(true);
+    expect(isTerminalUrl("src/components/main.ts")).toBe(false);
+    expect(isTerminalUrl("httpsdocs/readme.md")).toBe(false);
   });
 
   it("finds URLs regardless of scheme casing", () => {

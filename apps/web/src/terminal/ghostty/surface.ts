@@ -1400,8 +1400,6 @@ export class GhosttyTerminalSurface {
     this.canvas.style.cursor = cursor;
   }
 
-  // Hover feedback only while the link modifier is held: an unmodified click
-  // never activates a link, so an unmodified hover must not promise one.
   private refreshHoveredLink(): void {
     const pointer = this.hoverPointer;
     const link = pointer && this.linkModifierActive ? this.linkAt(pointer.x, pointer.y) : null;
