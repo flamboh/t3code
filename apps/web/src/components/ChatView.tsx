@@ -824,6 +824,7 @@ interface PersistentThreadTerminalDrawerProps {
   closeShortcutLabel: string | undefined;
   keybindings: ResolvedKeybindingsConfig;
   onAddTerminalContext: (selection: TerminalContextSelection) => void;
+  onAddTerminalLink: (link: string) => void;
 }
 
 const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDrawer({
@@ -838,6 +839,7 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
   closeShortcutLabel,
   keybindings,
   onAddTerminalContext,
+  onAddTerminalLink,
 }: PersistentThreadTerminalDrawerProps) {
   const openTerminal = useAtomCommand(terminalEnvironment.open, "terminal open");
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
@@ -1137,6 +1139,13 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
     },
     [onAddTerminalContext, visible],
   );
+  const handleAddTerminalLink = useCallback(
+    (link: string) => {
+      if (!visible) return;
+      onAddTerminalLink(link);
+    },
+    [onAddTerminalLink, visible],
+  );
 
   if (!project || (!terminalUiState.terminalOpen && !active) || !cwd) {
     return null;
@@ -1179,6 +1188,7 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
           onCloseTerminal={closeTerminal}
           onHeightChange={setTerminalHeight}
           onAddTerminalContext={handleAddTerminalContext}
+          onAddTerminalLink={handleAddTerminalLink}
           terminalLabelsById={terminalLabelsById}
           terminalLaunchLocationsById={terminalLaunchLocationsById}
         />
@@ -1195,6 +1205,7 @@ interface PersistentThreadTerminalPanelProps {
   focusRequestId: number;
   keybindings: ResolvedKeybindingsConfig;
   onAddTerminalContext: (selection: TerminalContextSelection) => void;
+  onAddTerminalLink: (link: string) => void;
   onSplitTerminal: () => void;
   onSplitTerminalVertical: () => void;
   onNewTerminal: () => void;
@@ -1214,6 +1225,7 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
   focusRequestId,
   keybindings,
   onAddTerminalContext,
+  onAddTerminalLink,
   onSplitTerminal,
   onSplitTerminalVertical,
   onNewTerminal,
@@ -1352,6 +1364,7 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
       onCloseTerminal={onCloseTerminal}
       onHeightChange={() => undefined}
       onAddTerminalContext={onAddTerminalContext}
+      onAddTerminalLink={onAddTerminalLink}
       terminalLabelsById={terminalLabelsById}
       terminalLaunchLocationsById={terminalLaunchLocationsById}
       keybindings={keybindings}
@@ -3613,6 +3626,21 @@ export default function ChatView(props: ChatViewProps) {
   const addTerminalContextToDraft = useCallback(
     (selection: TerminalContextSelection) => {
       composerRef.current?.addTerminalContext(selection);
+    },
+    [composerRef],
+  );
+  const addTerminalLinkToDraft = useCallback(
+    (text: string) => {
+      const inserted =
+        composerRef.current?.insertTextAtEnd(`${text} `, {
+          ensureLeadingBoundary: true,
+        }) ?? false;
+      if (inserted) return;
+      toastManager.add({
+        type: "error",
+        title: "Unable to add to chat",
+        description: "The chat isn't ready to accept input right now.",
+      });
     },
     [composerRef],
   );
@@ -8019,6 +8047,7 @@ export default function ChatView(props: ChatViewProps) {
         focusRequestId={terminalFocusRequestId}
         keybindings={keybindings}
         onAddTerminalContext={addTerminalContextToDraft}
+        onAddTerminalLink={addTerminalLinkToDraft}
         onSplitTerminal={splitPanelTerminal}
         onSplitTerminalVertical={splitPanelTerminalVertical}
         onNewTerminal={addTerminalSurface}
@@ -8624,6 +8653,7 @@ export default function ChatView(props: ChatViewProps) {
             closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
             keybindings={keybindings}
             onAddTerminalContext={addTerminalContextToDraft}
+            onAddTerminalLink={addTerminalLinkToDraft}
           />
         ))}
       </div>
