@@ -5,8 +5,21 @@ import {
   shouldHandleTerminalExit,
   terminalContextMenuItems,
   terminalLinkChatText,
+  terminalLinkCopyText,
   terminalSelectionLineRange,
 } from "./ThreadTerminalDrawer";
+
+describe("terminalLinkCopyText", () => {
+  it("removes terminal positions from paths", () => {
+    expect(terminalLinkCopyText("src/index.ts:12:3")).toBe("src/index.ts");
+  });
+
+  it("leaves URLs intact", () => {
+    expect(terminalLinkCopyText("https://t3.codes/docs#terminal")).toBe(
+      "https://t3.codes/docs#terminal",
+    );
+  });
+});
 
 describe("terminalLinkChatText", () => {
   it("resolves relative paths against the terminal cwd", () => {
@@ -41,6 +54,7 @@ describe("terminalContextMenuItems", () => {
     const options = {
       hasSelection: false,
       link: "src/components/ThreadTerminalDrawer.tsx",
+      canOpenInPreview: false,
     };
 
     expect(terminalContextMenuItems(options)).toEqual([
@@ -57,14 +71,33 @@ describe("terminalContextMenuItems", () => {
     const options = {
       hasSelection: true,
       link: "https://t3.codes",
+      canOpenInPreview: true,
     };
 
     expect(terminalContextMenuItems(options)).toEqual([
-      { id: "open-link", label: "Open link" },
+      { id: "open-link-in-preview", label: "Open in integrated browser" },
+      { id: "open-link-external", label: "Open in system browser" },
       { id: "add-link-to-chat", label: "Add link to chat" },
       { id: "copy-link", label: "Copy link", icon: "copy" },
       { id: "add-to-chat", label: "Add to chat", disabled: false },
       { id: "copy", label: "Copy", disabled: false },
+      { id: "paste", label: "Paste" },
+    ]);
+  });
+
+  it("omits the integrated browser action when preview is unavailable", () => {
+    expect(
+      terminalContextMenuItems({
+        hasSelection: false,
+        link: "https://t3.codes",
+        canOpenInPreview: false,
+      }),
+    ).toEqual([
+      { id: "open-link-external", label: "Open in system browser" },
+      { id: "add-link-to-chat", label: "Add link to chat" },
+      { id: "copy-link", label: "Copy link", icon: "copy" },
+      { id: "add-to-chat", label: "Add to chat", disabled: true },
+      { id: "copy", label: "Copy", disabled: true },
       { id: "paste", label: "Paste" },
     ]);
   });

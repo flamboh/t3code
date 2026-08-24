@@ -85,7 +85,11 @@ import { useAttachedTerminalSession } from "../state/terminalSessions";
 import { serverEnvironment } from "../state/server";
 import { previewEnvironment } from "../state/preview";
 import { terminalEnvironment } from "../state/terminal";
-import { openTerminalLinkInPreview } from "./preview/openTerminalLinkInPreview";
+import {
+  canOpenTerminalLinkInPreview,
+  openTerminalLinkInIntegratedBrowser,
+  openTerminalLinkInPreview,
+} from "./preview/openTerminalLinkInPreview";
 import { useAtomCommand } from "../state/use-atom-command";
 import { preventTerminalCloseShortcut } from "../lib/terminalCloseShortcut";
 import {
@@ -242,12 +246,18 @@ export type TerminalContextMenuAction =
   | "copy"
   | "copy-link"
   | "open-link"
+  | "open-link-external"
+  | "open-link-in-preview"
   | "paste";
 
 export function terminalLinkChatText(link: string, cwd: string): string {
   if (isTerminalUrl(link)) return link;
   const { path } = splitPathAndPosition(resolvePathLinkTarget(link, cwd));
   return serializeComposerFileLink(path.replace(/(?!^)[/\\]+$/u, ""));
+}
+
+export function terminalLinkCopyText(link: string): string {
+  return isTerminalUrl(link) ? link : splitPathAndPosition(link).path;
 }
 
 /** Post-selection popup: just the two selection actions, always enabled. */
@@ -258,14 +268,23 @@ export function terminalSelectionMenuItems(): ContextMenuItem<"add-to-chat" | "c
   ];
 }
 
+/**
+ * Right-click menu for the terminal canvas: link actions when the pointer is
+ * over a link, selection actions, and Paste. Paste stays available because
+ * browser and Electron menus cannot paste into the terminal canvas.
+ */
 export function terminalContextMenuItems(options: {
   hasSelection: boolean;
   link: string | null;
+  canOpenInPreview: boolean;
 }): ContextMenuItem<TerminalContextMenuAction>[] {
   const linkItems: ContextMenuItem<TerminalContextMenuAction>[] = options.link
     ? isTerminalUrl(options.link)
       ? [
-          { id: "open-link", label: "Open link" },
+          ...(options.canOpenInPreview
+            ? [{ id: "open-link-in-preview" as const, label: "Open in integrated browser" }]
+            : []),
+          { id: "open-link-external", label: "Open in system browser" },
           { id: "add-link-to-chat", label: "Add link to chat" },
           { id: "copy-link", label: "Copy link", icon: "copy" },
         ]
@@ -676,7 +695,14 @@ export function TerminalViewport({
         let clicked: TerminalContextMenuAction | null;
         try {
           clicked = await localApi.contextMenu.show(
-            terminalContextMenuItems({ hasSelection: selectionAction !== null, link }),
+            terminalContextMenuItems({
+              hasSelection: selectionAction !== null,
+              link,
+              canOpenInPreview:
+                link !== null &&
+                isTerminalUrl(link) &&
+                canOpenTerminalLinkInPreview(link, threadRef),
+            }),
             { x: event.clientX, y: event.clientY },
           );
         } catch (error) {
@@ -701,7 +727,7 @@ export function TerminalViewport({
             if (!link) return;
             const isUrl = isTerminalUrl(link);
             await copyTerminalText(
-              link,
+              terminalLinkCopyText(link),
               isUrl ? "terminal link" : "terminal path",
               isUrl ? "Unable to copy terminal link" : "Unable to copy terminal path",
               requestId,
@@ -709,7 +735,13 @@ export function TerminalViewport({
             return;
           }
           case "open-link":
-            if (link) openTerminalLink(link, event);
+            if (link) openTerminalLink(link);
+            return;
+          case "open-link-external":
+            if (link) openTerminalUrlInBrowser(link);
+            return;
+          case "open-link-in-preview":
+            if (link) openTerminalUrlInPreview(link);
             return;
           case "paste":
             await pasteFromClipboard(requestId);
@@ -806,10 +838,34 @@ export function TerminalViewport({
 
       function handleLinkActivate(text: string, event: MouseEvent): void {
         if (!isTerminalLinkActivation(event)) return;
-        openTerminalLink(text, event);
+        openTerminalLink(text);
       }
 
-      function openTerminalLink(text: string, event: MouseEvent): void {
+      function openTerminalUrlInBrowser(text: string): void {
+        const latestTerminal = terminalRef.current;
+        if (!latestTerminal) return;
+        if (!localApi) {
+          writeSystemMessage(latestTerminal, "Opening links is unavailable in this browser.");
+          return;
+        }
+        void localApi.shell.openExternal(text).catch((error: unknown) => {
+          writeSystemMessage(
+            latestTerminal,
+            error instanceof Error ? error.message : "Unable to open link",
+          );
+        });
+      }
+
+      function openTerminalUrlInPreview(text: string): void {
+        void openTerminalLinkInIntegratedBrowser({
+          url: text,
+          threadRef,
+          openPreview,
+          fallbackToBrowser: () => openTerminalUrlInBrowser(text),
+        });
+      }
+
+      function openTerminalLink(text: string): void {
         const latestTerminal = terminalRef.current;
         if (!latestTerminal) return;
         if (isTerminalUrl(text)) {
@@ -817,19 +873,11 @@ export function TerminalViewport({
             writeSystemMessage(latestTerminal, "Opening links is unavailable in this browser.");
             return;
           }
-          const fallbackToBrowser = () => {
-            void localApi.shell.openExternal(text).catch((error: unknown) => {
-              writeSystemMessage(
-                latestTerminal,
-                error instanceof Error ? error.message : "Unable to open link",
-              );
-            });
-          };
           void openTerminalLinkInPreview({
             url: text,
             threadRef,
             openPreview,
-            fallbackToBrowser,
+            fallbackToBrowser: () => openTerminalUrlInBrowser(text),
           });
           return;
         }
