@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 
 import {
   extractMarkdownLinkHrefs,
+  isWindowsDrivePathHref,
   resolveInlineCodeFileLinkMeta,
   resolveMarkdownFileLinkMeta,
   resolveMarkdownFileLinkTarget,
@@ -12,6 +13,20 @@ import {
   shouldOpenMarkdownFileLinkInBrowserByDefault,
   shouldOpenMarkdownFileLinkInEditor,
 } from "./markdown-links";
+
+describe("isWindowsDrivePathHref", () => {
+  it("recognizes plain drive paths", () => {
+    expect(isWindowsDrivePathHref("C:\\repo\\image.png")).toBe(true);
+  });
+
+  it("recognizes percent-encoded drive paths", () => {
+    expect(isWindowsDrivePathHref("C:%5Crepo%5Cimage.png")).toBe(true);
+  });
+
+  it("rejects https URLs", () => {
+    expect(isWindowsDrivePathHref("https://example.com/image.png")).toBe(false);
+  });
+});
 
 function renderMarkdownLinkHref(markdown: string): string | undefined {
   let renderedHref: string | undefined;
