@@ -15,16 +15,12 @@ import {
 } from "./markdown-links";
 
 describe("isWindowsDrivePathHref", () => {
-  it("recognizes plain drive paths", () => {
-    expect(isWindowsDrivePathHref("C:\\repo\\image.png")).toBe(true);
-  });
-
-  it("recognizes percent-encoded drive paths", () => {
-    expect(isWindowsDrivePathHref("C:%5Crepo%5Cimage.png")).toBe(true);
-  });
-
-  it("rejects https URLs", () => {
-    expect(isWindowsDrivePathHref("https://example.com/image.png")).toBe(false);
+  it.each([
+    ["C:\\repo\\image.png", true],
+    ["C:%5Crepo%5Cimage.png", true],
+    ["https://example.com/image.png", false],
+  ])("classifies %s as %s", (href, expected) => {
+    expect(isWindowsDrivePathHref(href)).toBe(expected);
   });
 });
 

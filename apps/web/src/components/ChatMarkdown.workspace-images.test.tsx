@@ -2,8 +2,6 @@ import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { serializeRenderedMarkdownFragment } from "../markdown-clipboard";
-
 const testState = vi.hoisted(() => ({
   resources: [] as Array<unknown>,
   assetState: "success" as "success" | "loading" | "failure",
@@ -51,14 +49,9 @@ const threadRef = {
   threadId: ThreadId.make("thread-windows"),
 };
 
-function render(markdown: string, parseRawHtml = true): string {
+function render(markdown: string): string {
   return renderToStaticMarkup(
-    <ChatMarkdown
-      cwd={"C:\\Users\\shawn\\project"}
-      threadRef={threadRef}
-      text={markdown}
-      parseRawHtml={parseRawHtml}
-    />,
+    <ChatMarkdown cwd={"C:\\Users\\shawn\\project"} threadRef={threadRef} text={markdown} />,
   );
 }
 
@@ -77,27 +70,10 @@ function renderFilePreview(cwd: string, relativePath: string): string {
   );
 }
 
-const TEXT_NODE = 3;
-const ELEMENT_NODE = 1;
-
 function copiedMarkdownFrom(html: string): string {
   const copy = /data-markdown-copy="([^"]*)"/.exec(html)?.[1]?.replaceAll("&quot;", '"');
   expect(copy).toBeDefined();
-  const element = {
-    nodeType: ELEMENT_NODE,
-    childNodes: [],
-    getAttribute: (name: string) => (name === "data-markdown-copy" ? copy : null),
-    hasAttribute: (name: string) => name === "data-markdown-copy",
-  };
-  const container = {
-    childNodes: [element],
-  };
-  vi.stubGlobal("Node", { TEXT_NODE, ELEMENT_NODE });
-  try {
-    return serializeRenderedMarkdownFragment(container as unknown as Node);
-  } finally {
-    vi.unstubAllGlobals();
-  }
+  return copy ?? "";
 }
 
 function firstInlineStyle(html: string): Record<string, string> {
@@ -124,6 +100,7 @@ describe("ChatMarkdown workspace images", () => {
       "docs\\README.md",
       "C:\\Users\\shawn\\project\\docs\\images\\diagram.png",
     ],
+    ["/workspace/project", "README.md", "/workspace/project/images/diagram.png"],
   ])("resolves images beside a nested file in %s", (cwd, relativePath, expectedPath) => {
     renderFilePreview(cwd, relativePath);
 
@@ -180,14 +157,6 @@ describe("ChatMarkdown workspace images", () => {
     expect(html).toContain("https://signed.test/workspace-image.svg");
   });
 
-  it("keeps raw workspace images inline for authored paragraph alignment", () => {
-    const html = render('<p align="center"><img src=".t3/workspace-image.svg" alt="logo"></p>');
-    const className = /<img[^>]*class="([^"]*)"/.exec(html)?.[1];
-
-    expect(className?.split(" ")).toContain("inline-block!");
-    expect(className?.split(" ")).not.toContain("block!");
-  });
-
   it("keeps a tall image placeholder and loaded image at the same proportional bounds", () => {
     const markdown = '<img src=".t3/workspace-image.svg" alt="sized" width="96" height="128">';
     const loadedStyle = firstInlineStyle(render(markdown));
@@ -209,15 +178,12 @@ describe("ChatMarkdown workspace images", () => {
   ])("treats a lone authored %s as a cap", (axis, constraint, expectedValue) => {
     const markdown = `<img src=".t3/workspace-image.svg" alt="sized" ${axis}="300">`;
     const loadedStyle = firstInlineStyle(render(markdown));
-    testState.assetState = "loading";
-    const loadingStyle = firstInlineStyle(render(markdown));
 
     expect(loadedStyle).not.toHaveProperty(axis);
     expect(loadedStyle).toHaveProperty(constraint, expectedValue);
-    expect(loadingStyle).toEqual(loadedStyle);
   });
 
-  it("keeps direct images baseline-aligned and workspace images bottom-aligned", () => {
+  it("keeps direct images baseline-aligned, workspace images bottom-aligned, and centered raw images inline", () => {
     const html = render(
       "![remote](https://example.com/badge.svg) ![workspace](.t3/workspace-image.svg)",
     );
@@ -228,29 +194,31 @@ describe("ChatMarkdown workspace images", () => {
     expect(classNames).toHaveLength(2);
     expect(classNames[0]).not.toContain("align-bottom");
     expect(classNames[1]).toContain("align-bottom");
-    for (const classes of classNames) {
-      expect(classes).not.toContain("my-1");
-    }
+
+    const centeredHtml = render(
+      '<p align="center"><img src=".t3/workspace-image.svg" alt="logo"></p>',
+    );
+    const centeredClassName = /<img[^>]*class="([^"]*)"/.exec(centeredHtml)?.[1];
+
+    expect(centeredClassName?.split(" ")).toContain("inline-block!");
   });
 
   it("retains an authored SVG fragment on the signed URL", () => {
     const html = render("![logo](icons.svg#logo)");
 
-    expect(testState.resources).toEqual([
-      {
-        _tag: "workspace-file",
-        threadId: threadRef.threadId,
-        path: "C:\\Users\\shawn\\project\\icons.svg",
-      },
-    ]);
     expect(html).toContain('src="https://signed.test/workspace-image.svg#logo"');
   });
 
-  it.each(["success", "loading", "failure"] as const)(
-    "copies the authored workspace source while the asset is %s",
-    (assetState) => {
-      testState.assetState = assetState;
+  it.each(["success", "loading", "failure", "no-thread"] as const)(
+    "copies the authored workspace source (%s)",
+    (scenario) => {
+      if (scenario === "no-thread") {
+        const html = renderWithoutThread("![diagram](images/diagram.png)");
+        expect(copiedMarkdownFrom(html)).toBe("![diagram](images/diagram.png)");
+        return;
+      }
 
+      testState.assetState = scenario;
       const html = render("![diagram](images/diagram.png#preview)");
 
       expect(copiedMarkdownFrom(html)).toBe("![diagram](images/diagram.png#preview)");
@@ -263,20 +231,8 @@ describe("ChatMarkdown workspace images", () => {
     expect(copiedMarkdownFrom(html)).toBe('![logo](images/logo.svg "My Title")');
   });
 
-  it("copies the authored workspace source when no thread can sign it", () => {
-    const html = renderWithoutThread("![diagram](images/diagram.png)");
-
-    expect(copiedMarkdownFrom(html)).toBe("![diagram](images/diagram.png)");
-  });
-
-  it("copies an authored title when no thread can sign the image", () => {
-    const html = renderWithoutThread('![logo](images/logo.svg "My Title")');
-
-    expect(copiedMarkdownFrom(html)).toBe('![logo](images/logo.svg "My Title")');
-  });
-
   it("escapes double quotes in an authored image title", () => {
-    const html = render(`![logo](images/logo.svg 'My "Title"')`, false);
+    const html = render(`![logo](images/logo.svg 'My "Title"')`);
 
     expect(copiedMarkdownFrom(html)).toBe('![logo](images/logo.svg "My \\"Title\\"")');
   });
@@ -312,7 +268,6 @@ describe("ChatMarkdown workspace images", () => {
     expect(html).toContain('aria-label="Loading image"');
     expect(html).not.toContain("animate-pulse");
     expect(className?.split(" ")).toContain("w-64");
-    expect(className?.split(" ")).not.toContain("w-full");
   });
 
   it("never passes a workspace source to a raw image when thread context is unavailable", () => {

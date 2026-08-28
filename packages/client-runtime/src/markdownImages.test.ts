@@ -62,11 +62,10 @@ describe("classifyMarkdownImageSource", () => {
 });
 
 describe("markdownImageSourceFragment", () => {
-  it("returns only the fragment from an angle-bracketed source with a query", () => {
-    expect(markdownImageSourceFragment("<icons.svg?version=2#logo>")).toBe("#logo");
-  });
-
-  it("ignores a query when the source has no fragment", () => {
-    expect(markdownImageSourceFragment("icons.svg?version=2")).toBe("");
+  it.each([
+    ["<icons.svg?version=2#logo>", "#logo"],
+    ["icons.svg?version=2", ""],
+  ])("extracts %s as %s", (source, fragment) => {
+    expect(markdownImageSourceFragment(source)).toBe(fragment);
   });
 });
