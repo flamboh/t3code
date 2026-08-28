@@ -51,9 +51,14 @@ const threadRef = {
   threadId: ThreadId.make("thread-windows"),
 };
 
-function render(markdown: string): string {
+function render(markdown: string, parseRawHtml = true): string {
   return renderToStaticMarkup(
-    <ChatMarkdown cwd={"C:\\Users\\shawn\\project"} threadRef={threadRef} text={markdown} />,
+    <ChatMarkdown
+      cwd={"C:\\Users\\shawn\\project"}
+      threadRef={threadRef}
+      text={markdown}
+      parseRawHtml={parseRawHtml}
+    />,
   );
 }
 
@@ -76,7 +81,7 @@ const TEXT_NODE = 3;
 const ELEMENT_NODE = 1;
 
 function copiedMarkdownFrom(html: string): string {
-  const copy = /data-markdown-copy="([^"]*)"/.exec(html)?.[1];
+  const copy = /data-markdown-copy="([^"]*)"/.exec(html)?.[1]?.replaceAll("&quot;", '"');
   expect(copy).toBeDefined();
   const element = {
     nodeType: ELEMENT_NODE,
@@ -252,10 +257,28 @@ describe("ChatMarkdown workspace images", () => {
     },
   );
 
+  it("copies an authored title with a workspace image", () => {
+    const html = render('![logo](images/logo.svg "My Title")');
+
+    expect(copiedMarkdownFrom(html)).toBe('![logo](images/logo.svg "My Title")');
+  });
+
   it("copies the authored workspace source when no thread can sign it", () => {
     const html = renderWithoutThread("![diagram](images/diagram.png)");
 
     expect(copiedMarkdownFrom(html)).toBe("![diagram](images/diagram.png)");
+  });
+
+  it("copies an authored title when no thread can sign the image", () => {
+    const html = renderWithoutThread('![logo](images/logo.svg "My Title")');
+
+    expect(copiedMarkdownFrom(html)).toBe('![logo](images/logo.svg "My Title")');
+  });
+
+  it("escapes double quotes in an authored image title", () => {
+    const html = render(`![logo](images/logo.svg 'My "Title"')`, false);
+
+    expect(copiedMarkdownFrom(html)).toBe('![logo](images/logo.svg "My \\"Title\\"")');
   });
 
   it("uses a static bounded-width placeholder while a signed asset URL loads", () => {

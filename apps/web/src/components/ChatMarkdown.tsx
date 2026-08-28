@@ -250,18 +250,18 @@ type MarkdownImageHastNode = {
   children?: MarkdownImageHastNode[];
 };
 
-/** Carries raw Windows drive paths through the sanitizer to the image renderer. */
-function rehypePreserveWindowsImageSrc() {
+/** Carries authored image source metadata through the sanitizer to the image renderer. */
+function rehypePreserveImageSourceMeta() {
   return (tree: MarkdownImageHastNode) => {
     const visit = (node: MarkdownImageHastNode) => {
       const src = node.properties?.src;
-      if (
-        node.type === "element" &&
-        node.tagName === "img" &&
-        typeof src === "string" &&
-        isWindowsDrivePathHref(src)
-      ) {
-        node.properties = { ...node.properties, dataLocalSrc: src };
+      const title = node.properties?.title;
+      if (node.type === "element" && node.tagName === "img") {
+        node.properties = {
+          ...node.properties,
+          ...(typeof src === "string" && isWindowsDrivePathHref(src) ? { dataLocalSrc: src } : {}),
+          ...(typeof title === "string" ? { dataMarkdownTitle: title } : {}),
+        };
       }
       node.children?.forEach(visit);
     };
@@ -277,7 +277,7 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
     "*": (defaultSchema.attributes?.["*"] ?? []).filter((attribute) => attribute !== "title"),
     code: [...(defaultSchema.attributes?.code ?? []), "dataCodeMeta", "dataInlineCode"],
     blockquote: [...(defaultSchema.attributes?.blockquote ?? []), "dataAlert"],
-    img: [...(defaultSchema.attributes?.img ?? []), "dataLocalSrc"],
+    img: [...(defaultSchema.attributes?.img ?? []), "dataLocalSrc", "dataMarkdownTitle"],
   },
   protocols: {
     ...defaultSchema.protocols,
@@ -305,7 +305,7 @@ const CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS = [
 
 const CHAT_MARKDOWN_REHYPE_PLUGINS = [
   rehypeRaw,
-  rehypePreserveWindowsImageSrc,
+  rehypePreserveImageSourceMeta,
   [rehypeSanitize, CHAT_MARKDOWN_SANITIZE_SCHEMA],
 ] satisfies NonNullable<ReactMarkdownOptions["rehypePlugins"]>;
 
@@ -1055,6 +1055,11 @@ const CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME = cn(
   "h-auto w-auto object-contain",
   CHAT_MARKDOWN_IMAGE_BOUNDS_CLASS_NAME,
 );
+
+function markdownImageCopy(alt: string, src: string, title: string | undefined): string {
+  const titleSuffix = title === undefined ? "" : ` "${title.replaceAll('"', '\\"')}"`;
+  return `![${alt}](${src}${titleSuffix})`;
+}
 
 function authoredImageSizeStyle(
   width: string | number | undefined,
@@ -2202,14 +2207,17 @@ function ChatMarkdown({
           </code>
         );
       },
-      img({ node, title: _title, src, alt, ...props }) {
+      img({ node, title, src, alt, ...props }) {
         const localSrc = node?.properties?.dataLocalSrc;
+        const markdownTitle = node?.properties?.dataMarkdownTitle;
         const authoredSrc = typeof localSrc === "string" ? localSrc : src;
+        const authoredTitle = typeof markdownTitle === "string" ? markdownTitle : title;
         const srcString =
           typeof authoredSrc === "string" ? normalizeMarkdownLinkDestination(authoredSrc) : "";
         const classifiedSrc =
           typeof localSrc === "string" ? srcString.replaceAll("\\", "/") : srcString;
         const altText = alt ?? "";
+        const copyMarkdown = markdownImageCopy(altText, srcString, authoredTitle);
         const authoredSizeStyle = authoredImageSizeStyle(props.width, props.height);
         const imageSource = classifyMarkdownImageSource(classifiedSrc, imageBaseDir ?? cwd);
         if (imageSource._tag === "Direct") {
@@ -2230,15 +2238,13 @@ function ChatMarkdown({
               threadRef={threadRef}
               path={imageSource.path}
               alt={altText}
-              copyMarkdown={`![${altText}](${srcString})`}
+              copyMarkdown={copyMarkdown}
               srcFragment={markdownImageSourceFragment(classifiedSrc)}
               style={authoredSizeStyle}
             />
           );
         }
-        return (
-          <ChatMarkdownImageFallback alt={altText} copyMarkdown={`![${altText}](${srcString})`} />
-        );
+        return <ChatMarkdownImageFallback alt={altText} copyMarkdown={copyMarkdown} />;
       },
       table({ node: _node, ...props }) {
         return <MarkdownTable {...props} />;
