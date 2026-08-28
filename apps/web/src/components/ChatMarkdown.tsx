@@ -1057,8 +1057,10 @@ const CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME = cn(
 );
 
 function markdownImageCopy(alt: string, src: string, title: string | undefined): string {
-  const titleSuffix = title === undefined ? "" : ` "${title.replaceAll('"', '\\"')}"`;
-  return `![${alt}](${src}${titleSuffix})`;
+  const escapedAlt = alt.replaceAll("\\", "\\\\").replaceAll("[", "\\[").replaceAll("]", "\\]");
+  const titleSuffix =
+    title === undefined ? "" : ` "${title.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+  return `![${escapedAlt}](${src}${titleSuffix})`;
 }
 
 function authoredImageSizeStyle(

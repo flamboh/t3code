@@ -281,6 +281,28 @@ describe("ChatMarkdown workspace images", () => {
     expect(copiedMarkdownFrom(html)).toBe('![logo](images/logo.svg "My \\"Title\\"")');
   });
 
+  it("escapes a closing bracket in authored image alt text", () => {
+    const markdown = String.raw`![build\] badge](badge.svg)`;
+
+    expect(copiedMarkdownFrom(render(markdown))).toBe(markdown);
+  });
+
+  it("escapes a literal backslash in authored image alt text", () => {
+    const markdown = String.raw`![folder\\name](badge.svg)`;
+
+    expect(copiedMarkdownFrom(render(markdown))).toBe(markdown);
+  });
+
+  it("escapes a literal backslash before a quote in an authored image title", () => {
+    const html = render(
+      String.raw`<img src="images/logo.svg" alt="logo" title="Path \&quot;Title\&quot;">`,
+    );
+
+    expect(copiedMarkdownFrom(html)).toBe(
+      String.raw`![logo](images/logo.svg "Path \\\"Title\\\"")`,
+    );
+  });
+
   it("uses a static bounded-width placeholder while a signed asset URL loads", () => {
     testState.assetState = "loading";
 
