@@ -183,7 +183,7 @@ describe("ChatMarkdown workspace images", () => {
     expect(loadedStyle).toHaveProperty(constraint, expectedValue);
   });
 
-  it("keeps direct images baseline-aligned, workspace images bottom-aligned, and centered raw images inline", () => {
+  it("keeps all images baseline-aligned and workspace images inline", () => {
     const html = render(
       "![remote](https://example.com/badge.svg) ![workspace](.t3/workspace-image.svg)",
     );
@@ -192,8 +192,7 @@ describe("ChatMarkdown workspace images", () => {
     );
 
     expect(classNames).toHaveLength(2);
-    expect(classNames[0]).not.toContain("align-bottom");
-    expect(classNames[1]).toContain("align-bottom");
+    expect(classNames[1]).toContain("inline-block!");
 
     const centeredHtml = render(
       '<p align="center"><img src=".t3/workspace-image.svg" alt="logo"></p>',

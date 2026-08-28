@@ -1050,7 +1050,6 @@ const MarkdownLinkFavicon = memo(function MarkdownLinkFavicon({ host }: { host: 
 });
 
 const CHAT_MARKDOWN_IMAGE_BOUNDS_CLASS_NAME = "max-h-[30rem] max-w-[min(100%,30rem)]";
-const CHAT_MARKDOWN_IMAGE_ALIGNMENT_CLASS_NAME = "align-bottom";
 const CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME = cn(
   "h-auto w-auto object-contain",
   CHAT_MARKDOWN_IMAGE_BOUNDS_CLASS_NAME,
@@ -1084,10 +1083,7 @@ function authoredImageSizeStyle(
   return undefined;
 }
 
-const CHAT_MARKDOWN_WORKSPACE_IMAGE_LAYOUT_CLASS_NAME = cn(
-  "inline-block!",
-  CHAT_MARKDOWN_IMAGE_ALIGNMENT_CLASS_NAME,
-);
+const CHAT_MARKDOWN_WORKSPACE_IMAGE_LAYOUT_CLASS_NAME = "inline-block!";
 const CHAT_MARKDOWN_WORKSPACE_IMAGE_CLASS_NAME = cn(
   CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME,
   CHAT_MARKDOWN_WORKSPACE_IMAGE_LAYOUT_CLASS_NAME,
