@@ -1,4 +1,4 @@
-import { USAGE_CONTRACT_VERSION } from "@t3tools/contracts";
+import { EnvironmentId, USAGE_CONTRACT_VERSION } from "@t3tools/contracts";
 import { mergeUsage } from "@t3tools/shared/usageMerge";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -104,10 +104,8 @@ const modelTotals = Object.freeze([
   },
 ]);
 
-beforeEach(() => {
-  testState.metric = "cost";
-  testState.breakdown = "time";
-  testState.useUsage.mockReturnValue({
+function usageView() {
+  return {
     merged: {
       ...mergeUsage([], USAGE_CONTRACT_VERSION),
       models: modelTotals,
@@ -132,6 +130,50 @@ beforeEach(() => {
     isPending: false,
     isPartial: false,
     refresh: vi.fn(),
+  };
+}
+
+beforeEach(() => {
+  testState.metric = "cost";
+  testState.breakdown = "time";
+  testState.useUsage.mockReturnValue(usageView());
+});
+
+describe("UsagePage loading coverage", () => {
+  it("renders available totals while another environment is still reporting", () => {
+    const loaded = usageView();
+    testState.useUsage.mockReturnValue({
+      ...loaded,
+      merged: {
+        ...loaded.merged,
+        costUsd: 42.37,
+      },
+      environments: [
+        {
+          environmentId: EnvironmentId.make("loaded-environment"),
+          label: "Laptop",
+          isPending: false,
+          error: null,
+          summary: {},
+        },
+        {
+          environmentId: EnvironmentId.make("pending-environment"),
+          label: "Remote",
+          isPending: true,
+          error: null,
+          summary: null,
+        },
+      ],
+      isPartial: true,
+    });
+
+    const markup = renderToStaticMarkup(<UsagePage />);
+
+    expect(markup).toContain("$42.37");
+    expect(markup).toContain("$11.00");
+    expect(markup).toContain("Laptop");
+    expect(markup).toContain("Remote…");
+    expect(markup).toContain("1 device still scanning");
   });
 });
 

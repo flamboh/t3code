@@ -425,7 +425,7 @@ describe("environment query lifecycle", () => {
     ),
   );
 
-  it.effect("keeps the timeout deadline through retries and restarts after refresh", () =>
+  it.effect("keeps one 30-second timeout deadline through connection retries", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const harness = yield* makeEnvironmentQueryHarness(
@@ -444,7 +444,7 @@ describe("environment query lifecycle", () => {
             reportDefect: false,
             reportFailure: false,
           }),
-        ).pipe(Effect.timeout("31 seconds"), Effect.forkChild({ startImmediately: true }));
+        ).pipe(Effect.forkChild({ startImmediately: true }));
         yield* Effect.yieldNow;
         yield* TestClock.adjust("20 seconds");
         yield* SubscriptionRef.set(
@@ -460,25 +460,93 @@ describe("environment query lifecycle", () => {
           }),
         );
         yield* Effect.yieldNow;
-        yield* TestClock.adjust("11 seconds");
+        yield* TestClock.adjust("9 seconds");
+        expect(resultFiber.pollUnsafe()).toBeUndefined();
+
+        yield* TestClock.adjust("1 second");
+        expect(resultFiber.pollUnsafe()).toBeDefined();
         const result = yield* Fiber.join(resultFiber);
 
         expect(AsyncResult.isFailure(result)).toBe(true);
         if (AsyncResult.isFailure(result)) {
           expect(Cause.squash(result.cause)).toMatchObject({ _tag: "TimeoutError" });
         }
+      }),
+    ),
+  );
+
+  it.effect("restarts a timed-out query after an explicit refresh", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        let executions = 0;
+        const harness = yield* makeEnvironmentQueryHarness(
+          Effect.suspend(() => {
+            executions += 1;
+            return executions === 1 ? Effect.never : Effect.succeed("refreshed");
+          }),
+          "30 seconds",
+        );
+        const registry = yield* mountEnvironmentQuery(harness.atom);
+        const firstResultFiber = yield* AtomRegistry.getResult(registry, harness.atom, {
+          suspendOnWaiting: true,
+        }).pipe(Effect.exit, Effect.forkChild({ startImmediately: true }));
+
+        yield* Effect.yieldNow;
+        expect(executions).toBe(1);
+        yield* TestClock.adjust("30 seconds");
+        const firstResult = yield* Fiber.join(firstResultFiber);
+        expect(Exit.isFailure(firstResult)).toBe(true);
+        if (Exit.isFailure(firstResult)) {
+          expect(Cause.squash(firstResult.cause)).toMatchObject({ _tag: "TimeoutError" });
+        }
 
         registry.refresh(harness.atom);
+        expect(
+          yield* AtomRegistry.getResult(registry, harness.atom, {
+            suspendOnWaiting: true,
+          }),
+        ).toBe("refreshed");
+        expect(executions).toBe(2);
+      }),
+    ),
+  );
+
+  it.effect("recovers automatically when an environment reconnects after timing out", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeEnvironmentQueryHarness(
+          Effect.succeed("reconnected"),
+          "30 seconds",
+        );
+        yield* SubscriptionRef.set(
+          harness.supervisorState,
+          queryConnectionState({ phase: "connecting", stage: "opening" }),
+        );
+        yield* SubscriptionRef.set(harness.supervisorSession, Option.none());
+        const registry = yield* mountEnvironmentQuery(harness.atom);
+        const timedOutFiber = yield* AtomRegistry.getResult(registry, harness.atom, {
+          suspendOnWaiting: true,
+        }).pipe(Effect.exit, Effect.forkChild({ startImmediately: true }));
+
+        yield* Effect.yieldNow;
+        yield* TestClock.adjust("30 seconds");
+        const timedOut = yield* Fiber.join(timedOutFiber);
+        expect(Exit.isFailure(timedOut)).toBe(true);
+        if (Exit.isFailure(timedOut)) {
+          expect(Cause.squash(timedOut.cause)).toMatchObject({ _tag: "TimeoutError" });
+        }
+
         yield* SubscriptionRef.set(harness.supervisorSession, Option.some(QUERY_RPC_SESSION));
         yield* SubscriptionRef.set(
           harness.supervisorState,
           queryConnectionState({ generation: 2 }),
         );
+        yield* Effect.yieldNow;
         expect(
           yield* AtomRegistry.getResult(registry, harness.atom, {
             suspendOnWaiting: true,
           }),
-        ).toBe("connected");
+        ).toBe("reconnected");
       }),
     ),
   );

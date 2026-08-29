@@ -3,21 +3,25 @@ import {
   type ServerConfig,
   type ServerConfigStreamEvent,
   type ServerLifecycleWelcomePayload,
+  type UsageDay,
   WS_METHODS,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as TestClock from "effect/testing/TestClock";
+import { Atom, AtomRegistry } from "effect/unstable/reactivity";
 import { RpcClientError } from "effect/unstable/rpc";
 import * as Socket from "effect/unstable/socket/Socket";
 
@@ -25,12 +29,15 @@ import {
   AVAILABLE_CONNECTION_STATE,
   PrimaryConnectionTarget,
   type PreparedConnection,
+  type SupervisorConnectionState,
 } from "../connection/model.ts";
+import * as EnvironmentRegistry from "../connection/registry.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as Persistence from "../platform/persistence.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import type { RpcSession } from "../rpc/session.ts";
 import {
+  createServerEnvironmentAtoms,
   makeEnvironmentServerConfigState,
   isLegacyUpdateHandoffLoss,
   matchesServerUpdateReadyEvent,
@@ -84,6 +91,95 @@ function session(client: WsRpcProtocolClient): RpcSession {
     closed: Effect.never,
   };
 }
+
+describe("usage summary query", () => {
+  it.effect("settles an unreachable environment after 30 seconds", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const supervisorState = yield* SubscriptionRef.make<SupervisorConnectionState>({
+          ...AVAILABLE_CONNECTION_STATE,
+          desired: true,
+          network: "online",
+          phase: "connecting",
+          stage: "opening",
+          attempt: 1,
+        });
+        const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
+          target: TARGET,
+          state: supervisorState,
+          session: yield* SubscriptionRef.make<Option.Option<RpcSession>>(Option.none()),
+          prepared: yield* SubscriptionRef.make<Option.Option<PreparedConnection>>(Option.none()),
+          connect: Effect.void,
+          disconnect: Effect.void,
+          retryNow: Effect.void,
+        } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
+        const followStream: EnvironmentRegistry.EnvironmentRegistry["Service"]["followStream"] = (
+          _environmentId,
+          stream,
+        ) => Stream.provideService(stream, EnvironmentSupervisor.EnvironmentSupervisor, supervisor);
+        const environmentRegistry = EnvironmentRegistry.EnvironmentRegistry.of({
+          followStream,
+        } as unknown as EnvironmentRegistry.EnvironmentRegistry["Service"]);
+        const cache = Persistence.EnvironmentCacheStore.of({
+          loadShell: () => Effect.succeed(Option.none()),
+          saveShell: () => Effect.void,
+          loadThread: () => Effect.succeed(Option.none()),
+          saveThread: () => Effect.void,
+          removeThread: () => Effect.void,
+          loadServerConfig: () => Effect.succeed(Option.none()),
+          saveServerConfig: () => Effect.void,
+          loadVcsRefs: () => Effect.succeed(Option.none()),
+          saveVcsRefs: () => Effect.void,
+          removeVcsRefs: () => Effect.void,
+          clearVcsRefs: () => Effect.void,
+          clear: () => Effect.void,
+        });
+        const clock = yield* Clock.Clock;
+        const runtime = Atom.runtime(
+          Layer.mergeAll(
+            Layer.succeed(EnvironmentRegistry.EnvironmentRegistry, environmentRegistry),
+            Layer.succeed(Persistence.EnvironmentCacheStore, cache),
+            Layer.succeed(Clock.Clock, clock),
+          ),
+        );
+        const atoms = createServerEnvironmentAtoms(runtime, {
+          initialConfigValueAtom: () => Atom.make(null),
+        });
+        const atom = atoms.usageSummary({
+          environmentId: TARGET.environmentId,
+          input: {
+            sinceDay: "2026-08-01" as UsageDay,
+            untilDay: "2026-08-29" as UsageDay,
+            timeZone: "UTC",
+          },
+        });
+        const registry = AtomRegistry.make();
+        const unmount = registry.mount(atom);
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            unmount();
+            registry.dispose();
+          }),
+        );
+        const resultFiber = yield* AtomRegistry.getResult(registry, atom, {
+          suspendOnWaiting: true,
+        }).pipe(Effect.exit, Effect.forkChild({ startImmediately: true }));
+
+        yield* Effect.yieldNow;
+        yield* TestClock.adjust("29 seconds");
+        expect(resultFiber.pollUnsafe()).toBeUndefined();
+
+        yield* TestClock.adjust("1 second");
+        expect(resultFiber.pollUnsafe()).toBeDefined();
+        const result = yield* Fiber.join(resultFiber);
+        expect(Exit.isFailure(result)).toBe(true);
+        if (Exit.isFailure(result)) {
+          expect(Cause.squash(result.cause)).toMatchObject({ _tag: "TimeoutError" });
+        }
+      }),
+    ),
+  );
+});
 
 describe("update restart reconnect nudges", () => {
   it.effect("retries a desktop commit that was lost before delivery", () =>
