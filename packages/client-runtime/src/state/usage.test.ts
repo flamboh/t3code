@@ -1,6 +1,7 @@
 import {
   EnvironmentId,
   USAGE_CONTRACT_VERSION,
+  USAGE_MERGE_COMPATIBLE_SINCE,
   type UsageDay,
   type UsageSummary,
 } from "@t3tools/contracts";
@@ -127,7 +128,7 @@ describe("usage state", () => {
   it("keeps the initial placeholder when only an incompatible environment has answered", () => {
     const incompatible = status(
       ENVIRONMENT_A,
-      AsyncResult.success(summary(10, USAGE_CONTRACT_VERSION - 1)),
+      AsyncResult.success(summary(10, USAGE_MERGE_COMPATIBLE_SINCE - 1)),
     );
     const state = deriveUsageState([
       incompatible,
@@ -137,5 +138,16 @@ describe("usage state", () => {
     expect(state).toMatchObject({ isPending: true, isPartial: false });
     expect(state.merged.costUsd).toBe(0);
     expect(state.merged.staleEnvironments).toEqual([ENVIRONMENT_A]);
+  });
+
+  it("renders a compatible older answer while another environment is reporting", () => {
+    const state = deriveUsageState([
+      status(ENVIRONMENT_A, AsyncResult.success(summary(10, USAGE_MERGE_COMPATIBLE_SINCE))),
+      status(ENVIRONMENT_B, AsyncResult.initial(true)),
+    ]);
+
+    expect(state).toMatchObject({ isPending: false, isPartial: true });
+    expect(state.merged.costUsd).toBe(10);
+    expect(state.merged.staleEnvironments).toEqual([]);
   });
 });

@@ -425,7 +425,7 @@ describe("environment query lifecycle", () => {
     ),
   );
 
-  it.effect("keeps the timeout deadline while the connection state changes", () =>
+  it.effect("keeps the timeout deadline through retries and restarts after refresh", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const harness = yield* makeEnvironmentQueryHarness(
@@ -467,6 +467,18 @@ describe("environment query lifecycle", () => {
         if (AsyncResult.isFailure(result)) {
           expect(Cause.squash(result.cause)).toMatchObject({ _tag: "TimeoutError" });
         }
+
+        registry.refresh(harness.atom);
+        yield* SubscriptionRef.set(harness.supervisorSession, Option.some(QUERY_RPC_SESSION));
+        yield* SubscriptionRef.set(
+          harness.supervisorState,
+          queryConnectionState({ generation: 2 }),
+        );
+        expect(
+          yield* AtomRegistry.getResult(registry, harness.atom, {
+            suspendOnWaiting: true,
+          }),
+        ).toBe("connected");
       }),
     ),
   );

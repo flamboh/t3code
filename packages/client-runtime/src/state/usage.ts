@@ -1,4 +1,9 @@
-import { USAGE_CONTRACT_VERSION, type EnvironmentId, type UsageSummary } from "@t3tools/contracts";
+import {
+  USAGE_CONTRACT_VERSION,
+  USAGE_MERGE_COMPATIBLE_SINCE,
+  type EnvironmentId,
+  type UsageSummary,
+} from "@t3tools/contracts";
 import { mergeUsage, type EnvironmentUsage, type MergedUsage } from "@t3tools/shared/usageMerge";
 import { AsyncResult } from "effect/unstable/reactivity";
 
@@ -50,7 +55,9 @@ export function deriveUsageState(
   );
   const merged = mergeUsage(answered, USAGE_CONTRACT_VERSION);
   const compatibleAnswers = answered.filter(
-    (environment) => environment.summary.contractVersion === USAGE_CONTRACT_VERSION,
+    (environment) =>
+      environment.summary.contractVersion >= USAGE_MERGE_COMPATIBLE_SINCE &&
+      environment.summary.contractVersion <= USAGE_CONTRACT_VERSION,
   ).length;
   const stillReporting = environments.filter(
     (environment) => environment.summary === null && environment.error === null,
