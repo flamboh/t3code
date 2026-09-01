@@ -149,7 +149,7 @@ describe("pull request merge completion", () => {
     ).toMatchObject({
       label: "Merged",
       disabled: true,
-      toneClassName: expect.stringContaining("bg-violet"),
+      toneClassName: expect.stringContaining("text-violet"),
     });
   });
 
