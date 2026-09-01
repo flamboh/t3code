@@ -1065,6 +1065,7 @@ export function PullRequestDetailPanel({
   const mergeButtonPresentation = pullRequestMergeButtonPresentation({
     pendingAction: activePendingAction,
     mergeHold,
+    state: detail?.state ?? null,
     methodLabel: selectedMergeMethodLabel,
   });
   const conflicting = detail?.state === "open" && detail.mergeability === "conflicting";
@@ -1342,7 +1343,7 @@ export function PullRequestDetailPanel({
                 <Button size="xs" disabled={actionPending} onClick={() => void perform("ready")}>
                   Ready for review
                 </Button>
-              ) : primaryAction === "merge" ? (
+              ) : primaryAction === "merge" || detail?.state === "merged" ? (
                 <Button
                   size="xs"
                   disabled={mergeButtonPresentation.disabled}

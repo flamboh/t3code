@@ -129,12 +129,18 @@ describe("pull request action menu", () => {
 });
 
 describe("pull request merge completion", () => {
-  it("presents a completed merge as a disabled purple button", () => {
+  it.each([
+    [
+      "held after a merge while the host still reads open",
+      { mergeHold: true, state: "open" as const },
+    ],
+    ["confirmed merged by the host", { mergeHold: false, state: "merged" as const }],
+  ])("presents a merge %s as a disabled violet button", (_case, input) => {
     expect(
       pullRequestMergeButtonPresentation({
         pendingAction: null,
-        mergeHold: true,
         methodLabel: "Squash",
+        ...input,
       }),
     ).toMatchObject({
       label: "Merged",
@@ -144,10 +150,20 @@ describe("pull request merge completion", () => {
   });
 
   it.each([
-    ["idle", { pendingAction: null, mergeHold: false, methodLabel: "Squash" }, "Squash", false],
+    [
+      "idle",
+      { pendingAction: null, mergeHold: false, state: "open" as const, methodLabel: "Squash" },
+      "Squash",
+      false,
+    ],
     [
       "in-flight",
-      { pendingAction: "merge" as const, mergeHold: false, methodLabel: "Squash" },
+      {
+        pendingAction: "merge" as const,
+        mergeHold: false,
+        state: "open" as const,
+        methodLabel: "Squash",
+      },
       "Merging...",
       true,
     ],

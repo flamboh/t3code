@@ -103,12 +103,16 @@ export function pullRequestActionMenuHasGroup(
 export function pullRequestMergeButtonPresentation(input: {
   readonly pendingAction: PullRequestAction | null;
   readonly mergeHold: boolean;
+  readonly state: PullRequestState | null;
   readonly methodLabel: string;
 }) {
-  const merged = input.mergeHold && input.pendingAction === null;
+  // A merged pull request keeps the button as a terminal "Merged" marker, so anyone opening it
+  // sees the outcome where the action used to be. The post-merge hold wears the same face, so
+  // the moment the host confirms the merge nothing changes on screen.
+  const merged = input.state === "merged" || (input.mergeHold && input.pendingAction === null);
   return {
     label: merged ? "Merged" : input.pendingAction === "merge" ? "Merging..." : input.methodLabel,
-    disabled: input.pendingAction !== null || input.mergeHold,
+    disabled: merged || input.pendingAction !== null,
     // The same violet ink as resolvePullRequestState, so the button cannot disagree with the
     // merged state glyph rendered beside it.
     toneClassName: merged ? "border-violet-600/80 bg-violet-600 text-white" : undefined,
