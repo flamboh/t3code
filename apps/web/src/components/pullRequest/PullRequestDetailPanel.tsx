@@ -1350,9 +1350,6 @@ export function PullRequestDetailPanel({
                   className={mergeButtonPresentation.toneClassName}
                   onClick={() => setConfirmation({ open: true, action: "merge" })}
                 >
-                  {mergeButtonPresentation.merged ? (
-                    <GitMergeIcon aria-hidden className="size-3.5" />
-                  ) : null}
                   {mergeButtonPresentation.label}
                 </Button>
               ) : null}
