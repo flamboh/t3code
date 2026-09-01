@@ -113,13 +113,14 @@ export function pullRequestMergeButtonPresentation(input: {
   // post-merge hold must not hand the label back to a merge method that already ran.
   const merged = input.state === "merged" || (input.mergeHold && input.pendingAction !== "merge");
   return {
+    merged,
     label: merged ? "Merged" : input.pendingAction === "merge" ? "Merging..." : input.methodLabel,
     disabled: merged || input.pendingAction !== null,
-    // The same violet ink as resolvePullRequestState, so the button cannot disagree with the
-    // merged state glyph rendered beside it. A tint rather than a fill, at full opacity: the
-    // slot now shows a status, and must not read as an action someone is forbidden to take.
+    // GitHub's merged pill, in the same violet ink as resolvePullRequestState so the button
+    // cannot disagree with the merged state glyph beside it. Full opacity: the slot now shows a
+    // status, and must not read as an action someone is forbidden to take.
     toneClassName: merged
-      ? "border-violet-600/32 bg-violet-600/8 text-violet-600 disabled:opacity-100 dark:text-violet-300/90"
+      ? "rounded-full border-violet-600 bg-violet-600 font-semibold text-white disabled:opacity-100 dark:border-violet-500 dark:bg-violet-500"
       : undefined,
   };
 }
