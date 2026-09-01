@@ -135,6 +135,10 @@ describe("pull request merge completion", () => {
       { mergeHold: true, state: "open" as const },
     ],
     ["confirmed merged by the host", { mergeHold: false, state: "merged" as const }],
+    [
+      "held while an unrelated action is in flight",
+      { pendingAction: "close" as const, mergeHold: true, state: "open" as const },
+    ],
   ])("presents a merge %s as a disabled violet button", (_case, input) => {
     expect(
       pullRequestMergeButtonPresentation({

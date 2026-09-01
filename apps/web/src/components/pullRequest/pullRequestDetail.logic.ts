@@ -109,7 +109,9 @@ export function pullRequestMergeButtonPresentation(input: {
   // A merged pull request keeps the button as a terminal "Merged" marker, so anyone opening it
   // sees the outcome where the action used to be. The post-merge hold wears the same face, so
   // the moment the host confirms the merge nothing changes on screen.
-  const merged = input.state === "merged" || (input.mergeHold && input.pendingAction === null);
+  // Only the merge action itself outranks the marker; an unrelated action taken during the
+  // post-merge hold must not hand the label back to a merge method that already ran.
+  const merged = input.state === "merged" || (input.mergeHold && input.pendingAction !== "merge");
   return {
     label: merged ? "Merged" : input.pendingAction === "merge" ? "Merging..." : input.methodLabel,
     disabled: merged || input.pendingAction !== null,
