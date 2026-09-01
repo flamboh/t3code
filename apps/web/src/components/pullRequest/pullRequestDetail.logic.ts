@@ -109,7 +109,9 @@ export function pullRequestMergeButtonPresentation(input: {
   return {
     label: merged ? "Merged" : input.pendingAction === "merge" ? "Merging..." : input.methodLabel,
     disabled: input.pendingAction !== null || input.mergeHold,
-    toneClassName: merged ? "border-purple-600/80 bg-purple-600 text-white" : undefined,
+    // The same violet ink as resolvePullRequestState, so the button cannot disagree with the
+    // merged state glyph rendered beside it.
+    toneClassName: merged ? "border-violet-600/80 bg-violet-600 text-white" : undefined,
   };
 }
 
