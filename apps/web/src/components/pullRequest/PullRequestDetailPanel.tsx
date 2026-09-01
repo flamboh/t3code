@@ -589,6 +589,21 @@ export function PullRequestDetailPanel({
     isPending: detailQuery.isPending,
   });
   const actionPending = activePendingAction !== null;
+  // A host that still reports the pull request open once the post-merge read settles (Azure
+  // DevOps completes asynchronously) takes back the Merged button, so the toast steps in as
+  // the only confirmation the merge succeeded.
+  const heldMergeKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (mergeHold) {
+      heldMergeKey.current = pullRequestKey;
+      return;
+    }
+    const held = heldMergeKey.current;
+    heldMergeKey.current = null;
+    if (held === pullRequestKey && coreDetail?.state === "open") {
+      toastManager.add({ type: "success", title: "Pull request merged" });
+    }
+  }, [mergeHold, pullRequestKey, coreDetail?.state]);
   const update = useAtomCommand(pullRequestEnvironment.update, { reportFailure: false });
   // Scoped to the pull request it was typed against, since this one panel shows a different one
   // every time it is opened and a half-written title must not follow it there.
