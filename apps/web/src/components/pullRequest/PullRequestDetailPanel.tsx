@@ -591,13 +591,9 @@ export function PullRequestDetailPanel({
   const actionPending = activePendingAction !== null;
   const heldMergeKey = useRef<string | null>(null);
   useEffect(() => {
-    if (mergeHold) {
-      heldMergeKey.current = pullRequestKey;
-      return;
-    }
-    const held = heldMergeKey.current;
+    if (mergeHold || heldMergeKey.current !== pullRequestKey) return;
     heldMergeKey.current = null;
-    if (held === pullRequestKey && coreDetail?.state === "open") {
+    if (coreDetail?.state === "open") {
       toastManager.add({ type: "success", title: ACTION_SUCCESS_LABELS.merge });
     }
   }, [mergeHold, pullRequestKey, coreDetail?.state]);
@@ -687,7 +683,9 @@ export function PullRequestDetailPanel({
       return;
     }
     completeAction(action);
-    if (action !== "merge") {
+    if (action === "merge") {
+      heldMergeKey.current = pullRequestKey;
+    } else {
       toastManager.add({ type: "success", title: ACTION_SUCCESS_LABELS[action] });
     }
     // A branch update moves the head commit, which leaves the diff atom pointed at a comparison
