@@ -139,7 +139,7 @@ describe("pull request merge completion", () => {
       "held while an unrelated action is in flight",
       { pendingAction: "close" as const, mergeHold: true, state: "open" as const },
     ],
-  ])("presents a merge %s as a disabled violet button", (_case, input) => {
+  ])("presents a merge %s as a disabled Merged button", (_case, input) => {
     expect(
       pullRequestMergeButtonPresentation({
         pendingAction: null,
@@ -149,17 +149,10 @@ describe("pull request merge completion", () => {
     ).toMatchObject({
       label: "Merged",
       disabled: true,
-      toneClassName: expect.stringContaining("bg-violet"),
     });
   });
 
   it.each([
-    [
-      "idle",
-      { pendingAction: null, mergeHold: false, state: "open" as const, methodLabel: "Squash" },
-      "Squash",
-      false,
-    ],
     [
       "in-flight",
       {

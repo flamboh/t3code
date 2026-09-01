@@ -46,7 +46,6 @@ export function failPullRequestAction(state: PullRequestActionState): PullReques
 }
 
 function clearMergeHold(state: PullRequestActionState): PullRequestActionState {
-  if (state.pendingAction === null) return EMPTY_PULL_REQUEST_ACTION_STATE;
   return { ...state, mergeHold: false, observedPostMergeRead: false };
 }
 
@@ -64,6 +63,5 @@ export function observePullRequestDetail(
   if (detail.isPending) {
     return state.observedPostMergeRead ? state : { ...state, observedPostMergeRead: true };
   }
-  // The settled detail already on screen predates the merge unless a pending read was observed.
   return state.observedPostMergeRead ? clearMergeHold(state) : state;
 }

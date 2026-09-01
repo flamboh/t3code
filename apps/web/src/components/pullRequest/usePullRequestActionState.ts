@@ -1,6 +1,6 @@
 import { useAtom } from "@effect/atom-react";
 import type { PullRequestAction, PullRequestState } from "@t3tools/contracts";
-import { useCallback, useEffect } from "react";
+import { useEffect } from "react";
 
 import {
   beginPullRequestAction,
@@ -27,18 +27,10 @@ export function usePullRequestActionState(
   return {
     pendingAction: state.pendingAction,
     mergeHold: state.mergeHold,
-    beginAction: useCallback(
-      (action: PullRequestAction) => setState((current) => beginPullRequestAction(current, action)),
-      [setState],
-    ),
-    completeAction: useCallback(
-      (action: PullRequestAction) =>
-        setState((current) => completePullRequestAction(current, action)),
-      [setState],
-    ),
-    failAction: useCallback(
-      () => setState((current) => failPullRequestAction(current)),
-      [setState],
-    ),
+    beginAction: (action: PullRequestAction) =>
+      setState((current) => beginPullRequestAction(current, action)),
+    completeAction: (action: PullRequestAction) =>
+      setState((current) => completePullRequestAction(current, action)),
+    failAction: () => setState((current) => failPullRequestAction(current)),
   };
 }

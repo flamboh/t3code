@@ -143,8 +143,8 @@ import {
 
 type DetailTab = "summary" | "timeline" | "code";
 
-const ACTION_SUCCESS_LABELS: Record<PullRequestAction, string | null> = {
-  merge: null,
+const ACTION_SUCCESS_LABELS: Record<PullRequestAction, string> = {
+  merge: "Pull request merged",
   ready: "Marked ready for review",
   draft: "Converted to draft",
   close: "Pull request closed",
@@ -589,9 +589,6 @@ export function PullRequestDetailPanel({
     isPending: detailQuery.isPending,
   });
   const actionPending = activePendingAction !== null;
-  // A host that still reports the pull request open once the post-merge read settles (Azure
-  // DevOps completes asynchronously) takes back the Merged button, so the toast steps in as
-  // the only confirmation the merge succeeded.
   const heldMergeKey = useRef<string | null>(null);
   useEffect(() => {
     if (mergeHold) {
@@ -601,7 +598,7 @@ export function PullRequestDetailPanel({
     const held = heldMergeKey.current;
     heldMergeKey.current = null;
     if (held === pullRequestKey && coreDetail?.state === "open") {
-      toastManager.add({ type: "success", title: "Pull request merged" });
+      toastManager.add({ type: "success", title: ACTION_SUCCESS_LABELS.merge });
     }
   }, [mergeHold, pullRequestKey, coreDetail?.state]);
   const update = useAtomCommand(pullRequestEnvironment.update, { reportFailure: false });
@@ -690,9 +687,8 @@ export function PullRequestDetailPanel({
       return;
     }
     completeAction(action);
-    const successTitle = ACTION_SUCCESS_LABELS[action];
-    if (successTitle !== null) {
-      toastManager.add({ type: "success", title: successTitle });
+    if (action !== "merge") {
+      toastManager.add({ type: "success", title: ACTION_SUCCESS_LABELS[action] });
     }
     // A branch update moves the head commit, which leaves the diff atom pointed at a comparison
     // that no longer exists — the same staleness the manual refresh button fixes, so it goes
