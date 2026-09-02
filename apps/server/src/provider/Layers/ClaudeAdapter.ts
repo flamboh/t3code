@@ -13,6 +13,7 @@ import {
   type PermissionMode,
   type PermissionResult,
   type PermissionUpdate,
+  type SDKAssistantMessageError,
   type SDKMessage,
   type SDKResultMessage,
   type SettingSource,
@@ -153,6 +154,7 @@ interface ClaudeTurnState {
   latestAssistantUsage: unknown | undefined;
   compactedSinceLatestAssistantUsage: boolean;
   nextSyntheticAssistantBlockIndex: number;
+  lastAssistantError: SDKAssistantMessageError | undefined;
 }
 
 interface AssistantTextBlockState {
@@ -424,12 +426,17 @@ function resultErrorsText(result: SDKResultMessage): string {
 }
 
 /**
- * First user-facing error from a non-success result. "[ede_diagnostic] ..."
- * entries are CLI-internal telemetry (the CLI hides them from its own UI too),
- * so they must never become the error banner.
+ * First user-facing error from a failed result. Auth and API failures arrive
+ * as a `success` result flagged `is_error` whose `result` text is the message
+ * (e.g. "Not logged in · Please run /login"). "[ede_diagnostic] ..." entries
+ * are CLI-internal telemetry (the CLI hides them from its own UI too), so they
+ * must never become the error banner.
  */
 function resultUserFacingError(result: SDKResultMessage): string | undefined {
-  if (result.subtype === "success" || !Array.isArray(result.errors)) {
+  if (result.subtype === "success") {
+    return result.is_error && result.result.trim().length > 0 ? result.result : undefined;
+  }
+  if (!Array.isArray(result.errors)) {
     return undefined;
   }
   return result.errors.find((error) => !error.startsWith("[ede_diagnostic]"));
@@ -1380,7 +1387,7 @@ const buildUserMessageEffect = Effect.fn("buildUserMessageEffect")(function* (
 });
 
 function turnStatusFromResult(result: SDKResultMessage): ProviderRuntimeTurnStatus {
-  if (result.subtype === "success") {
+  if (result.subtype === "success" && !result.is_error) {
     return "completed";
   }
 
@@ -2075,6 +2082,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     context: ClaudeSessionContext,
     message: string,
     cause?: unknown,
+    errorClass: "auth_error" | "provider_error" = "provider_error",
   ) {
     if (cause !== undefined) {
       void cause;
@@ -2090,7 +2098,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       ...(turnState ? { turnId: asCanonicalTurnId(turnState.turnId) } : {}),
       payload: {
         message,
-        class: "provider_error",
+        class: errorClass,
         ...(cause !== undefined ? { detail: cause } : {}),
       },
       providerRefs: nativeProviderRefs(context),
@@ -2966,6 +2974,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         latestAssistantUsage: undefined,
         compactedSinceLatestAssistantUsage: false,
         nextSyntheticAssistantBlockIndex: -1,
+        lastAssistantError: undefined,
       };
       context.session = {
         ...context.session,
@@ -3024,6 +3033,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     if (context.turnState) {
+      context.turnState.lastAssistantError = message.error;
       context.turnState.items.push(message.message);
       if (
         normalizeClaudeActiveTokenUsage(
@@ -3054,7 +3064,14 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     const errorMessage = resultUserFacingError(message);
 
     if (status === "failed") {
-      yield* emitRuntimeError(context, errorMessage ?? "Claude turn failed.");
+      yield* emitRuntimeError(
+        context,
+        errorMessage ?? "Claude turn failed.",
+        undefined,
+        context.turnState?.lastAssistantError === "authentication_failed"
+          ? "auth_error"
+          : "provider_error",
+      );
     }
 
     yield* completeTurn(context, status, errorMessage, message);
@@ -3698,7 +3715,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         if (context.turnState) {
           yield* completeTurn(context, "interrupted", "Claude runtime interrupted.");
         }
-      } else {
+      } else if (context.turnState) {
         const failures = exit.cause.reasons.flatMap((reason) =>
           Cause.isFailReason(reason) ? [reason.error] : [],
         );
@@ -3709,6 +3726,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         });
         yield* completeTurn(context, "failed", message);
       }
+      // With no active turn the failure was already reported by the result
+      // that closed it (the SDK rethrows an error result when the CLI exits),
+      // so a second generic runtime.error would only clobber that message.
     } else if (context.turnState) {
       yield* completeTurn(context, "interrupted", "Claude runtime stream ended.");
     }
@@ -4627,6 +4647,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         latestAssistantUsage: undefined,
         compactedSinceLatestAssistantUsage: false,
         nextSyntheticAssistantBlockIndex: -1,
+        lastAssistantError: undefined,
       };
 
       const updatedAt = yield* nowIso;

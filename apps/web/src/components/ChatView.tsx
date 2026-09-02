@@ -260,6 +260,7 @@ import {
 import { appendPreviewAnnotationPrompt } from "../lib/previewAnnotation";
 import { appendReviewCommentsToPrompt, type ReviewCommentContext } from "../reviewCommentContext";
 import { environmentCatalog } from "../connection/catalog";
+import { isLoopbackHostname } from "../environments/primary/target";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useKnownTerminalSessions, useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { projectEnvironment } from "../state/projects";
@@ -317,6 +318,7 @@ import {
   getThreadErrorBannerKey,
   isThreadErrorBannerDismissedForSession,
   shouldShowThreadErrorBanner,
+  shouldShowThreadReauthenticateAction,
   ThreadErrorBanner,
 } from "./chat/ThreadErrorBanner";
 import {
@@ -1333,6 +1335,9 @@ function ChatViewContent(props: ChatViewProps) {
   const upsertKeybinding = useAtomCommand(serverEnvironment.upsertKeybinding, {
     reportFailure: false,
   });
+  const reauthenticateProvider = useAtomCommand(serverEnvironment.reauthenticateProvider, {
+    reportFailure: false,
+  });
   const openTerminal = useAtomCommand(terminalEnvironment.open, "terminal open");
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
   const closeTerminalMutation = useAtomCommand(terminalEnvironment.close, "terminal close");
@@ -1714,6 +1719,7 @@ function ChatViewContent(props: ChatViewProps) {
   // session.lastError. Bump a tick so the banner hides immediately. Mirrors
   // the branch mismatch banner.
   const [, setThreadErrorBannerDismissTick] = useState(0);
+  const [reauthenticatingThreadKey, setReauthenticatingThreadKey] = useState<string | null>(null);
   const runtimeMode = composerRuntimeMode ?? activeThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE;
   // Plan mode is legacy (Settings → Beta). With the flag off the effective
   // mode is forced to "default" — even for threads with a stored plan mode —
@@ -3136,6 +3142,62 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [activeServerThread, draftId, routeThreadKey, routeThreadRef],
   );
+
+  const dismissVisibleThreadError = useCallback(() => {
+    setThreadError(activeThread?.id ?? null, null);
+    dismissThreadErrorBannerForSession(threadErrorBannerKey);
+    setThreadErrorBannerDismissTick((tick) => tick + 1);
+  }, [activeThread?.id, setThreadError, threadErrorBannerKey]);
+
+  const isClientLocalToActiveServer =
+    activeServerThread !== null &&
+    activeServerThread.environmentId === primaryEnvironmentId &&
+    typeof window !== "undefined" &&
+    (window.desktopBridge !== undefined || isLoopbackHostname(window.location.hostname));
+  const showThreadReauthenticateAction =
+    visibleThreadError !== null &&
+    localServerError === null &&
+    shouldShowThreadReauthenticateAction(
+      activeServerThread?.session?.lastErrorClass,
+      lockedProvider,
+      isClientLocalToActiveServer,
+    );
+  const handleReauthenticateProvider = useCallback(async () => {
+    if (!activeServerThread || !showThreadReauthenticateAction) return;
+
+    setReauthenticatingThreadKey(routeThreadKey);
+    try {
+      const instanceId = activeServerThread.session?.providerInstanceId;
+      const result = await reauthenticateProvider({
+        environmentId: activeServerThread.environmentId,
+        input: {
+          provider: ProviderDriverKind.make("claudeAgent"),
+          ...(instanceId === undefined ? {} : { instanceId }),
+        },
+      });
+      if (result._tag === "Failure") {
+        if (!isAtomCommandInterrupted(result)) {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Could not reauthenticate Claude",
+              description: chatActionErrorMessage(squashAtomCommandFailure(result)),
+            }),
+          );
+        }
+        return;
+      }
+      dismissVisibleThreadError();
+    } finally {
+      setReauthenticatingThreadKey((current) => (current === routeThreadKey ? null : current));
+    }
+  }, [
+    activeServerThread,
+    dismissVisibleThreadError,
+    reauthenticateProvider,
+    routeThreadKey,
+    showThreadReauthenticateAction,
+  ]);
 
   const focusComposer = useCallback(() => {
     composerRef.current?.focusAtEnd();
@@ -7443,11 +7505,17 @@ function ChatViewContent(props: ChatViewProps) {
 
         <ThreadErrorBanner
           error={visibleThreadError}
-          onDismiss={() => {
-            setThreadError(activeThread.id, null);
-            dismissThreadErrorBannerForSession(threadErrorBannerKey);
-            setThreadErrorBannerDismissTick((tick) => tick + 1);
-          }}
+          {...(showThreadReauthenticateAction
+            ? {
+                action: {
+                  label: "Reauthenticate",
+                  pendingLabel: "Reauthenticating…",
+                  isPending: reauthenticatingThreadKey === routeThreadKey,
+                  onClick: () => void handleReauthenticateProvider(),
+                },
+              }
+            : {})}
+          onDismiss={dismissVisibleThreadError}
         />
         {/* Main content area with optional plan sidebar */}
         <div className="flex min-h-0 min-w-0 flex-1">

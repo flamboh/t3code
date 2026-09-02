@@ -853,6 +853,14 @@ export function createServerEnvironmentAtoms<R, E>(
           JSON.stringify([environmentId, input.instanceId ?? null, input.cwd ?? null]),
       },
     }),
+    reauthenticateProvider: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:reauthenticate-provider",
+      tag: WS_METHODS.serverReauthenticateProvider,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId }) => environmentId,
+      },
+    }),
     updateProvider: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:update-provider",
       tag: WS_METHODS.serverUpdateProvider,

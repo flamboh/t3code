@@ -1699,6 +1699,14 @@ const makeWsRpcLayer = (
               "rpc.aggregate": "server",
             },
           ),
+        [WS_METHODS.serverReauthenticateProvider]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverReauthenticateProvider,
+            providerMaintenanceRunner.reauthenticateProvider(input),
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
         [WS_METHODS.serverUpdateServer]: (input) =>
           observeRpcEffect(WS_METHODS.serverUpdateServer, serverUpdate.update(input), {
             "rpc.aggregate": "server",

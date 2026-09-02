@@ -16,12 +16,14 @@ import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { SpawnExecutableResolution } from "@t3tools/shared/shell";
+import * as NodePath from "@effect/platform-node/NodePath";
 
 import { ProviderRegistry, type ProviderRegistryShape } from "./Services/ProviderRegistry.ts";
 import * as ProviderMaintenanceRunner from "./providerMaintenanceRunner.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import {
   makeProviderMaintenanceCapabilities,
   ProviderVersionCache,
@@ -32,9 +34,11 @@ const isServerProviderUpdateError = Schema.is(ServerProviderUpdateError);
 const CODEX_DRIVER = ProviderDriverKind.make("codex");
 const CURSOR_DRIVER = ProviderDriverKind.make("cursor");
 const OPENCODE_DRIVER = ProviderDriverKind.make("opencode");
+const CLAUDE_DRIVER = ProviderDriverKind.make("claudeAgent");
 const CODEX_INSTANCE_ID = ProviderInstanceId.make("codex");
 const CURSOR_INSTANCE_ID = ProviderInstanceId.make("cursor");
 const OPENCODE_INSTANCE_ID = ProviderInstanceId.make("opencode");
+const CLAUDE_INSTANCE_ID = ProviderInstanceId.make("claude-work");
 const encoder = new TextEncoder();
 
 // Pin a non-win32 platform so `resolveSpawnCommand` is a no-op and the raw
@@ -203,7 +207,10 @@ function makeRegistry(
   });
 }
 
-const makeTestRunner = (registry: ProviderRegistryShape) =>
+const makeTestRunner = (
+  registry: ProviderRegistryShape,
+  settings: Parameters<typeof ServerSettings.layerTest>[0] = {},
+) =>
   Effect.service(ProviderMaintenanceRunner.ProviderMaintenanceRunner).pipe(
     Effect.provide(
       ProviderMaintenanceRunner.layer.pipe(
@@ -211,6 +218,8 @@ const makeTestRunner = (registry: ProviderRegistryShape) =>
           Layer.mergeAll(
             Layer.succeed(ProviderRegistry, registry),
             Layer.succeed(ProviderVersionCache, new Map()),
+            ServerSettings.layerTest(settings),
+            NodePath.layer,
           ),
         ),
       ),
@@ -218,6 +227,144 @@ const makeTestRunner = (registry: ProviderRegistryShape) =>
   );
 
 describe("providerMaintenanceRunner", () => {
+  it.effect("rejects reauthentication for unsupported providers", () => {
+    const calls: Array<{ command: string; args: ReadonlyArray<string> }> = [];
+    return Effect.gen(function* () {
+      const { registry } = yield* makeRegistry();
+      const runner = yield* makeTestRunner(registry);
+
+      const error = yield* runner
+        .reauthenticateProvider({ provider: CODEX_DRIVER })
+        .pipe(Effect.flip);
+
+      assert.strictEqual(error.provider, CODEX_DRIVER);
+      assert.strictEqual(error.reason, "Reauthentication is not supported for codex");
+      assert.deepStrictEqual(calls, []);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          NonWindowsPlatform,
+          latestVersionHttpClient("0.0.0"),
+          mockSpawnerLayer((command, args) => {
+            calls.push({ command, args });
+            return {};
+          }),
+        ),
+      ),
+    );
+  });
+
+  it.effect("reports claude auth login failures with command output", () =>
+    Effect.gen(function* () {
+      const { registry } = yield* makeRegistry({
+        ...baseProvider,
+        instanceId: CLAUDE_INSTANCE_ID,
+        driver: CLAUDE_DRIVER,
+      });
+      const runner = yield* makeTestRunner(registry);
+
+      const error = yield* runner
+        .reauthenticateProvider({ provider: CLAUDE_DRIVER })
+        .pipe(Effect.flip);
+
+      assert.strictEqual(
+        error.reason,
+        "claude auth login exited with code 1. OAuth login was rejected",
+      );
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          NonWindowsPlatform,
+          latestVersionHttpClient("0.0.0"),
+          mockSpawnerLayer(() => ({ stderr: "OAuth login was rejected", code: 1 })),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("runs claude auth login for the configured instance and refreshes it", () => {
+    const calls: Array<{
+      command: string;
+      args: ReadonlyArray<string>;
+      env: NodeJS.ProcessEnv | undefined;
+      stdin: ChildProcess.CommandInput | undefined;
+    }> = [];
+    const refreshedInstanceIds: Array<ProviderInstanceId> = [];
+    const claudeConfigDir = "/tmp/t3-claude-reauth";
+    return Effect.gen(function* () {
+      const { registry } = yield* makeRegistry({
+        ...baseProvider,
+        instanceId: CLAUDE_INSTANCE_ID,
+        driver: CLAUDE_DRIVER,
+      });
+      const runner = yield* makeTestRunner(
+        {
+          ...registry,
+          refreshInstance: (instanceId) =>
+            registry.refreshInstance(instanceId).pipe(
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  refreshedInstanceIds.push(instanceId);
+                }),
+              ),
+            ),
+        },
+        {
+          providerInstances: {
+            [CLAUDE_INSTANCE_ID]: {
+              driver: "claudeAgent",
+              config: {
+                binaryPath: "/opt/claude/bin/claude",
+                homePath: claudeConfigDir,
+              },
+            },
+          },
+        },
+      );
+
+      const result = yield* runner.reauthenticateProvider({
+        provider: CLAUDE_DRIVER,
+        instanceId: CLAUDE_INSTANCE_ID,
+      });
+
+      assert.strictEqual(result.providers[0]?.instanceId, CLAUDE_INSTANCE_ID);
+      assert.deepStrictEqual(refreshedInstanceIds, [CLAUDE_INSTANCE_ID]);
+      assert.strictEqual(calls.length, 1);
+      assert.strictEqual(calls[0]?.command, "/opt/claude/bin/claude");
+      assert.deepStrictEqual(calls[0]?.args, ["auth", "login"]);
+      assert.strictEqual(calls[0]?.stdin, "ignore");
+      assert.strictEqual(calls[0]?.env?.CLAUDE_CONFIG_DIR, claudeConfigDir);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          NonWindowsPlatform,
+          NodePath.layer,
+          latestVersionHttpClient("0.0.0"),
+          Layer.succeed(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make((command) => {
+              const childProcess = command as unknown as {
+                readonly command: string;
+                readonly args: ReadonlyArray<string>;
+                readonly options: {
+                  readonly env?: NodeJS.ProcessEnv;
+                  readonly stdin?: ChildProcess.CommandInput;
+                };
+              };
+              calls.push({
+                command: childProcess.command,
+                args: childProcess.args,
+                env: childProcess.options.env,
+                stdin: childProcess.options.stdin,
+              });
+              return Effect.succeed(mockHandle({ stdout: "Login successful." }));
+            }),
+          ),
+        ),
+      ),
+    );
+  });
+
   it.effect("runs the allowlisted provider update command and records success", () => {
     const calls: Array<{ command: string; args: ReadonlyArray<string> }> = [];
     return Effect.gen(function* () {

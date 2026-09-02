@@ -30,6 +30,10 @@ CLAUDE_CONFIG_DIR path: empty
 
 An empty `CLAUDE_CONFIG_DIR path` means T3 Code uses Claude Code's normal config directory.
 
+If that login expires, T3 Code shows a **Reauthenticate** button on the chat error when you use
+the desktop app with its local environment or open T3 Code on localhost. Claude Code opens the
+server host's browser so the button does not appear for remote environments or mobile clients.
+
 When you set this field, T3 Code points Claude Code at that directory with the
 `CLAUDE_CONFIG_DIR` environment variable. It does not change `HOME`, so your system keychain and
 the rest of your environment stay as they are.

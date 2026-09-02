@@ -750,6 +750,30 @@ export class ServerProviderUpdateError extends Schema.TaggedErrorClass<ServerPro
   }
 }
 
+/**
+ * Runs the provider CLI's interactive login on the server host. The CLI opens
+ * the host's default browser itself, so this only completes the flow when the
+ * user is on the same machine as the server.
+ */
+export const ServerProviderReauthenticateInput = Schema.Struct({
+  provider: ProviderDriverKind,
+  instanceId: Schema.optionalKey(ProviderInstanceId),
+});
+export type ServerProviderReauthenticateInput = typeof ServerProviderReauthenticateInput.Type;
+
+export class ServerProviderReauthenticateError extends Schema.TaggedErrorClass<ServerProviderReauthenticateError>()(
+  "ServerProviderReauthenticateError",
+  {
+    provider: ProviderDriverKind,
+    reason: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    return `Provider reauthentication failed for ${this.provider}: ${this.reason}`;
+  }
+}
+
 export const ServerSelfUpdateInput = Schema.Struct({
   /** Exact npm version of the `t3` package to install (never a dist-tag, so
       the server and the acknowledging client agree on what was requested). */
