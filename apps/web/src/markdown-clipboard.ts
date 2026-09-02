@@ -309,6 +309,19 @@ function sanitizedHtmlFrom(container: Element): string {
   return `<meta charset="utf-8">${container.innerHTML}`;
 }
 
+function isSelectionInsideSingleCodeBlock(range: Range, container: Element): boolean {
+  const ancestor = range.commonAncestorContainer;
+  const ancestorElement =
+    ancestor.nodeType === Node.ELEMENT_NODE ? (ancestor as Element) : ancestor.parentElement;
+  if (ancestorElement?.closest("pre")) return true;
+
+  const remainder = container.cloneNode(true) as Element;
+  const codeBlocks = remainder.querySelectorAll("pre");
+  if (codeBlocks.length !== 1) return false;
+  codeBlocks[0]?.remove();
+  return serializeRenderedMarkdownFragment(remainder) === "";
+}
+
 export function chatMarkdownClipboardPayload(
   selection: Selection,
 ): MarkdownClipboardPayload | null {
@@ -319,10 +332,7 @@ export function chatMarkdownClipboardPayload(
     if (range.collapsed) continue;
     const container = document.createElement("div");
     container.appendChild(range.cloneContents());
-    const ancestor = range.commonAncestorContainer;
-    const ancestorElement =
-      ancestor.nodeType === Node.ELEMENT_NODE ? (ancestor as Element) : ancestor.parentElement;
-    if (ancestorElement?.closest("pre")) {
+    if (isSelectionInsideSingleCodeBlock(range, container)) {
       const text = range.toString();
       if (text) {
         texts.push(text);
