@@ -55,10 +55,11 @@ describe("terminalContextMenuItems", () => {
       hasSelection: false,
       link: "src/components/ThreadTerminalDrawer.tsx",
       canOpenInPreview: false,
+      openLabel: "Open in Zed",
     };
 
     expect(terminalContextMenuItems(options)).toEqual([
-      { id: "open-link", label: "Open in editor" },
+      { id: "open-link", label: "Open in Zed" },
       { id: "add-link-to-chat", label: "Add path to chat" },
       { id: "copy-link", label: "Copy path", icon: "copy" },
       { id: "add-to-chat", label: "Add to chat", disabled: true },
@@ -72,6 +73,7 @@ describe("terminalContextMenuItems", () => {
       hasSelection: true,
       link: "https://t3.codes",
       canOpenInPreview: true,
+      openLabel: "Open in editor",
     };
 
     expect(terminalContextMenuItems(options)).toEqual([
@@ -91,6 +93,7 @@ describe("terminalContextMenuItems", () => {
         hasSelection: false,
         link: "https://t3.codes",
         canOpenInPreview: false,
+        openLabel: "Open in editor",
       }),
     ).toEqual([
       { id: "open-link-external", label: "Open in system browser" },

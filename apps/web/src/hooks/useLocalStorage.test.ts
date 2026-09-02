@@ -119,3 +119,22 @@ describe("local storage errors", () => {
     }
   });
 });
+
+describe("local storage notifications", () => {
+  it("notifies same-window subscribers when an imperative value is written", async () => {
+    const storage = createStorage();
+    const dispatchEvent = vi.fn();
+    vi.stubGlobal("window", { localStorage: storage, dispatchEvent });
+    vi.stubGlobal("localStorage", storage);
+    const { setLocalStorageItemAndNotify } = await import("./useLocalStorage");
+
+    setLocalStorageItemAndNotify("changed-key", "value", Schema.String);
+
+    expect(dispatchEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "t3code:local_storage_change",
+        detail: { key: "changed-key" },
+      }),
+    );
+  });
+});

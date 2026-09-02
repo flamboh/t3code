@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import {
   type ContextMenuItem,
+  type EditorId,
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
   type ThreadId,
@@ -55,7 +56,8 @@ import {
   type GhosttyTerminalSurfaceOptions,
 } from "~/terminal/ghostty/surface";
 import { type GhosttyColor, type GhosttyTheme } from "~/terminal/ghostty/core";
-import { useOpenInPreferredEditor } from "../editorPreferences";
+import { useOpenInPreferredEditor, usePreferredEditor } from "../editorPreferences";
+import { openInEditorMenuLabel } from "../editorLabels";
 import {
   isTerminalLinkActivation,
   isTerminalUrl,
@@ -277,6 +279,7 @@ export function terminalContextMenuItems(options: {
   hasSelection: boolean;
   link: string | null;
   canOpenInPreview: boolean;
+  openLabel: string;
 }): ContextMenuItem<TerminalContextMenuAction>[] {
   const linkItems: ContextMenuItem<TerminalContextMenuAction>[] = options.link
     ? isTerminalUrl(options.link)
@@ -289,7 +292,7 @@ export function terminalContextMenuItems(options: {
           { id: "copy-link", label: "Copy link", icon: "copy" },
         ]
       : [
-          { id: "open-link", label: "Open in editor" },
+          { id: "open-link", label: options.openLabel },
           { id: "add-link-to-chat", label: "Add path to chat" },
           { id: "copy-link", label: "Copy path", icon: "copy" },
         ]
@@ -379,11 +382,12 @@ export function TerminalViewport({
   const visibleRef = useRef(visible);
   const environmentId = threadRef.environmentId;
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
-  const openInPreferredEditor = useOpenInPreferredEditor(
-    environmentId,
-    serverConfig?.availableEditors ?? [],
+  const availableEditors = serverConfig?.availableEditors ?? [];
+  const [preferredEditor] = usePreferredEditor(availableEditors);
+  const openInPreferredEditor = useOpenInPreferredEditor(environmentId, availableEditors);
+  const openTerminalPath = useEffectEvent((target: string, editorOverride?: EditorId | null) =>
+    openInPreferredEditor(target, editorOverride),
   );
-  const openTerminalPath = useEffectEvent((target: string) => openInPreferredEditor(target));
   const openPreview = useAtomCommand(previewEnvironment.open, {
     reportFailure: false,
   });
@@ -410,6 +414,7 @@ export function TerminalViewport({
   const handleAddTerminalLink = useEffectEvent((link: string) => {
     onAddTerminalLink(terminalLinkChatText(link, cwd));
   });
+  const readPreferredEditor = useEffectEvent(() => preferredEditor);
   const readTerminalLabel = useEffectEvent(() => terminalLabel);
   const terminalFontFamily = useClientSettings((settings) =>
     resolveTerminalFontPreference({
@@ -692,12 +697,14 @@ export function TerminalViewport({
         clearSelectionAction();
         const selectionAction = readSelectionAction();
         const requestId = selectionActionRequestIdRef.current;
+        const editorAtMenuOpen = readPreferredEditor();
         let clicked: TerminalContextMenuAction | null;
         try {
           clicked = await localApi.contextMenu.show(
             terminalContextMenuItems({
               hasSelection: selectionAction !== null,
               link,
+              openLabel: openInEditorMenuLabel(editorAtMenuOpen),
               canOpenInPreview:
                 link !== null &&
                 isTerminalUrl(link) &&
@@ -735,7 +742,7 @@ export function TerminalViewport({
             return;
           }
           case "open-link":
-            if (link) openTerminalLink(link);
+            if (link) openTerminalLink(link, editorAtMenuOpen);
             return;
           case "open-link-external":
             if (link) openTerminalUrlInBrowser(link);
@@ -865,7 +872,7 @@ export function TerminalViewport({
         });
       }
 
-      function openTerminalLink(text: string): void {
+      function openTerminalLink(text: string, editorOverride?: EditorId | null): void {
         const latestTerminal = terminalRef.current;
         if (!latestTerminal) return;
         if (isTerminalUrl(text)) {
@@ -883,7 +890,7 @@ export function TerminalViewport({
         }
         const target = resolvePathLinkTarget(text, cwd);
         void (async () => {
-          const result = await openTerminalPath(target);
+          const result = await openTerminalPath(target, editorOverride);
           if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
             return;
           }
