@@ -83,6 +83,7 @@ describe("continueProviderThreadAfterReauthentication", () => {
               }),
             ),
           ),
+        getCapabilities: () => Effect.succeed({ sessionModelSwitch: "in-session" }),
         sendTurn,
       });
 
@@ -121,6 +122,7 @@ describe("continueProviderThreadAfterReauthentication", () => {
               }),
             ),
           ),
+        getCapabilities: () => Effect.succeed({ sessionModelSwitch: "in-session" }),
         sendTurn,
       });
 

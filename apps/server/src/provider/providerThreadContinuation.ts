@@ -1,4 +1,4 @@
-import type { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import type { ProviderInstanceId, ProviderInteractionMode, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
@@ -6,6 +6,24 @@ import type { ProjectionSnapshotQueryShape } from "../orchestration/Services/Pro
 import type { ProviderServiceShape } from "./Services/ProviderService.ts";
 
 export const EXPLICIT_PROVIDER_CONTINUATION_PROMPT = "Continue where you left off.";
+
+/** Uses the provider continuation capability added for server-update recovery. */
+export const continueProviderThread = Effect.fn("continueProviderThread")(function* (input: {
+  readonly threadId: ThreadId;
+  readonly instanceId: ProviderInstanceId;
+  readonly interactionMode: ProviderInteractionMode;
+  readonly getCapabilities: ProviderServiceShape["getCapabilities"];
+  readonly sendTurn: ProviderServiceShape["sendTurn"];
+}) {
+  const capabilities = yield* input.getCapabilities(input.instanceId);
+  yield* input.sendTurn({
+    threadId: input.threadId,
+    ...(capabilities.promptlessTurnContinuation === true
+      ? { continuation: true }
+      : { input: EXPLICIT_PROVIDER_CONTINUATION_PROMPT }),
+    interactionMode: input.interactionMode,
+  });
+});
 
 /**
  * Continues the thread that prompted a provider reauthentication attempt.
@@ -18,6 +36,7 @@ export const continueProviderThreadAfterReauthentication = Effect.fn(
   readonly threadId: ThreadId;
   readonly instanceId: ProviderInstanceId;
   readonly getThreadShellById: ProjectionSnapshotQueryShape["getThreadShellById"];
+  readonly getCapabilities: ProviderServiceShape["getCapabilities"];
   readonly sendTurn: ProviderServiceShape["sendTurn"];
 }) {
   const thread = Option.getOrUndefined(yield* input.getThreadShellById(input.threadId));
@@ -33,10 +52,12 @@ export const continueProviderThreadAfterReauthentication = Effect.fn(
     return false;
   }
 
-  yield* input.sendTurn({
+  yield* continueProviderThread({
     threadId: thread.id,
-    input: EXPLICIT_PROVIDER_CONTINUATION_PROMPT,
+    instanceId: input.instanceId,
     interactionMode: thread.interactionMode,
+    getCapabilities: input.getCapabilities,
+    sendTurn: input.sendTurn,
   });
   return true;
 });

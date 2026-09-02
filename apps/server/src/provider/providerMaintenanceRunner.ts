@@ -699,6 +699,7 @@ export const layerWithThreadContinuation = Layer.effect(
           threadId,
           instanceId,
           getThreadShellById: projectionSnapshotQuery.getThreadShellById,
+          getCapabilities: providerService.getCapabilities,
           sendTurn: providerService.sendTurn,
         }).pipe(
           Effect.asVoid,
