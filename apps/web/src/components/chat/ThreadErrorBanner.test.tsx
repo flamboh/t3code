@@ -71,11 +71,10 @@ describe("ThreadErrorBanner", () => {
     expect(shouldShowThreadErrorBanner("env:thread-e", null, false)).toBe(false);
   });
 
-  it("offers reauthentication only for local Claude authentication errors", () => {
-    expect(shouldShowThreadReauthenticateAction("auth_error", "claudeAgent", true)).toBe(true);
-    expect(shouldShowThreadReauthenticateAction("provider_error", "claudeAgent", true)).toBe(false);
-    expect(shouldShowThreadReauthenticateAction("auth_error", "codex", true)).toBe(false);
-    expect(shouldShowThreadReauthenticateAction("auth_error", "claudeAgent", false)).toBe(false);
+  it("offers reauthentication for Claude authentication errors on every client", () => {
+    expect(shouldShowThreadReauthenticateAction("auth_error", "claudeAgent")).toBe(true);
+    expect(shouldShowThreadReauthenticateAction("provider_error", "claudeAgent")).toBe(false);
+    expect(shouldShowThreadReauthenticateAction("auth_error", "codex")).toBe(false);
   });
 
   it("aligns the warning and dismiss icons with the first line of a multi-line error", () => {

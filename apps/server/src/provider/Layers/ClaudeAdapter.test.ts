@@ -24,6 +24,7 @@ import {
 import { createModelSelection } from "@t3tools/shared/model";
 import { assert, describe, it } from "@effect/vitest";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -1944,6 +1945,92 @@ describe("ClaudeAdapterLive", () => {
       }
       assert.equal(runtimeEvents.at(-1)?.type, "session.exited");
       assert.equal(yield* adapter.hasSession(THREAD_ID), false);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("reports a Claude stream failure before the first turn", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const runtimeEventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "session.exited"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      harness.query.fail(new Error("Claude stream disconnected"));
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const runtimeErrors = runtimeEvents.filter((event) => event.type === "runtime.error");
+      assert.equal(runtimeErrors.length, 1);
+      const runtimeError = runtimeErrors[0];
+      if (runtimeError?.type === "runtime.error") {
+        assert.equal(runtimeError.payload.message, "Claude stream disconnected");
+      }
+      assert.equal(runtimeEvents.at(-1)?.type, "session.exited");
+      assert.equal(yield* adapter.hasSession(THREAD_ID), false);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("reports an unrelated stream failure after a failed turn", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const turnCompleted = yield* Deferred.make<void>();
+      const runtimeEventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.tap((event) =>
+          event.type === "turn.completed"
+            ? Deferred.succeed(turnCompleted, undefined)
+            : Effect.void,
+        ),
+        Stream.takeUntil((event) => event.type === "session.exited"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "hello",
+        attachments: [],
+      });
+
+      harness.query.emit({
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: true,
+        errors: ["Claude turn failed for another reason"],
+        session_id: "sdk-session-failed-turn",
+        uuid: "result-failed-turn",
+      } as unknown as SDKMessage);
+
+      yield* Deferred.await(turnCompleted);
+
+      harness.query.fail(new Error("Claude stream crashed while idle"));
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const runtimeErrors = runtimeEvents.filter((event) => event.type === "runtime.error");
+      assert.deepEqual(
+        runtimeErrors.map((event) => event.payload.message),
+        ["Claude turn failed for another reason", "Claude stream crashed while idle"],
+      );
+      assert.equal(runtimeEvents.at(-1)?.type, "session.exited");
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

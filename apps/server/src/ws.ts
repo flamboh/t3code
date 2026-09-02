@@ -1707,6 +1707,38 @@ const makeWsRpcLayer = (
               "rpc.aggregate": "server",
             },
           ),
+        [WS_METHODS.serverBeginProviderReauthentication]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverBeginProviderReauthentication,
+            providerMaintenanceRunner.beginProviderReauthentication(input),
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
+        [WS_METHODS.serverSubmitProviderReauthenticationCode]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverSubmitProviderReauthenticationCode,
+            providerMaintenanceRunner.submitProviderReauthenticationCode(input),
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
+        [WS_METHODS.serverGetProviderReauthenticationStatus]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverGetProviderReauthenticationStatus,
+            providerMaintenanceRunner.getProviderReauthenticationStatus(input),
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
+        [WS_METHODS.serverCancelProviderReauthentication]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverCancelProviderReauthentication,
+            providerMaintenanceRunner.cancelProviderReauthentication(input),
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
         [WS_METHODS.serverUpdateServer]: (input) =>
           observeRpcEffect(WS_METHODS.serverUpdateServer, serverUpdate.update(input), {
             "rpc.aggregate": "server",
@@ -2647,7 +2679,6 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               previewAutomationBroker,
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
-              Layer.provide(ProviderMaintenanceRunner.layer),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
               // One server-lifetime service means clients share the same PR caches, and a WS
               // mutation invalidates the HTTP diff cache that every client reads from.

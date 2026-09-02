@@ -20,9 +20,8 @@ export function shouldShowThreadErrorBanner(
 export function shouldShowThreadReauthenticateAction(
   errorClass: RuntimeErrorClass | undefined,
   provider: string | null,
-  isLocalToServer: boolean,
 ): boolean {
-  return errorClass === "auth_error" && provider === "claudeAgent" && isLocalToServer;
+  return errorClass === "auth_error" && provider === "claudeAgent";
 }
 
 // Session-scoped (module-level so it survives ChatView remounts, e.g. route

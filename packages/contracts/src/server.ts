@@ -761,6 +761,72 @@ export const ServerProviderReauthenticateInput = Schema.Struct({
 });
 export type ServerProviderReauthenticateInput = typeof ServerProviderReauthenticateInput.Type;
 
+/**
+ * A Claude login attempt is owned by the server process rather than by a
+ * WebSocket connection. The thread id lets the client continue the failed
+ * turn after the attempt succeeds without making the authentication flow
+ * depend on a particular client staying connected.
+ */
+export const ServerProviderReauthenticateAttemptId = TrimmedNonEmptyString.pipe(
+  Schema.brand("ServerProviderReauthenticateAttemptId"),
+);
+export type ServerProviderReauthenticateAttemptId =
+  typeof ServerProviderReauthenticateAttemptId.Type;
+
+export const ServerProviderReauthenticateStatus = Schema.Literals([
+  "starting",
+  "awaiting_code",
+  "succeeded",
+  "failed",
+  "cancelled",
+  "expired",
+]);
+export type ServerProviderReauthenticateStatus = typeof ServerProviderReauthenticateStatus.Type;
+
+export const ServerProviderReauthenticateBeginInput = Schema.Struct({
+  provider: ProviderDriverKind,
+  instanceId: Schema.optionalKey(ProviderInstanceId),
+  threadId: ThreadId,
+});
+export type ServerProviderReauthenticateBeginInput =
+  typeof ServerProviderReauthenticateBeginInput.Type;
+
+export const ServerProviderReauthenticateStatusResult = Schema.Struct({
+  attemptId: ServerProviderReauthenticateAttemptId,
+  provider: ProviderDriverKind,
+  instanceId: ProviderInstanceId,
+  threadId: ThreadId,
+  status: ServerProviderReauthenticateStatus,
+  /** The CLI's HTTPS authorization URL, once it has printed one. */
+  authorizationUrl: Schema.NullOr(TrimmedNonEmptyString),
+  expiresAt: IsoDateTime,
+  /** A stable, user-facing summary. Raw CLI output is never included. */
+  error: Schema.NullOr(TrimmedNonEmptyString),
+  /** Present after the provider refresh has completed successfully. */
+  providers: Schema.optionalKey(ServerProviders),
+});
+export type ServerProviderReauthenticateStatusResult =
+  typeof ServerProviderReauthenticateStatusResult.Type;
+
+export const ServerProviderReauthenticateCodeInput = Schema.Struct({
+  attemptId: ServerProviderReauthenticateAttemptId,
+  code: TrimmedNonEmptyString.check(Schema.isMaxLength(4_096)),
+});
+export type ServerProviderReauthenticateCodeInput =
+  typeof ServerProviderReauthenticateCodeInput.Type;
+
+export const ServerProviderReauthenticateStatusInput = Schema.Struct({
+  attemptId: ServerProviderReauthenticateAttemptId,
+});
+export type ServerProviderReauthenticateStatusInput =
+  typeof ServerProviderReauthenticateStatusInput.Type;
+
+export const ServerProviderReauthenticateCancelInput = Schema.Struct({
+  attemptId: ServerProviderReauthenticateAttemptId,
+});
+export type ServerProviderReauthenticateCancelInput =
+  typeof ServerProviderReauthenticateCancelInput.Type;
+
 export class ServerProviderReauthenticateError extends Schema.TaggedErrorClass<ServerProviderReauthenticateError>()(
   "ServerProviderReauthenticateError",
   {

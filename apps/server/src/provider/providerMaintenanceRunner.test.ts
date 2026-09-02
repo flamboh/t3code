@@ -1,5 +1,6 @@
 import { describe, it, assert } from "@effect/vitest";
 import {
+  defaultInstanceIdForDriver,
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
@@ -39,6 +40,7 @@ const CODEX_INSTANCE_ID = ProviderInstanceId.make("codex");
 const CURSOR_INSTANCE_ID = ProviderInstanceId.make("cursor");
 const OPENCODE_INSTANCE_ID = ProviderInstanceId.make("opencode");
 const CLAUDE_INSTANCE_ID = ProviderInstanceId.make("claude-work");
+const CLAUDE_DEFAULT_INSTANCE_ID = defaultInstanceIdForDriver(CLAUDE_DRIVER);
 const encoder = new TextEncoder();
 
 // Pin a non-win32 platform so `resolveSpawnCommand` is a no-op and the raw
@@ -254,7 +256,7 @@ describe("providerMaintenanceRunner", () => {
     );
   });
 
-  it.effect("reports claude auth login failures with command output", () =>
+  it.effect("keeps claude auth login output out of the user-facing failure reason", () =>
     Effect.gen(function* () {
       const { registry } = yield* makeRegistry({
         ...baseProvider,
@@ -267,10 +269,8 @@ describe("providerMaintenanceRunner", () => {
         .reauthenticateProvider({ provider: CLAUDE_DRIVER })
         .pipe(Effect.flip);
 
-      assert.strictEqual(
-        error.reason,
-        "claude auth login exited with code 1. OAuth login was rejected",
-      );
+      assert.strictEqual(error.reason, "claude auth login exited with code 1.");
+      assert.strictEqual(error.cause, undefined);
     }).pipe(
       Effect.provide(
         Layer.mergeAll(
@@ -356,6 +356,149 @@ describe("providerMaintenanceRunner", () => {
                 args: childProcess.args,
                 env: childProcess.options.env,
                 stdin: childProcess.options.stdin,
+              });
+              return Effect.succeed(mockHandle({ stdout: "Login successful." }));
+            }),
+          ),
+        ),
+      ),
+    );
+  });
+
+  it.effect("uses Claude defaults when an explicit instance omits config", () => {
+    const calls: Array<{
+      command: string;
+      env: NodeJS.ProcessEnv | undefined;
+    }> = [];
+    const refreshedInstanceIds: Array<ProviderInstanceId> = [];
+    const legacyConfigDir = "/tmp/t3-legacy-claude-reauth";
+    return Effect.gen(function* () {
+      const { registry } = yield* makeRegistry({
+        ...baseProvider,
+        instanceId: CLAUDE_INSTANCE_ID,
+        driver: CLAUDE_DRIVER,
+      });
+      const runner = yield* makeTestRunner(
+        {
+          ...registry,
+          refreshInstance: (instanceId) =>
+            registry.refreshInstance(instanceId).pipe(
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  refreshedInstanceIds.push(instanceId);
+                }),
+              ),
+            ),
+        },
+        {
+          providers: {
+            claudeAgent: {
+              binaryPath: "/opt/legacy/claude",
+              homePath: legacyConfigDir,
+            },
+          },
+          providerInstances: {
+            [CLAUDE_INSTANCE_ID]: {
+              driver: "claudeAgent",
+            },
+          },
+        },
+      );
+
+      yield* runner.reauthenticateProvider({
+        provider: CLAUDE_DRIVER,
+        instanceId: CLAUDE_INSTANCE_ID,
+      });
+
+      assert.deepStrictEqual(refreshedInstanceIds, [CLAUDE_INSTANCE_ID]);
+      assert.strictEqual(calls.length, 1);
+      assert.strictEqual(calls[0]?.command, "claude");
+      assert.strictEqual(calls[0]?.env?.CLAUDE_CONFIG_DIR, undefined);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          NonWindowsPlatform,
+          NodePath.layer,
+          latestVersionHttpClient("0.0.0"),
+          Layer.succeed(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make((command) => {
+              const childProcess = command as unknown as {
+                readonly command: string;
+                readonly options: { readonly env?: NodeJS.ProcessEnv };
+              };
+              calls.push({
+                command: childProcess.command,
+                env: childProcess.options.env,
+              });
+              return Effect.succeed(mockHandle({ stdout: "Login successful." }));
+            }),
+          ),
+        ),
+      ),
+    );
+  });
+
+  it.effect("uses legacy Claude settings for an absent canonical default instance", () => {
+    const calls: Array<{
+      command: string;
+      env: NodeJS.ProcessEnv | undefined;
+    }> = [];
+    const refreshedInstanceIds: Array<ProviderInstanceId> = [];
+    const legacyConfigDir = "/tmp/t3-legacy-default-claude-reauth";
+    return Effect.gen(function* () {
+      const { registry } = yield* makeRegistry({
+        ...baseProvider,
+        instanceId: CLAUDE_DEFAULT_INSTANCE_ID,
+        driver: CLAUDE_DRIVER,
+      });
+      const runner = yield* makeTestRunner(
+        {
+          ...registry,
+          refreshInstance: (instanceId) =>
+            registry.refreshInstance(instanceId).pipe(
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  refreshedInstanceIds.push(instanceId);
+                }),
+              ),
+            ),
+        },
+        {
+          providers: {
+            claudeAgent: {
+              binaryPath: "/opt/legacy/default-claude",
+              homePath: legacyConfigDir,
+            },
+          },
+        },
+      );
+
+      yield* runner.reauthenticateProvider({
+        provider: CLAUDE_DRIVER,
+        instanceId: CLAUDE_DEFAULT_INSTANCE_ID,
+      });
+
+      assert.deepStrictEqual(refreshedInstanceIds, [CLAUDE_DEFAULT_INSTANCE_ID]);
+      assert.strictEqual(calls.length, 1);
+      assert.strictEqual(calls[0]?.command, "/opt/legacy/default-claude");
+      assert.strictEqual(calls[0]?.env?.CLAUDE_CONFIG_DIR, legacyConfigDir);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          NonWindowsPlatform,
+          NodePath.layer,
+          latestVersionHttpClient("0.0.0"),
+          Layer.succeed(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make((command) => {
+              const childProcess = command as unknown as {
+                readonly command: string;
+                readonly options: { readonly env?: NodeJS.ProcessEnv };
+              };
+              calls.push({
+                command: childProcess.command,
+                env: childProcess.options.env,
               });
               return Effect.succeed(mockHandle({ stdout: "Login successful." }));
             }),

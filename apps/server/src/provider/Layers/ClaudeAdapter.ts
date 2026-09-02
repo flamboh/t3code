@@ -318,6 +318,7 @@ interface ClaudeSessionContext {
   /** Task ids that have started and not yet reached a terminal state. */
   readonly liveTaskIds: Set<string>;
   turnState: ClaudeTurnState | undefined;
+  reportedFailedResultMessage: string | undefined;
   lastKnownContextWindow: number | undefined;
   lastKnownTokenUsage: ThreadTokenUsageSnapshot | undefined;
   lastKnownTotalProcessedTokens: number | undefined;
@@ -388,6 +389,11 @@ function normalizeClaudeStreamMessages(
 
   const squashed = toMessage(Cause.squash(cause), "").trim();
   return squashed.length > 0 ? [squashed] : [];
+}
+
+function claudeStreamFailureMessage(cause: Cause.Cause<ProviderAdapterProcessError>): string {
+  const failure = cause.reasons.find(Cause.isFailReason)?.error;
+  return toMessage(failure?.cause, failure?.detail ?? "Claude runtime stream failed.");
 }
 
 function getEffectiveClaudeAgentEffort(
@@ -3062,11 +3068,14 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     const status = turnStatusFromResult(message);
     const errorMessage = resultUserFacingError(message);
+    const runtimeErrorMessage = errorMessage ?? "Claude turn failed.";
+
+    context.reportedFailedResultMessage = status === "failed" ? runtimeErrorMessage : undefined;
 
     if (status === "failed") {
       yield* emitRuntimeError(
         context,
-        errorMessage ?? "Claude turn failed.",
+        runtimeErrorMessage,
         undefined,
         context.turnState?.lastAssistantError === "authentication_failed"
           ? "auth_error"
@@ -3711,6 +3720,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     if (Exit.isFailure(exit)) {
+      const streamFailureMessage = claudeStreamFailureMessage(exit.cause);
+      const failedResultAlreadyReported =
+        context.reportedFailedResultMessage !== undefined &&
+        streamFailureMessage.includes(context.reportedFailedResultMessage);
+      context.reportedFailedResultMessage = undefined;
       if (isClaudeInterruptedCause(exit.cause)) {
         if (context.turnState) {
           yield* completeTurn(context, "interrupted", "Claude runtime interrupted.");
@@ -3725,10 +3739,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           failureTags: failures.map((failure) => failure._tag),
         });
         yield* completeTurn(context, "failed", message);
+      } else if (!context.turnState && !failedResultAlreadyReported) {
+        yield* emitRuntimeError(context, streamFailureMessage);
       }
-      // With no active turn the failure was already reported by the result
-      // that closed it (the SDK rethrows an error result when the CLI exits),
-      // so a second generic runtime.error would only clobber that message.
     } else if (context.turnState) {
       yield* completeTurn(context, "interrupted", "Claude runtime stream ended.");
     }
@@ -4490,6 +4503,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         workflowMemberFingerprints,
         liveTaskIds,
         turnState: undefined,
+        reportedFailedResultMessage: undefined,
         lastKnownContextWindow: initialContextWindow,
         lastKnownTokenUsage: undefined,
         lastKnownTotalProcessedTokens: undefined,
