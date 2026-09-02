@@ -6,7 +6,15 @@ import {
   TerminalIcon,
 } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
-import { type ReactNode, memo, useCallback, useId, useMemo, useState } from "react";
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  memo,
+  useCallback,
+  useId,
+  useMemo,
+  useState,
+} from "react";
 import {
   AuthAccessReadScope,
   AuthAccessWriteScope,
@@ -123,7 +131,7 @@ import {
   desktopNetworkAccessStateAtom,
   refreshDesktopNetworkAccessState,
 } from "~/state/desktopNetworkAccess";
-import { desktopSshHostsStateAtom } from "~/state/desktopSshHosts";
+import { desktopSshHostsStateAtom, filterDiscoveredSshHosts } from "~/state/desktopSshHosts";
 import { desktopWslStateAtom, refreshDesktopWslState } from "~/state/desktopWslState";
 import {
   type EnvironmentPresentation,
@@ -1938,6 +1946,10 @@ export function ConnectionsSettings() {
       }),
     [discoveredSshHosts, savedDesktopSshEnvironmentKeys],
   );
+  const filteredDiscoveredSshHosts = useMemo(
+    () => filterDiscoveredSshHosts(unsavedDiscoveredSshHosts, savedBackendSshHost),
+    [savedBackendSshHost, unsavedDiscoveredSshHosts],
+  );
   const hasLoadedDiscoveredSshHosts =
     desktopSshHosts.data !== null || desktopSshHosts.error !== null;
   const isLoadingDiscoveredSshHosts = desktopSshHosts.isPending;
@@ -2269,6 +2281,17 @@ export function ConnectionsSettings() {
     savedBackendSshUsername,
   ]);
 
+  const handleSavedBackendSshFieldKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+      if (event.key === "Enter" && savedBackendSshHost.trim().length > 0) {
+        event.preventDefault();
+        void handleAddSavedBackend();
+      }
+    },
+    [handleAddSavedBackend, savedBackendSshHost],
+  );
+
   const handleConnectSavedBackend = useCallback(
     async (environmentId: EnvironmentId) => {
       setSavedBackendError(null);
@@ -2349,6 +2372,11 @@ export function ConnectionsSettings() {
       }
     },
     [connectSshEnvironment, savedBackendMode, savedDesktopSshEnvironmentsByAlias],
+  );
+
+  const handleConnectDiscoveredSshHost = useCallback(
+    (target: DesktopDiscoveredSshHost) => void handleConnectSshHost(target),
+    [handleConnectSshHost],
   );
 
   const visibleDesktopPairingLinks = desktopPairingLinks;
@@ -2503,6 +2531,7 @@ export function ConnectionsSettings() {
           <Input
             value={savedBackendSshHost}
             onChange={(event) => setSavedBackendSshHost(event.target.value)}
+            onKeyDown={handleSavedBackendSshFieldKeyDown}
             placeholder="Search hosts or type devbox"
             disabled={isAddingSavedBackend}
             spellCheck={false}
@@ -2514,6 +2543,7 @@ export function ConnectionsSettings() {
             <Input
               value={savedBackendSshUsername}
               onChange={(event) => setSavedBackendSshUsername(event.target.value)}
+              onKeyDown={handleSavedBackendSshFieldKeyDown}
               placeholder="root"
               disabled={isAddingSavedBackend}
               spellCheck={false}
@@ -2524,6 +2554,7 @@ export function ConnectionsSettings() {
             <Input
               value={savedBackendSshPort}
               onChange={(event) => setSavedBackendSshPort(event.target.value)}
+              onKeyDown={handleSavedBackendSshFieldKeyDown}
               placeholder="22"
               inputMode="numeric"
               disabled={isAddingSavedBackend}
@@ -2568,19 +2599,23 @@ export function ConnectionsSettings() {
         </div>
         <ScrollArea scrollFade className="max-h-56">
           <div>
-            {unsavedDiscoveredSshHosts.map((target) => (
+            {filteredDiscoveredSshHosts.map((target) => (
               <DesktopSshHostRow
                 key={`${target.alias}:${target.hostname}:${target.port ?? ""}`}
                 target={target}
                 connectingHostAlias={connectingSshHostAlias}
-                onConnect={(nextTarget) => void handleConnectSshHost(nextTarget)}
+                onConnect={handleConnectDiscoveredSshHost}
               />
             ))}
             {hasLoadedDiscoveredSshHosts &&
             !isLoadingDiscoveredSshHosts &&
-            unsavedDiscoveredSshHosts.length === 0 ? (
+            filteredDiscoveredSshHosts.length === 0 ? (
               <div className={ITEM_ROW_CLASSNAME}>
-                <p className="text-xs text-muted-foreground">No new SSH hosts were discovered.</p>
+                <p role="status" className="break-all text-xs text-muted-foreground">
+                  {unsavedDiscoveredSshHosts.length === 0
+                    ? "No new SSH hosts were discovered."
+                    : `No hosts match "${savedBackendSshHost.trim()}".`}
+                </p>
               </div>
             ) : null}
           </div>
