@@ -5,6 +5,10 @@ import type {
   ProjectId,
   PullRequestState,
 } from "@t3tools/contracts";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import {
   Bot,
@@ -56,6 +60,9 @@ import { faviconUrlForOrigin } from "~/lib/favicon";
 import { useTheme } from "~/hooks/useTheme";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
+import { resolvePathLinkTarget } from "~/terminal-links";
+import { stackedThreadToast, toastManager } from "~/components/ui/toast";
+import { useFileManagerAction } from "~/fileManagerReveal";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 
 import { PreviewPanelShell, type PreviewPanelMode } from "./preview/PreviewPanelShell";
@@ -76,6 +83,8 @@ interface RightPanelTabsProps {
   surfaces: readonly RightPanelSurface[];
   /** Fallback environment for surfaces that do not carry their own. */
   environmentId: EnvironmentId | null;
+  /** Workspace root used to turn file-tab paths into absolute host paths. */
+  workspaceRoot?: string | null;
   activeSurfaceId: string | null;
   pendingSurfaceIds: ReadonlySet<string>;
   previewSessions: Readonly<Record<string, PreviewSessionSnapshot>>;
@@ -166,6 +175,7 @@ const SURFACE_UNAVAILABLE_HINTS = {
 
 type TabContextMenuAction =
   | "copy-path"
+  | "reveal-in-file-manager"
   | "toggle-mute"
   | "close"
   | "close-others"
@@ -176,6 +186,16 @@ const TAB_SCROLL_EDGE_TOLERANCE = 1;
 
 function tabScrollViewport(root: HTMLDivElement | null): HTMLDivElement | null {
   return root?.querySelector<HTMLDivElement>('[data-slot="scroll-area-viewport"]') ?? null;
+}
+
+type FileSurface = Extract<RightPanelSurface, { kind: "file" }>;
+type WorkspaceFileSurface = FileSurface & { readonly attachment?: undefined };
+
+/** Attachment tabs do not have a host workspace path for file-manager actions. */
+export function isWorkspaceFileSurface(
+  surface: RightPanelSurface,
+): surface is WorkspaceFileSurface {
+  return surface.kind === "file" && surface.attachment === undefined;
 }
 
 /**
@@ -726,6 +746,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   const ownsDesktopTitleBar = isElectron && props.mode === "inline";
   const browserProfiles = useBrowserDefaults().profiles;
   const { resolvedTheme } = useTheme();
+  const resolveFileManagerAction = useFileManagerAction();
   const tabListRef = useRef<HTMLDivElement>(null);
   const [addSurfaceMenuOpen, setAddSurfaceMenuOpen] = useState(false);
   const [tabScrollState, setTabScrollState] = useState({
@@ -836,9 +857,20 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       const surfaceIndex = props.surfaces.findIndex((entry) => entry.id === surface.id);
       if (surfaceIndex < 0) return;
 
+      const isWorkspaceFile = isWorkspaceFileSurface(surface);
+      const revealAction =
+        isWorkspaceFile &&
+        props.environmentId !== null &&
+        props.workspaceRoot !== null &&
+        props.workspaceRoot !== undefined
+          ? resolveFileManagerAction(props.environmentId)
+          : null;
       const items: ContextMenuItem<TabContextMenuAction>[] = [];
-      if (surface.kind === "file" && surface.attachment === undefined) {
+      if (isWorkspaceFile) {
         items.push({ id: "copy-path", label: "Copy path" });
+        if (revealAction !== null) {
+          items.push({ id: "reveal-in-file-manager", label: revealAction.revealLabel });
+        }
       }
       const menuPreviewTabId = previewTabIdOf(surface, props.previewSessions);
       // Desktop overlay state only arrives once the preview manager has created
@@ -881,8 +913,38 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       const action = await api.contextMenu.show(items, { x: event.clientX, y: event.clientY });
       switch (action) {
         case "copy-path":
-          if (surface.kind === "file" && surface.attachment === undefined) {
+          if (isWorkspaceFileSurface(surface)) {
             props.onCopyFilePath(surface.relativePath);
+          }
+          break;
+        case "reveal-in-file-manager":
+          if (
+            isWorkspaceFileSurface(surface) &&
+            props.workspaceRoot !== null &&
+            props.workspaceRoot !== undefined &&
+            revealAction !== null
+          ) {
+            const targetPath = resolvePathLinkTarget(surface.relativePath, props.workspaceRoot);
+            try {
+              const result = await revealAction.reveal(targetPath);
+              if (result._tag === "Success" || isAtomCommandInterrupted(result)) break;
+              const error = squashAtomCommandFailure(result);
+              toastManager.add(
+                stackedThreadToast({
+                  type: "error",
+                  title: "Unable to reveal file",
+                  description: error instanceof Error ? error.message : "An error occurred.",
+                }),
+              );
+            } catch (cause) {
+              toastManager.add(
+                stackedThreadToast({
+                  type: "error",
+                  title: "Unable to reveal file",
+                  description: cause instanceof Error ? cause.message : "An error occurred.",
+                }),
+              );
+            }
           }
           break;
         case "toggle-mute": {
@@ -913,7 +975,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           break;
       }
     },
-    [props],
+    [props, resolveFileManagerAction],
   );
   const handleTabMouseDown = useCallback((event: ReactMouseEvent) => {
     if (event.button !== 1) return;

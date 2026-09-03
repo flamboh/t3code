@@ -1,20 +1,48 @@
-import type { DesktopPreviewFavicon, PreviewSessionSnapshot } from "@t3tools/contracts";
+import type {
+  ChatFileAttachment,
+  DesktopPreviewFavicon,
+  PreviewSessionSnapshot,
+} from "@t3tools/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   RightPanelTabs,
+  isWorkspaceFileSurface,
   shouldOpenDefaultBrowserProfileFromMenuClick,
   surfaceShortcutActionForKey,
   surfaceShortcutTargetsTypingContext,
   tabMuteMenuItem,
 } from "./RightPanelTabs";
+import type { RightPanelSurface } from "~/rightPanelStore";
 
 describe("browser profile submenu", () => {
   it("reserves touch clicks for opening the choices while mouse clicks use the default", () => {
     expect(shouldOpenDefaultBrowserProfileFromMenuClick("touch")).toBe(false);
     expect(shouldOpenDefaultBrowserProfileFromMenuClick("mouse")).toBe(true);
     expect(shouldOpenDefaultBrowserProfileFromMenuClick(undefined)).toBe(true);
+  });
+});
+
+const attachment: ChatFileAttachment = {
+  type: "file",
+  id: "attachment-1" as ChatFileAttachment["id"],
+  name: "notes.txt",
+  mimeType: "text/plain",
+  sizeBytes: 1,
+};
+const attachmentSurface: RightPanelSurface = {
+  id: "attachment:attachment-1",
+  kind: "file",
+  relativePath: attachment.name,
+  revealLine: null,
+  revealRequestId: 0,
+  attachment,
+};
+
+describe("file-tab host paths", () => {
+  it("does not treat attachment tabs as workspace files", () => {
+    expect(isWorkspaceFileSurface(attachmentSurface)).toBe(false);
   });
 });
 
