@@ -39,6 +39,8 @@ import type { ProviderMaintenanceCapabilities } from "./providerMaintenance.ts";
 import * as ClaudeAuthFlow from "./claudeAuthFlow.ts";
 import { continueProviderThreadAfterReauthentication } from "./providerThreadContinuation.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ProjectionThreadMessages from "../persistence/Services/ProjectionThreadMessages.ts";
+import * as ProjectionTurns from "../persistence/Services/ProjectionTurns.ts";
 import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 const isServerProviderUpdateError = Schema.is(ServerProviderUpdateError);
@@ -695,12 +697,18 @@ export const layerWithThreadContinuation = Layer.effect(
   Effect.gen(function* () {
     const providerService = yield* ProviderService.ProviderService;
     const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+    const projectionThreadMessages =
+      yield* ProjectionThreadMessages.ProjectionThreadMessageRepository;
+    const projectionTurns = yield* ProjectionTurns.ProjectionTurnRepository;
     return yield* make({
       onProviderReauthenticated: ({ threadId, instanceId }) =>
         continueProviderThreadAfterReauthentication({
           threadId,
           instanceId,
           getThreadDetailById: projectionSnapshotQuery.getThreadDetailById,
+          getTurnByTurnId: projectionTurns.getByTurnId,
+          getPendingTurnStartByThreadId: projectionTurns.getPendingTurnStartByThreadId,
+          getMessageById: projectionThreadMessages.getByMessageId,
           getCapabilities: providerService.getCapabilities,
           sendTurn: providerService.sendTurn,
         }).pipe(
