@@ -72,6 +72,11 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkBreaks from "remark-breaks";
 import { parseAssistantCitationHref } from "@t3tools/shared/assistantCitations";
 import { AssistantCitationChip } from "./chat/AssistantCitationChip";
+import {
+  PullRequestLinkPreview,
+  PullRequestLinkStateIcon,
+} from "./pullRequest/PullRequestLinkPreview";
+import { resolvePullRequestLinkPreviewTarget } from "./pullRequest/pullRequestLinkPreview.logic";
 import remarkGfm from "remark-gfm";
 import { remarkGithubAlerts } from "../markdown-github-alerts";
 import {
@@ -1130,27 +1135,20 @@ const failedFaviconHosts = new Set<string>();
 
 const MarkdownLinkFavicon = memo(function MarkdownLinkFavicon({ host }: { host: string }) {
   const [failedHost, setFailedHost] = useState<string | null>(null);
-  return (
-    <span
-      className="ms-[0.25em] me-[0.2em] inline-flex size-[14px] [vertical-align:-0.125em]"
-      aria-hidden
-    >
-      {failedHost === host || failedFaviconHosts.has(host) ? (
-        <GlobeIcon className={MARKDOWN_LINK_FAVICON_CLASS_NAME} />
-      ) : (
-        <img
-          src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=32`}
-          alt=""
-          loading="lazy"
-          draggable={false}
-          className={cn(MARKDOWN_LINK_FAVICON_CLASS_NAME, "rounded-sm")}
-          onError={() => {
-            failedFaviconHosts.add(host);
-            setFailedHost(host);
-          }}
-        />
-      )}
-    </span>
+  return failedHost === host || failedFaviconHosts.has(host) ? (
+    <GlobeIcon className={MARKDOWN_LINK_FAVICON_CLASS_NAME} />
+  ) : (
+    <img
+      src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=32`}
+      alt=""
+      loading="lazy"
+      draggable={false}
+      className={cn(MARKDOWN_LINK_FAVICON_CLASS_NAME, "rounded-sm")}
+      onError={() => {
+        failedFaviconHosts.add(host);
+        setFailedHost(host);
+      }}
+    />
   );
 });
 
@@ -1529,21 +1527,35 @@ function handleMarkdownFragmentClick(event: ReactMouseEvent<HTMLAnchorElement>, 
   target.scrollIntoView({ block: "nearest" });
 }
 
+/**
+ * Link text led by a 14px glyph that stays on the line with the first word. The host's favicon by
+ * default; a caller that knows what the link is can put its own icon in the slot instead.
+ */
 function MarkdownExternalLinkContent({
   host,
+  icon,
   plainText,
   children,
 }: {
   host: string;
+  icon?: ReactNode;
   plainText: string | null;
   children: ReactNode;
 }) {
+  const leadingIcon = (
+    <span
+      className="ms-[0.25em] me-[0.2em] inline-flex size-[14px] [vertical-align:-0.125em]"
+      aria-hidden
+    >
+      {icon ?? <MarkdownLinkFavicon host={host} />}
+    </span>
+  );
   if (plainText) {
     const leadingLength = leadingExternalLinkTextLength(plainText);
     return (
       <>
         <span className="whitespace-nowrap">
-          <MarkdownLinkFavicon host={host} />
+          {leadingIcon}
           {plainText.slice(0, leadingLength)}
         </span>
         {breakableExternalLinkText(plainText.slice(leadingLength))}
@@ -1559,7 +1571,7 @@ function MarkdownExternalLinkContent({
     return (
       <>
         <span className="whitespace-nowrap">
-          <MarkdownLinkFavicon host={host} />
+          {leadingIcon}
           {firstChild.slice(0, leadingLength)}
         </span>
         {breakableExternalLinkText(firstChild.slice(leadingLength))}
@@ -1571,7 +1583,7 @@ function MarkdownExternalLinkContent({
   return (
     <>
       <span className="whitespace-nowrap">
-        <MarkdownLinkFavicon host={host} />
+        {leadingIcon}
         {firstChild}
       </span>
       {childNodes.slice(1)}
@@ -2121,6 +2133,17 @@ function ChatMarkdown({
     event.clipboardData.setData("text/html", payload.html);
   }, []);
   const openChangeRequestLink = useOpenChangeRequestLink(threadRef);
+  const resolvePullRequestPreviewTarget = useCallback(
+    (href: string, isRepositoryReference: boolean) =>
+      resolvePullRequestLinkPreviewTarget({
+        href,
+        environmentId,
+        canReadPullRequests: serverConfig?.environment.capabilities.pullRequests === true,
+        projects,
+        isRepositoryReference,
+      }),
+    [environmentId, projects, serverConfig],
+  );
   // Subscribed rather than read at click time: the anchor has to decide
   // synchronously whether to intercept its `_blank`, and a subscription is what
   // makes a persisted "app" apply once settings hydrate after launch.
@@ -2435,6 +2458,9 @@ function ChatMarkdown({
           const pullRequestAutolink = String(
             (props as Record<string, unknown>)["data-pull-request-autolink"] ?? "",
           );
+          const pullRequestPreviewTarget = href
+            ? resolvePullRequestPreviewTarget(href, pullRequestAutolink === "reference")
+            : null;
           const pullRequestCopy =
             pullRequestAutolink === "commit"
               ? /\/commit\/([0-9a-f]{40})$/iu.exec(href ?? "")?.[1]
@@ -2564,7 +2590,13 @@ function ChatMarkdown({
               }}
             >
               {faviconHost && hastHasText(node) && !isPullRequestAutolink ? (
-                <MarkdownExternalLinkContent host={faviconHost} plainText={plainHastText(node)}>
+                <MarkdownExternalLinkContent
+                  host={faviconHost}
+                  icon={
+                    pullRequestPreviewTarget === null ? undefined : <PullRequestLinkStateIcon />
+                  }
+                  plainText={plainHastText(node)}
+                >
                   {linkChildren}
                 </MarkdownExternalLinkContent>
               ) : (
@@ -2574,6 +2606,9 @@ function ChatMarkdown({
           );
           if (!faviconHost || !href) {
             return link;
+          }
+          if (pullRequestPreviewTarget !== null) {
+            return <PullRequestLinkPreview target={pullRequestPreviewTarget} trigger={link} />;
           }
           return (
             <Tooltip>
@@ -2756,6 +2791,7 @@ function ChatMarkdown({
     openMarkdownFileInPreview,
     preferredEditorMenuLabel,
     resolveThreadPullRequest,
+    resolvePullRequestPreviewTarget,
     resolvedTheme,
     revealMarkdownFileInFileManager,
     revealInFileManagerLabel,

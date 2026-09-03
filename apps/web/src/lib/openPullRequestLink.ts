@@ -214,10 +214,9 @@ function claim(host: string, match: RegExpExecArray | null): ChangeRequestLink |
  * groups and Azure project paths need — and the host is the first segment of the canonical
  * remote, so github.com and an Enterprise install stay apart.
  */
-export function findProjectForChangeRequest(
-  projects: ReadonlyArray<EnvironmentProject>,
-  link: ChangeRequestLink,
-): EnvironmentProject | undefined {
+export function findProjectForChangeRequest<
+  Project extends Pick<EnvironmentProject, "repositoryIdentity">,
+>(projects: ReadonlyArray<Project>, link: ChangeRequestLink): Project | undefined {
   return projects.find((project) => {
     const identity = project.repositoryIdentity;
     if (!identity) return false;
