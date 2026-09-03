@@ -283,7 +283,8 @@ export function parseVsCodeThemeFile(value: unknown): ThemeDefinition {
     solidOver(canvas, "editorWidget.background", "dropdown.background") ?? derived.surfaceRaised;
   // The checked switch track maps to messageAction, so resolve it before
   // choosing the input role used by the unchecked track.
-  const actionHex = solidOver(canvas, "button.background") ?? accentHex;
+  const buttonHex = solidOver(canvas, "button.background");
+  const actionHex = buttonHex && standsApart(buttonHex, canvasHex) ? buttonHex : accentHex;
   let inputHex = derived.input;
   for (const key of ["input.background", "input.border"]) {
     const candidate = solidOver(canvas, key);
