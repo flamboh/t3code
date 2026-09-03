@@ -222,6 +222,10 @@ describe("ClaudeAuthFlow", () => {
 
   it("accepts only HTTPS authorization URLs owned by Anthropic", () => {
     assert.equal(
+      ClaudeAuthFlow.extractClaudeAuthorizationUrl("https://claude.com/oauth/authorize?state=ok"),
+      "https://claude.com/oauth/authorize?state=ok",
+    );
+    assert.equal(
       ClaudeAuthFlow.extractClaudeAuthorizationUrl("https://claude.ai/oauth/authorize?state=ok"),
       "https://claude.ai/oauth/authorize?state=ok",
     );

@@ -553,7 +553,9 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* (
         threadId: input.threadId,
         command: configuration.command,
         args: ["auth", "login"],
-        env: configuration.environment,
+        // `true` is Claude's no-browser sentinel. Without it, Claude opens a
+        // browser on the server and withholds the URL remote clients need.
+        env: { ...configuration.environment, BROWSER: "true" },
         onSuccess: () =>
           Effect.gen(function* () {
             const providers = yield* providerRegistry.refreshInstance(configuration.instanceId);
@@ -698,7 +700,7 @@ export const layerWithThreadContinuation = Layer.effect(
         continueProviderThreadAfterReauthentication({
           threadId,
           instanceId,
-          getThreadShellById: projectionSnapshotQuery.getThreadShellById,
+          getThreadDetailById: projectionSnapshotQuery.getThreadDetailById,
           getCapabilities: providerService.getCapabilities,
           sendTurn: providerService.sendTurn,
         }).pipe(

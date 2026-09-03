@@ -1,26 +1,25 @@
 import {
+  MessageId,
   ModelSelection,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
   TurnId,
-  type OrchestrationThreadShell,
+  type OrchestrationThread,
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import type { ProviderServiceShape } from "./Services/ProviderService.ts";
-import {
-  continueProviderThreadAfterReauthentication,
-  EXPLICIT_PROVIDER_CONTINUATION_PROMPT,
-} from "./providerThreadContinuation.ts";
+import { continueProviderThreadAfterReauthentication } from "./providerThreadContinuation.ts";
 
 const threadId = ThreadId.make("thread-claude-auth");
 const instanceId = ProviderInstanceId.make("claude-work");
+const failedTurnId = TurnId.make("turn-claude-auth");
 const timestamp = "2026-09-02T12:00:00.000Z";
 
-function makeThread(session: OrchestrationThreadShell["session"]): OrchestrationThreadShell {
+function makeThread(session: OrchestrationThread["session"]): OrchestrationThread {
   return {
     id: threadId,
     projectId: ProjectId.make("project-claude-auth"),
@@ -33,7 +32,14 @@ function makeThread(session: OrchestrationThreadShell["session"]): Orchestration
     interactionMode: "plan",
     branch: null,
     worktreePath: null,
-    latestTurn: null,
+    latestTurn: {
+      turnId: failedTurnId,
+      state: "error",
+      requestedAt: timestamp,
+      startedAt: timestamp,
+      completedAt: timestamp,
+      assistantMessageId: null,
+    },
     createdAt: timestamp,
     updatedAt: timestamp,
     archivedAt: null,
@@ -45,18 +51,27 @@ function makeThread(session: OrchestrationThreadShell["session"]): Orchestration
     pinnedAt: null,
     pinOrderKey: null,
     titleRegeneration: null,
+    deletedAt: null,
+    messages: [
+      {
+        id: MessageId.make("message-claude-auth"),
+        role: "user",
+        text: "Reply with exactly: auth restored.",
+        turnId: null,
+        streaming: false,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    ],
+    proposedPlans: [],
+    activities: [],
+    checkpoints: [],
     session,
-    latestUserMessageAt: timestamp,
-    hasPendingApprovals: false,
-    hasPendingUserInput: false,
-    hasActionableProposedPlan: false,
-    backgroundLiveness: null,
-    planProgress: null,
   };
 }
 
 describe("continueProviderThreadAfterReauthentication", () => {
-  it.effect("continues the matching failed Claude thread with the shared explicit prompt", () =>
+  it.effect("continues the matching failed Claude thread with its original prompt", () =>
     Effect.gen(function* () {
       const sends: Array<Parameters<ProviderServiceShape["sendTurn"]>[0]> = [];
       const sendTurn: ProviderServiceShape["sendTurn"] = (input) =>
@@ -67,7 +82,7 @@ describe("continueProviderThreadAfterReauthentication", () => {
       const continued = yield* continueProviderThreadAfterReauthentication({
         threadId,
         instanceId,
-        getThreadShellById: () =>
+        getThreadDetailById: () =>
           Effect.succeed(
             Option.some(
               makeThread({
@@ -90,7 +105,7 @@ describe("continueProviderThreadAfterReauthentication", () => {
       assert.isTrue(continued);
       assert.deepEqual(sends[0], {
         threadId,
-        input: EXPLICIT_PROVIDER_CONTINUATION_PROMPT,
+        input: "Reply with exactly: auth restored.",
         interactionMode: "plan",
       });
     }),
@@ -107,7 +122,7 @@ describe("continueProviderThreadAfterReauthentication", () => {
       const continued = yield* continueProviderThreadAfterReauthentication({
         threadId,
         instanceId,
-        getThreadShellById: () =>
+        getThreadDetailById: () =>
           Effect.succeed(
             Option.some(
               makeThread({
@@ -124,6 +139,37 @@ describe("continueProviderThreadAfterReauthentication", () => {
           ),
         getCapabilities: () => Effect.succeed({ sessionModelSwitch: "in-session" }),
         sendTurn,
+      });
+
+      assert.isFalse(continued);
+      assert.equal(sends.length, 0);
+    }),
+  );
+
+  it.effect("does not invent a generic turn when the failed user input is unavailable", () =>
+    Effect.gen(function* () {
+      const sends: Array<Parameters<ProviderServiceShape["sendTurn"]>[0]> = [];
+      const thread = makeThread({
+        threadId,
+        status: "error",
+        providerName: "claudeAgent",
+        providerInstanceId: instanceId,
+        runtimeMode: "full-access",
+        activeTurnId: null,
+        lastError: "Authentication failed",
+        lastErrorClass: "auth_error",
+        updatedAt: timestamp,
+      });
+      const continued = yield* continueProviderThreadAfterReauthentication({
+        threadId,
+        instanceId,
+        getThreadDetailById: () => Effect.succeed(Option.some({ ...thread, messages: [] })),
+        getCapabilities: () => Effect.succeed({ sessionModelSwitch: "in-session" }),
+        sendTurn: (input) =>
+          Effect.sync(() => {
+            sends.push(input);
+            return { threadId, turnId: TurnId.make("unexpected-turn") };
+          }),
       });
 
       assert.isFalse(continued);

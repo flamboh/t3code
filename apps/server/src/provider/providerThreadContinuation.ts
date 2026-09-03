@@ -1,4 +1,10 @@
-import type { ProviderInstanceId, ProviderInteractionMode, ThreadId } from "@t3tools/contracts";
+import type {
+  OrchestrationThread,
+  ProviderInstanceId,
+  ProviderInteractionMode,
+  ProviderSendTurnInput,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
@@ -14,16 +20,30 @@ export const continueProviderThread = Effect.fn("continueProviderThread")(functi
   readonly interactionMode: ProviderInteractionMode;
   readonly getCapabilities: ProviderServiceShape["getCapabilities"];
   readonly sendTurn: ProviderServiceShape["sendTurn"];
+  readonly fallbackTurn?: Pick<ProviderSendTurnInput, "input" | "attachments"> | undefined;
 }) {
   const capabilities = yield* input.getCapabilities(input.instanceId);
   yield* input.sendTurn({
     threadId: input.threadId,
     ...(capabilities.promptlessTurnContinuation === true
       ? { continuation: true }
-      : { input: EXPLICIT_PROVIDER_CONTINUATION_PROMPT }),
+      : (input.fallbackTurn ?? { input: EXPLICIT_PROVIDER_CONTINUATION_PROMPT })),
     interactionMode: input.interactionMode,
   });
 });
+
+function failedTurnInput(
+  thread: OrchestrationThread,
+): Pick<ProviderSendTurnInput, "input" | "attachments"> | undefined {
+  const message = thread.messages.findLast((candidate) => candidate.role === "user");
+  if (message === undefined) return undefined;
+  const attachments = message.attachments ?? [];
+  if (message.text.trim().length === 0 && attachments.length === 0) return undefined;
+  return {
+    ...(message.text.trim().length === 0 ? {} : { input: message.text }),
+    ...(attachments.length === 0 ? {} : { attachments }),
+  };
+}
 
 /**
  * Continues the thread that prompted a provider reauthentication attempt.
@@ -35,11 +55,13 @@ export const continueProviderThreadAfterReauthentication = Effect.fn(
 )(function* (input: {
   readonly threadId: ThreadId;
   readonly instanceId: ProviderInstanceId;
-  readonly getThreadShellById: ProjectionSnapshotQueryShape["getThreadShellById"];
+  readonly getThreadDetailById: ProjectionSnapshotQueryShape["getThreadDetailById"];
   readonly getCapabilities: ProviderServiceShape["getCapabilities"];
   readonly sendTurn: ProviderServiceShape["sendTurn"];
 }) {
-  const thread = Option.getOrUndefined(yield* input.getThreadShellById(input.threadId));
+  const thread = Option.getOrUndefined(
+    yield* input.getThreadDetailById(input.threadId, { activityKinds: [] }),
+  );
   const session = thread?.session;
   if (
     thread === undefined ||
@@ -52,12 +74,16 @@ export const continueProviderThreadAfterReauthentication = Effect.fn(
     return false;
   }
 
+  const fallbackTurn = failedTurnInput(thread);
+  if (fallbackTurn === undefined) return false;
+
   yield* continueProviderThread({
     threadId: thread.id,
     instanceId: input.instanceId,
     interactionMode: thread.interactionMode,
     getCapabilities: input.getCapabilities,
     sendTurn: input.sendTurn,
+    fallbackTurn,
   });
   return true;
 });

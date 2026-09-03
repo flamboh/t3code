@@ -3,11 +3,13 @@ import {
   defaultInstanceIdForDriver,
   ProviderDriverKind,
   ProviderInstanceId,
+  ThreadId,
   type ServerProvider,
   type ServerProviderUpdateState,
 } from "@t3tools/contracts";
 import { ServerProviderUpdateError } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -209,23 +211,27 @@ function makeRegistry(
   });
 }
 
+const makeTestRunnerLayer = (
+  registry: ProviderRegistryShape,
+  settings: Parameters<typeof ServerSettings.layerTest>[0] = {},
+) =>
+  ProviderMaintenanceRunner.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.succeed(ProviderRegistry, registry),
+        Layer.succeed(ProviderVersionCache, new Map()),
+        ServerSettings.layerTest(settings),
+        NodePath.layer,
+      ),
+    ),
+  );
+
 const makeTestRunner = (
   registry: ProviderRegistryShape,
   settings: Parameters<typeof ServerSettings.layerTest>[0] = {},
 ) =>
   Effect.service(ProviderMaintenanceRunner.ProviderMaintenanceRunner).pipe(
-    Effect.provide(
-      ProviderMaintenanceRunner.layer.pipe(
-        Layer.provide(
-          Layer.mergeAll(
-            Layer.succeed(ProviderRegistry, registry),
-            Layer.succeed(ProviderVersionCache, new Map()),
-            ServerSettings.layerTest(settings),
-            NodePath.layer,
-          ),
-        ),
-      ),
-    ),
+    Effect.provide(makeTestRunnerLayer(registry, settings)),
   );
 
 describe("providerMaintenanceRunner", () => {
@@ -358,6 +364,76 @@ describe("providerMaintenanceRunner", () => {
                 stdin: childProcess.options.stdin,
               });
               return Effect.succeed(mockHandle({ stdout: "Login successful." }));
+            }),
+          ),
+        ),
+      ),
+    );
+  });
+
+  it.effect("forces interactive Claude auth to print its browser URL", () => {
+    const calls: Array<{ env: NodeJS.ProcessEnv | undefined }> = [];
+    return Effect.gen(function* () {
+      const { registry } = yield* makeRegistry({
+        ...baseProvider,
+        instanceId: CLAUDE_INSTANCE_ID,
+        driver: CLAUDE_DRIVER,
+      });
+      yield* Effect.gen(function* () {
+        const runner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
+        const started = yield* runner.beginProviderReauthentication({
+          provider: CLAUDE_DRIVER,
+          instanceId: CLAUDE_INSTANCE_ID,
+          threadId: ThreadId.make("thread-claude-reauth"),
+        });
+
+        assert.strictEqual(started.status, "awaiting_code");
+        yield* runner.cancelProviderReauthentication({ attemptId: started.attemptId });
+        assert.strictEqual(calls[0]?.env?.BROWSER, "true");
+      }).pipe(
+        Effect.provide(
+          makeTestRunnerLayer(registry, {
+            providerInstances: {
+              [CLAUDE_INSTANCE_ID]: { driver: "claudeAgent" },
+            },
+          }),
+        ),
+      );
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(
+          NonWindowsPlatform,
+          NodePath.layer,
+          latestVersionHttpClient("0.0.0"),
+          Layer.succeed(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make((command) => {
+              const childProcess = command as unknown as {
+                readonly options: { readonly env?: NodeJS.ProcessEnv };
+              };
+              calls.push({ env: childProcess.options.env });
+              return Effect.gen(function* () {
+                const exit = yield* Deferred.make<ChildProcessSpawner.ExitCode>();
+                return ChildProcessSpawner.makeHandle({
+                  pid: ChildProcessSpawner.ProcessId(1),
+                  exitCode: Deferred.await(exit),
+                  isRunning: Effect.succeed(true),
+                  kill: () =>
+                    Deferred.succeed(exit, ChildProcessSpawner.ExitCode(143)).pipe(Effect.asVoid),
+                  unref: Effect.succeed(Effect.void),
+                  stdin: Sink.drain,
+                  stdout: Stream.empty,
+                  stderr: Stream.empty,
+                  all: Stream.make(
+                    encoder.encode(
+                      "If the browser didn't open, visit: https://claude.ai/oauth/authorize?state=test\n",
+                    ),
+                  ),
+                  getInputFd: () => Sink.drain,
+                  getOutputFd: () => Stream.empty,
+                });
+              });
             }),
           ),
         ),

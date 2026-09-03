@@ -37,6 +37,7 @@ const authorizationUrlPattern = /https?:\/\/[^\s"'<>]+/g;
  * Claude Code prints its authorization URL as part of the interactive login.
  * Keep the parser deliberately narrow: only HTTPS URLs on an Anthropic-owned
  * host are returned to the client, while all other CLI output is discarded.
+ * Current and legacy login flows use claude.com, claude.ai, and anthropic.com.
  */
 export function extractClaudeAuthorizationUrl(output: string): string | null {
   for (const raw of output.replace(ansiEscapePattern, "").match(authorizationUrlPattern) ?? []) {
@@ -47,6 +48,8 @@ export function extractClaudeAuthorizationUrl(output: string): string | null {
       const anthropicHost =
         hostname === "anthropic.com" ||
         hostname.endsWith(".anthropic.com") ||
+        hostname === "claude.com" ||
+        hostname.endsWith(".claude.com") ||
         hostname === "claude.ai" ||
         hostname.endsWith(".claude.ai");
       if (url.protocol !== "https:" || !anthropicHost || url.username || url.password) {
