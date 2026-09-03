@@ -52,7 +52,7 @@ function treePath(entry: ProjectEntry): string {
 type FileBrowserContextMenuAction = "copy-mention" | "add-to-chat" | "reveal-in-file-manager";
 
 /** Resolves a tree row, including its directory-row slash, to an absolute host path. */
-export function fileBrowserEntryTargetPath(cwd: string, rowPath: string): string {
+function fileBrowserEntryTargetPath(cwd: string, rowPath: string): string {
   return resolvePathLinkTarget(rowPath.replace(/\/$/, ""), cwd);
 }
 

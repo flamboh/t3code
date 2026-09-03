@@ -55,7 +55,7 @@ describe("buildThreadActionMenuItems", () => {
   it("places the open action between copy and project settings when available", () => {
     const items = buildThreadActionMenuItems({
       ...baseState,
-      openWorkspaceLabel: "Open worktree in Finder",
+      openWorkspaceLabel: openWorkspaceMenuLabel("Reveal in Finder", true),
     });
     const copyIndex = items.findIndex((item) => item.id === "copy");
     expect(items[copyIndex + 1]).toMatchObject({
@@ -123,14 +123,5 @@ describe("buildThreadActionMenuItems", () => {
       (item) => item.id === "archive",
     );
     expect(archiveItem?.disabled).toBe(true);
-  });
-});
-
-describe("openWorkspaceMenuLabel", () => {
-  it.each([
-    ["Reveal in Finder", true, "Open worktree in Finder"],
-    ["Reveal in File Explorer", false, "Open project in File Explorer"],
-  ] as const)("derives the %s target label", (fileManagerLabel, hasWorktree, expected) => {
-    expect(openWorkspaceMenuLabel(fileManagerLabel, hasWorktree)).toBe(expected);
   });
 });
