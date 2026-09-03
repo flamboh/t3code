@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildThreadActionMenuItems, type ThreadActionMenuState } from "./threadActionMenu.logic";
+import {
+  buildThreadActionMenuItems,
+  openWorkspaceMenuLabel,
+  type ThreadActionMenuState,
+} from "./threadActionMenu.logic";
 
 const baseState: ThreadActionMenuState = {
   branch: null,
@@ -11,6 +15,7 @@ const baseState: ThreadActionMenuState = {
   isRegeneratingTitle: false,
   isRunning: false,
   supports: { settlement: true, snooze: true, pinning: true, titleRegeneration: true },
+  openWorkspaceLabel: null,
   snoozePresets: [
     { id: "hour", label: "In 1 hour", whenLabel: "3:00 PM", snoozedUntil: "2026-08-07T15:00:00Z" },
   ],
@@ -45,6 +50,19 @@ describe("buildThreadActionMenuItems", () => {
       icon: "settings",
     });
     expect(items[copyIndex + 2]?.id).toBe("archive");
+  });
+
+  it("places the open action between copy and project settings when available", () => {
+    const items = buildThreadActionMenuItems({
+      ...baseState,
+      openWorkspaceLabel: "Open worktree in Finder",
+    });
+    const copyIndex = items.findIndex((item) => item.id === "copy");
+    expect(items[copyIndex + 1]).toMatchObject({
+      id: "open-in-file-manager",
+      label: "Open worktree in Finder",
+    });
+    expect(items[copyIndex + 2]?.id).toBe("project-settings");
   });
 
   it("includes branch items only for threads with a branch", () => {
@@ -105,5 +123,14 @@ describe("buildThreadActionMenuItems", () => {
       (item) => item.id === "archive",
     );
     expect(archiveItem?.disabled).toBe(true);
+  });
+});
+
+describe("openWorkspaceMenuLabel", () => {
+  it.each([
+    ["Reveal in Finder", true, "Open worktree in Finder"],
+    ["Reveal in File Explorer", false, "Open project in File Explorer"],
+  ] as const)("derives the %s target label", (fileManagerLabel, hasWorktree, expected) => {
+    expect(openWorkspaceMenuLabel(fileManagerLabel, hasWorktree)).toBe(expected);
   });
 });

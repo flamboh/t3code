@@ -23,6 +23,7 @@ export type ThreadActionMenuId =
   | "copy-path"
   | "copy-branch"
   | "copy-thread-id"
+  | "open-in-file-manager"
   | "archive"
   | "delete";
 
@@ -42,6 +43,20 @@ export interface ThreadActionMenuState {
     readonly titleRegeneration: boolean;
   };
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
+  /** Label supplied by the environment-aware file-manager action. */
+  readonly openWorkspaceLabel: string | null;
+}
+
+/**
+ * Adapts the shared file-manager action label to the thread's target. The
+ * action knows the host's file-manager name; the menu adds whether the path is
+ * a thread worktree or the project's root without inspecting the browser OS.
+ */
+export function openWorkspaceMenuLabel(fileManagerLabel: string, hasWorktree: boolean): string {
+  const destination = fileManagerLabel.startsWith("Reveal in ")
+    ? fileManagerLabel.slice("Reveal in ".length)
+    : fileManagerLabel;
+  return `Open ${hasWorktree ? "worktree" : "project"} in ${destination}`;
 }
 
 /**
@@ -120,6 +135,15 @@ export function buildThreadActionMenuItems(
         { id: "copy-thread-id", label: "Thread ID", icon: "hash" },
       ],
     },
+    ...(state.openWorkspaceLabel
+      ? [
+          {
+            id: "open-in-file-manager" as const,
+            label: state.openWorkspaceLabel,
+            icon: "folder",
+          },
+        ]
+      : []),
     { id: "project-settings", label: "Project settings", icon: "settings" },
     // Archive removes the thread from the sidebar while keeping its
     // conversation under Settings > Archived threads — distinct from Settle
