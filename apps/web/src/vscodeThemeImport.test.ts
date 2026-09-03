@@ -156,6 +156,19 @@ describe("VS Code theme import", () => {
     expect(contrastRatio(vitesse.colors.focus, vitesse.colors.canvas)).toBeGreaterThanOrEqual(1.1);
   });
 
+  it("skips a transparent button background for the action color", () => {
+    const theme = parseVsCodeThemeFile({
+      name: "Transparent button",
+      type: "dark",
+      colors: {
+        "editor.background": "#121212",
+        focusBorder: "#4d9375",
+        "button.background": "#00000000",
+      },
+    });
+    expect(asHex(theme.colors.messageAction)).toBe("#4d9375");
+  });
+
   it("uses a visible default accent when the file has no usable accent key", () => {
     const theme = parseVsCodeThemeFile({
       name: "No accent",
