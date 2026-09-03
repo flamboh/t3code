@@ -40,7 +40,7 @@ import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
 import { useThreadActions } from "./useThreadActions";
-import { useFileManagerAction } from "../fileManagerReveal";
+import { useFileManagerActionForEnvironment } from "../fileManagerReveal";
 
 function failureToast(title: string, error: unknown) {
   toastManager.add(
@@ -70,7 +70,7 @@ export function useThreadActionMenu(input: {
 }) {
   const { threadRef, projectCwd, onStartRename } = input;
   const router = useRouter();
-  const resolveFileManagerAction = useFileManagerAction();
+  const fileManagerAction = useFileManagerActionForEnvironment(threadRef?.environmentId ?? null);
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
@@ -132,9 +132,6 @@ export function useThreadActionMenu(input: {
         const thread = readThreadShell(threadRef);
         if (!thread) return;
         const threadWorkspacePath = thread.worktreePath ?? projectCwd;
-        const fileManagerAction = threadWorkspacePath
-          ? resolveFileManagerAction(thread.environmentId)
-          : null;
         const now = new Date();
         const supports = {
           settlement: readEnvironmentSupportsSettlement(threadRef.environmentId),
@@ -154,9 +151,13 @@ export function useThreadActionMenu(input: {
           isRunning: thread.session?.status === "running" && thread.session.activeTurnId != null,
           supports,
           snoozePresets,
-          openWorkspaceLabel: fileManagerAction
-            ? openWorkspaceMenuLabel(fileManagerAction.revealLabel, thread.worktreePath !== null)
-            : null,
+          openWorkspaceLabel:
+            threadWorkspacePath && fileManagerAction
+              ? openWorkspaceMenuLabel(
+                  fileManagerAction.fileManagerName,
+                  thread.worktreePath !== null,
+                )
+              : null,
         });
         const clicked = await settlePromise(() => api.contextMenu.show(items, position));
         if (clicked._tag === "Failure" || clicked.value === null) return;
@@ -369,7 +370,7 @@ export function useThreadActionMenu(input: {
       projectCwd,
       projectGroupingSettings,
       projects,
-      resolveFileManagerAction,
+      fileManagerAction,
       router,
       settleThread,
       snoozeThread,

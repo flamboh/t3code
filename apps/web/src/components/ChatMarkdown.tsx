@@ -116,7 +116,7 @@ import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { useTheme } from "../hooks/useTheme";
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
-import { useFileManagerAction } from "../fileManagerReveal";
+import { useFileManagerActionForEnvironment } from "../fileManagerReveal";
 import {
   chatMarkdownClipboardPayload,
   serializeTableElementToCsv,
@@ -2038,9 +2038,8 @@ function useChatMarkdownState({
   const [preferredEditor] = usePreferredEditor(availableEditors);
   const preferredEditorMenuLabel = openInEditorMenuLabel(preferredEditor);
   const openInPreferredEditor = useOpenInPreferredEditor(environmentId, availableEditors);
-  const resolveFileManagerAction = useFileManagerAction();
-  const fileManagerAction =
-    canUseShellActions && environmentId !== null ? resolveFileManagerAction(environmentId) : null;
+  const environmentFileManagerAction = useFileManagerActionForEnvironment(environmentId);
+  const fileManagerAction = canUseShellActions ? environmentFileManagerAction : null;
   const revealInFileManagerLabel = fileManagerAction?.revealLabel;
   const revealFileInFileManager = useCallback(
     (filePath: string) => {

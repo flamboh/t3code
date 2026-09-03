@@ -3299,7 +3299,7 @@ export default function Sidebar() {
               snoozePresets,
               openWorkspaceLabel: fileManagerAction
                 ? openWorkspaceMenuLabel(
-                    fileManagerAction.revealLabel,
+                    fileManagerAction.fileManagerName,
                     thread.worktreePath !== null,
                   )
                 : null,

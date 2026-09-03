@@ -24,8 +24,7 @@ import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
 import { PIERRE_TREE_UNSAFE_CSS, pierreTreeStyle } from "~/pierre-tree-theme";
-import { resolvePathLinkTarget } from "~/terminal-links";
-import { useFileManagerAction } from "~/fileManagerReveal";
+import { resolveLiteralFilePath, useFileManagerActionForEnvironment } from "~/fileManagerReveal";
 
 import { createFileTreeDragMentionController } from "./fileTreeDragMention";
 import { areAllDirectoriesExpanded, setAllDirectoriesExpanded } from "./fileTreeExpansion";
@@ -52,7 +51,7 @@ function treePath(entry: ProjectEntry): string {
 type FileBrowserContextMenuAction = "copy-mention" | "add-to-chat" | "reveal-in-file-manager";
 
 function fileBrowserEntryTargetPath(cwd: string, rowPath: string): string {
-  return resolvePathLinkTarget(rowPath.replace(/\/$/, ""), cwd);
+  return resolveLiteralFilePath(rowPath.replace(/\/$/, ""), cwd);
 }
 
 function RefreshFilesButton(props: { isPending: boolean; onRefresh: () => void }) {
@@ -118,7 +117,7 @@ export default function FileBrowserPanel({
   const composerRef = useComposerHandleContext();
   const entriesQuery = useProjectEntriesQuery(environmentId, cwd);
   const entries = entriesQuery.data?.entries ?? [];
-  const resolveFileManagerAction = useFileManagerAction();
+  const fileManagerAction = useFileManagerActionForEnvironment(environmentId);
   const entryKinds = useMemo(
     () => new Map(entries.map((entry) => [entry.path, entry.kind] as const)),
     [entries],
@@ -157,7 +156,7 @@ export default function FileBrowserPanel({
     }
     const relativePath = item.path.replace(/\/$/, "");
     const mention = serializeComposerFileLink(relativePath);
-    const revealAction = resolveFileManagerAction(environmentId);
+    const revealAction = fileManagerAction;
     const pointer = contextMenuPointerRef.current;
     const pointerIsFresh = pointer !== null && performance.now() - pointer.at < 1000;
     const anchorRect = context.anchorElement.getBoundingClientRect();

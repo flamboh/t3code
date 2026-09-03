@@ -60,9 +60,8 @@ import { faviconUrlForOrigin } from "~/lib/favicon";
 import { useTheme } from "~/hooks/useTheme";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
-import { resolvePathLinkTarget } from "~/terminal-links";
+import { resolveLiteralFilePath, useFileManagerActionForEnvironment } from "~/fileManagerReveal";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
-import { useFileManagerAction } from "~/fileManagerReveal";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 
 import { PreviewPanelShell, type PreviewPanelMode } from "./preview/PreviewPanelShell";
@@ -742,7 +741,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   const ownsDesktopTitleBar = isElectron && props.mode === "inline";
   const browserProfiles = useBrowserDefaults().profiles;
   const { resolvedTheme } = useTheme();
-  const resolveFileManagerAction = useFileManagerAction();
+  const fileManagerAction = useFileManagerActionForEnvironment(props.environmentId);
   const tabListRef = useRef<HTMLDivElement>(null);
   const [addSurfaceMenuOpen, setAddSurfaceMenuOpen] = useState(false);
   const [tabScrollState, setTabScrollState] = useState({
@@ -859,7 +858,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         props.environmentId !== null &&
         props.workspaceRoot !== null &&
         props.workspaceRoot !== undefined
-          ? resolveFileManagerAction(props.environmentId)
+          ? fileManagerAction
           : null;
       const items: ContextMenuItem<TabContextMenuAction>[] = [];
       if (isWorkspaceFile) {
@@ -920,7 +919,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             props.workspaceRoot !== undefined &&
             revealAction !== null
           ) {
-            const targetPath = resolvePathLinkTarget(surface.relativePath, props.workspaceRoot);
+            const targetPath = resolveLiteralFilePath(surface.relativePath, props.workspaceRoot);
             try {
               const result = await revealAction.reveal(targetPath);
               if (result._tag === "Success" || isAtomCommandInterrupted(result)) break;
@@ -971,7 +970,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           break;
       }
     },
-    [props, resolveFileManagerAction],
+    [fileManagerAction, props],
   );
   const handleTabMouseDown = useCallback((event: ReactMouseEvent) => {
     if (event.button !== 1) return;
