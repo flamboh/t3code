@@ -1,6 +1,8 @@
 import type { ContextMenuItem } from "@t3tools/contracts";
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
 
+import type { FileManagerName } from "./preview/fileExplorerLabel";
+
 /**
  * Ids for the per-thread action menu. Snooze presets are dispatched as
  * `snooze:<presetId>` so the union stays closed while the preset list
@@ -46,11 +48,11 @@ export interface ThreadActionMenuState {
   readonly openWorkspaceLabel: string | null;
 }
 
-export function openWorkspaceMenuLabel(fileManagerLabel: string, hasWorktree: boolean): string {
-  const destination = fileManagerLabel.startsWith("Reveal in ")
-    ? fileManagerLabel.slice("Reveal in ".length)
-    : fileManagerLabel;
-  return `Open ${hasWorktree ? "worktree" : "project"} in ${destination}`;
+export function openWorkspaceMenuLabel(
+  fileManagerName: FileManagerName,
+  hasWorktree: boolean,
+): string {
+  return `Open ${hasWorktree ? "worktree" : "project"} in ${fileManagerName}`;
 }
 
 /**
