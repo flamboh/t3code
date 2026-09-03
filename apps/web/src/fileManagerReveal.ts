@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentPresentation } from "@t3tools/client-runtime/connection";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ServerConfig } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { useCallback, useMemo } from "react";
 
@@ -21,12 +21,28 @@ export interface FileManagerAction {
   readonly reveal: (targetPath: string) => Promise<FileManagerActionResult>;
 }
 
-function sshAliasForPresentation(presentation: EnvironmentPresentation): string | null {
+type FileManagerPresentation = Pick<EnvironmentPresentation, "entry"> & {
+  readonly serverConfig:
+    | (Pick<
+        ServerConfig,
+        | "availableEditors"
+        | "remoteOpenTargets"
+        | "shellRevealInFileManager"
+        | "shellRevealInFileManagerKind"
+      > & {
+        readonly environment: {
+          readonly platform: Pick<ServerConfig["environment"]["platform"], "os">;
+        };
+      })
+    | null;
+};
+
+function sshAliasForPresentation(presentation: FileManagerPresentation): string | null {
   const profile = Option.getOrNull(presentation.entry.profile);
   return profile !== null && profile._tag === "SshConnectionProfile" ? profile.target.alias : null;
 }
 
-function isLocalEnvironment(presentation: EnvironmentPresentation): boolean {
+function isLocalEnvironment(presentation: FileManagerPresentation): boolean {
   const remoteOpenState = resolveRemoteOpenState({
     target: presentation.entry.target,
     sshAlias: sshAliasForPresentation(presentation),
@@ -36,9 +52,9 @@ function isLocalEnvironment(presentation: EnvironmentPresentation): boolean {
   return remoteOpenState.mode === "local-exec";
 }
 
-function fileManagerActionForPresentation(
+export function fileManagerActionForPresentation(
   environmentId: EnvironmentId,
-  presentation: EnvironmentPresentation,
+  presentation: FileManagerPresentation,
   openInEditor: (input: {
     readonly environmentId: EnvironmentId;
     readonly input: {

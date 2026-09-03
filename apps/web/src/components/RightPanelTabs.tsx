@@ -192,9 +192,7 @@ type FileSurface = Extract<RightPanelSurface, { kind: "file" }>;
 type WorkspaceFileSurface = FileSurface & { readonly attachment?: undefined };
 
 /** Attachment tabs do not have a host workspace path for file-manager actions. */
-export function isWorkspaceFileSurface(
-  surface: RightPanelSurface,
-): surface is WorkspaceFileSurface {
+function isWorkspaceFileSurface(surface: RightPanelSurface): surface is WorkspaceFileSurface {
   return surface.kind === "file" && surface.attachment === undefined;
 }
 
