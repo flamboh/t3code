@@ -362,6 +362,8 @@ function PullRequestsRouteView() {
             ? `${project.title} · ${environmentLabels.get(project.environmentId) ?? project.environmentId}`
             : project.title,
         workspaceRoot: project.workspaceRoot,
+        faviconPath: project.faviconPath ?? null,
+        projectIcon: project.projectIcon ?? null,
       }))
       .toSorted((left, right) => left.title.localeCompare(right.title));
   }, [environmentLabels, projects]);
@@ -2294,7 +2296,7 @@ function PullRequestsColumn({
         {/* The top padding is the shared fade band's height, the same pairing the
             settings page makes: at rest the controls sit fully below the mask, and only
             content actually passing under the chrome fades. */}
-        <WorkspacePageContainer className="gap-4">
+        <WorkspacePageContainer width="expanded" className="gap-4">
           <div className="flex flex-col gap-3">
             <div ref={inFlowSearchRef} className="flex items-center gap-2">
               {searchInput}
