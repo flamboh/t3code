@@ -46,10 +46,34 @@ describe("resolveLiteralFilePath", () => {
       String.raw`C:\project\src\file.txt`,
     ],
     [
+      "Windows drive-root relative with backslash",
+      String.raw`\report.pdf`,
+      "C:/project",
+      String.raw`C:\report.pdf`,
+    ],
+    [
+      "Windows drive-root relative with POSIX separator",
+      "/report.pdf",
+      "C:/project",
+      String.raw`C:\report.pdf`,
+    ],
+    [
       "UNC root with POSIX separators",
       "src/file.txt",
       String.raw`\\server\share\project`,
       String.raw`\\server\share\project\src\file.txt`,
+    ],
+    [
+      "UNC volume-root relative with backslash",
+      String.raw`\report.pdf`,
+      String.raw`\\server\share\project`,
+      String.raw`\\server\share\report.pdf`,
+    ],
+    [
+      "UNC volume-root relative with POSIX separator",
+      "/report.pdf",
+      String.raw`\\server\share\project`,
+      String.raw`\\server\share\report.pdf`,
     ],
   ] as const)("resolves %s", (_case, path, workspaceRoot, expected) => {
     expect(resolveLiteralFilePath(path, workspaceRoot)).toBe(expected);
@@ -105,7 +129,7 @@ describe("fileManagerActionForPresentation", () => {
       command,
     );
 
-    await expect(action?.open("/workspace/project")).resolves.toBe(result);
+    await expect(action?.open.run("/workspace/project")).resolves.toBe(result);
     expect(command).toHaveBeenCalledWith({
       environmentId: localEnvironmentId,
       input: {
@@ -113,7 +137,7 @@ describe("fileManagerActionForPresentation", () => {
         editor: "file-manager",
       },
     });
-    await expect(action?.reveal("/workspace/project/src/main.ts")).resolves.toBe(result);
+    await expect(action?.reveal?.run("/workspace/project/src/main.ts")).resolves.toBe(result);
     expect(command).toHaveBeenNthCalledWith(2, {
       environmentId: localEnvironmentId,
       input: {
@@ -124,18 +148,31 @@ describe("fileManagerActionForPresentation", () => {
     });
   });
 
+  it("keeps open available when reveal capability is unavailable", async () => {
+    const result = AsyncResult.success(undefined);
+    const command = vi.fn<Parameters<typeof fileManagerActionForPresentation>[2]>();
+    command.mockResolvedValue(result);
+    const action = fileManagerActionForPresentation(
+      localEnvironmentId,
+      presentation(localEnvironmentId, { os: "linux", enabled: false }),
+      command,
+    );
+
+    expect(action).not.toBeNull();
+    expect(action?.open.managerName).toBe("File Manager");
+    expect(action?.reveal).toBeNull();
+    await expect(action?.open.run("/workspace/project")).resolves.toBe(result);
+  });
+
   it("labels a local Linux files action as opening the containing folder", () => {
     const command = vi.fn<Parameters<typeof fileManagerActionForPresentation>[2]>();
     const action = fileManagerActionForPresentation(
       localEnvironmentId,
-      presentation(localEnvironmentId, { os: "linux", kind: "files" }),
+      presentation(localEnvironmentId, { os: "linux", kind: "files", enabled: true }),
       command,
     );
 
-    expect(action).toMatchObject({
-      fileManagerName: "Files",
-      revealLabel: "Open Containing Folder",
-    });
+    expect(action?.reveal).toMatchObject({ label: "Open Containing Folder" });
   });
 
   it.each([
@@ -143,11 +180,6 @@ describe("fileManagerActionForPresentation", () => {
       "the environment is remote",
       remoteEnvironmentId,
       presentation(remoteEnvironmentId, { target: "remote" }),
-    ],
-    [
-      "the server capability is unavailable",
-      localEnvironmentId,
-      presentation(localEnvironmentId, { enabled: false }),
     ],
     [
       "the file-manager editor is unavailable",

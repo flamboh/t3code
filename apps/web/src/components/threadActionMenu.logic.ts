@@ -1,7 +1,7 @@
 import type { ContextMenuItem } from "@t3tools/contracts";
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
 
-import type { FileManagerName } from "./preview/fileExplorerLabel";
+import type { FileManagerOpenName } from "./preview/fileExplorerLabel";
 
 /**
  * Ids for the per-thread action menu. Snooze presets are dispatched as
@@ -49,7 +49,7 @@ export interface ThreadActionMenuState {
 }
 
 export function openWorkspaceMenuLabel(
-  fileManagerName: FileManagerName,
+  fileManagerName: FileManagerOpenName,
   hasWorktree: boolean,
 ): string {
   return `Open ${hasWorktree ? "worktree" : "project"} in ${fileManagerName}`;

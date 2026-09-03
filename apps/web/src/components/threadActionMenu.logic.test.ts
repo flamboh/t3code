@@ -55,12 +55,12 @@ describe("buildThreadActionMenuItems", () => {
   it("places the open action between copy and project settings when available", () => {
     const items = buildThreadActionMenuItems({
       ...baseState,
-      openWorkspaceLabel: openWorkspaceMenuLabel("Files", true),
+      openWorkspaceLabel: openWorkspaceMenuLabel("File Manager", true),
     });
     const copyIndex = items.findIndex((item) => item.id === "copy");
     expect(items[copyIndex + 1]).toMatchObject({
       id: "open-in-file-manager",
-      label: "Open worktree in Files",
+      label: "Open worktree in File Manager",
     });
     expect(items[copyIndex + 2]?.id).toBe("project-settings");
   });

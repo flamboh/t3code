@@ -3299,7 +3299,7 @@ export default function Sidebar() {
               snoozePresets,
               openWorkspaceLabel: fileManagerAction
                 ? openWorkspaceMenuLabel(
-                    fileManagerAction.fileManagerName,
+                    fileManagerAction.open.managerName,
                     thread.worktreePath !== null,
                   )
                 : null,
@@ -3405,7 +3405,7 @@ export default function Sidebar() {
           case "open-in-file-manager": {
             if (!threadWorkspacePath || !fileManagerAction) return;
             try {
-              const result = await fileManagerAction.open(threadWorkspacePath);
+              const result = await fileManagerAction.open.run(threadWorkspacePath);
               if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
               const error = squashAtomCommandFailure(result);
               toastManager.add(

@@ -2040,7 +2040,8 @@ function useChatMarkdownState({
   const openInPreferredEditor = useOpenInPreferredEditor(environmentId, availableEditors);
   const environmentFileManagerAction = useFileManagerActionForEnvironment(environmentId);
   const fileManagerAction = canUseShellActions ? environmentFileManagerAction : null;
-  const revealInFileManagerLabel = fileManagerAction?.revealLabel;
+  const fileManagerReveal = fileManagerAction?.reveal ?? null;
+  const revealInFileManagerLabel = fileManagerReveal?.label;
   const revealFileInFileManager = useCallback(
     (filePath: string) => {
       if (environmentId === null) {
@@ -2050,12 +2051,12 @@ function useChatMarkdownState({
           ),
         );
       }
-      if (fileManagerAction === null) {
+      if (fileManagerReveal === null) {
         return Promise.reject(new Error("File-manager reveal is unavailable."));
       }
-      return fileManagerAction.reveal(filePath);
+      return fileManagerReveal.run(filePath);
     },
-    [environmentId, fileManagerAction],
+    [environmentId, fileManagerReveal],
   );
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
   const markdownFileLinkMetaByHref = useMemo(() => {
@@ -2309,7 +2310,7 @@ function useChatMarkdownState({
           }
           openInEditorMenuLabel={preferredEditorMenuLabel}
           onReveal={
-            canUseShellActions && revealInFileManagerLabel !== undefined
+            canUseShellActions && fileManagerReveal !== null
               ? () => revealMarkdownFileInFileManager(fileLinkMeta)
               : undefined
           }
@@ -2327,6 +2328,7 @@ function useChatMarkdownState({
     },
     [
       canUseShellActions,
+      fileManagerReveal,
       fileLinkParentSuffixByPath,
       openFileInPanel,
       openInPreferredEditor,
