@@ -2266,18 +2266,19 @@ export function ConnectionsSettings() {
       if (isAddingSavedBackend || !desktopBridge) return;
 
       setIsAddingSavedBackend(true);
+      setSavedBackendError(null);
       setSavedBackendSshHost(target.alias);
-      let connectionTarget: DesktopSshEnvironmentTarget = target;
+      let resolved: DesktopSshEnvironmentTarget;
       try {
-        const resolved = await desktopBridge.resolveSshHost(target.alias);
-        connectionTarget = resolved;
-        setSavedBackendSshUsername(resolved.username ?? "");
-        setSavedBackendSshPort(resolved.port === null ? "" : String(resolved.port));
-      } catch {
-        // Keep the user's current username and port when SSH resolution fails.
+        resolved = await desktopBridge.resolveSshHost(target.alias);
+      } catch (error) {
+        setSavedBackendError(formatDesktopSshConnectionError(error));
+        setIsAddingSavedBackend(false);
+        return;
       }
-
-      await connectSavedBackendSshTarget(connectionTarget);
+      setSavedBackendSshUsername(resolved.username ?? "");
+      setSavedBackendSshPort(resolved.port === null ? "" : String(resolved.port));
+      await connectSavedBackendSshTarget(resolved);
     },
     [connectSavedBackendSshTarget, desktopBridge, isAddingSavedBackend],
   );
