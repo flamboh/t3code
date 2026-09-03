@@ -43,15 +43,9 @@ export interface ThreadActionMenuState {
     readonly titleRegeneration: boolean;
   };
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
-  /** Label supplied by the environment-aware file-manager action. */
   readonly openWorkspaceLabel: string | null;
 }
 
-/**
- * Adapts the shared file-manager action label to the thread's target. The
- * action knows the host's file-manager name; the menu adds whether the path is
- * a thread worktree or the project's root without inspecting the browser OS.
- */
 export function openWorkspaceMenuLabel(fileManagerLabel: string, hasWorktree: boolean): string {
   const destination = fileManagerLabel.startsWith("Reveal in ")
     ? fileManagerLabel.slice("Reveal in ".length)

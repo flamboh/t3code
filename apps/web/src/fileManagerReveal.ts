@@ -94,11 +94,6 @@ export function fileManagerActionForPresentation(
   };
 }
 
-/**
- * Resolves the server-backed file-manager action for any environment in the
- * catalog. Keeping the environment lookup inside the hook lets multi-
- * environment surfaces resolve a thread's environment at action time.
- */
 export function useFileManagerAction(): (environmentId: EnvironmentId) => FileManagerAction | null {
   const presentations = useAtomValue(environmentPresentations.presentationsAtom);
   const openInEditor = useAtomCommand(shellEnvironment.openInEditor, {
