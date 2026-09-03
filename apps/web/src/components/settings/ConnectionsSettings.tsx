@@ -60,7 +60,7 @@ import {
 import { searchableSetting } from "./settingsSearch";
 import { EnvironmentIconPicker } from "./EnvironmentIconPicker";
 import { Input } from "../ui/input";
-import { Kbd } from "../ui/kbd";
+import { CommandShortcut } from "../ui/command";
 import {
   Autocomplete,
   AutocompleteEmpty,
@@ -2583,7 +2583,9 @@ export function ConnectionsSettings() {
                           ) : (
                             <span className="flex-1" />
                           )}
-                          {shortcutLabel ? <Kbd className="shrink-0">{shortcutLabel}</Kbd> : null}
+                          {shortcutLabel ? (
+                            <CommandShortcut className="shrink-0">{shortcutLabel}</CommandShortcut>
+                          ) : null}
                         </AutocompleteItem>
                       );
                     })}
