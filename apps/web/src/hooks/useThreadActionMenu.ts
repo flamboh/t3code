@@ -154,7 +154,7 @@ export function useThreadActionMenu(input: {
           openWorkspaceLabel:
             threadWorkspacePath && fileManagerAction
               ? openWorkspaceMenuLabel(
-                  fileManagerAction.fileManagerName,
+                  fileManagerAction.open.managerName,
                   thread.worktreePath !== null,
                 )
               : null,
@@ -282,7 +282,7 @@ export function useThreadActionMenu(input: {
           case "open-in-file-manager": {
             if (!threadWorkspacePath || !fileManagerAction) return;
             try {
-              const result = await fileManagerAction.open(threadWorkspacePath);
+              const result = await fileManagerAction.open.run(threadWorkspacePath);
               if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
               failureToast(
                 `Failed to open ${thread.worktreePath ? "worktree" : "project"}`,

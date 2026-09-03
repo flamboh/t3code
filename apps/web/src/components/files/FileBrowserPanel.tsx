@@ -156,7 +156,7 @@ export default function FileBrowserPanel({
     }
     const relativePath = item.path.replace(/\/$/, "");
     const mention = serializeComposerFileLink(relativePath);
-    const revealAction = fileManagerAction;
+    const revealAction = fileManagerAction?.reveal ?? null;
     const pointer = contextMenuPointerRef.current;
     const pointerIsFresh = pointer !== null && performance.now() - pointer.at < 1000;
     const anchorRect = context.anchorElement.getBoundingClientRect();
@@ -168,7 +168,7 @@ export default function FileBrowserPanel({
       { id: "add-to-chat", label: "Add to chat" },
       ...(revealAction === null
         ? []
-        : [{ id: "reveal-in-file-manager" as const, label: revealAction.revealLabel }]),
+        : [{ id: "reveal-in-file-manager" as const, label: revealAction.label }]),
     ];
     try {
       const clicked = await api.contextMenu.show(menuItems, position);
@@ -209,7 +209,7 @@ export default function FileBrowserPanel({
         const targetPath = fileBrowserEntryTargetPath(cwd, relativePath);
         const failureTitle = `Unable to reveal ${item.kind === "directory" ? "folder" : "file"}`;
         try {
-          const result = await revealAction.reveal(targetPath);
+          const result = await revealAction.run(targetPath);
           if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
           const error = squashAtomCommandFailure(result);
           toastManager.add(

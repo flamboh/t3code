@@ -7,9 +7,11 @@ import { useCallback, useMemo } from "react";
 
 import { resolveRemoteOpenState } from "./remoteOpen";
 import {
-  fileManagerNameForKind,
-  fileManagerNameForOs,
-  type FileManagerName,
+  fileManagerRevealNameForKind,
+  fileManagerRevealNameForOs,
+  fileManagerOpenNameForOs,
+  type FileManagerOpenName,
+  type FileManagerRevealName,
   revealInFileExplorerLabelForManager,
 } from "./components/preview/fileExplorerLabel";
 import { environmentPresentations } from "./state/presentation";
@@ -18,11 +20,19 @@ import { useAtomCommand } from "./state/use-atom-command";
 
 export type FileManagerActionResult = Awaited<ReturnType<typeof shellEnvironment.openInEditor.run>>;
 
+interface FileManagerRevealAction {
+  readonly label: string;
+  readonly run: (targetPath: string) => Promise<FileManagerActionResult>;
+}
+
+interface FileManagerOpenAction {
+  readonly managerName: FileManagerOpenName;
+  readonly run: (targetPath: string) => Promise<FileManagerActionResult>;
+}
+
 export interface FileManagerAction {
-  readonly fileManagerName: FileManagerName;
-  readonly revealLabel: string;
-  readonly open: (targetPath: string) => Promise<FileManagerActionResult>;
-  readonly reveal: (targetPath: string) => Promise<FileManagerActionResult>;
+  readonly open: FileManagerOpenAction;
+  readonly reveal: FileManagerRevealAction | null;
 }
 
 function isAbsoluteFilePath(path: string): boolean {
@@ -38,8 +48,27 @@ function trimTrailingSeparators(path: string, separator: "/" | "\\"): string {
   return trimmed || separator;
 }
 
+function windowsVolumeRootForWorkspaceRoot(workspaceRoot: string): string | null {
+  const normalizedRoot = workspaceRoot.replaceAll("/", "\\");
+  const drive = /^([A-Za-z]:)(?:\\|$)/.exec(normalizedRoot);
+  if (drive !== null) return drive[1] ?? null;
+
+  if (!normalizedRoot.startsWith("\\\\")) return null;
+  const [server, share] = normalizedRoot.slice(2).split("\\");
+  return server && share ? `\\\\${server}\\${share}` : null;
+}
+
 /** Resolves a literal file-tree path without interpreting terminal-link syntax. */
 export function resolveLiteralFilePath(path: string, workspaceRoot: string): string {
+  const windowsVolumeRoot = windowsVolumeRootForWorkspaceRoot(workspaceRoot);
+  if (
+    windowsVolumeRoot !== null &&
+    /^[\\/]/.test(path) &&
+    !path.startsWith("\\\\") &&
+    !path.startsWith("//")
+  ) {
+    return `${windowsVolumeRoot}\\${path.replace(/^[\\/]+/, "").replaceAll("/", "\\")}`;
+  }
   if (isAbsoluteFilePath(path)) return path;
 
   const separator: "/" | "\\" = usesWindowsSeparators(workspaceRoot) ? "\\" : "/";
@@ -48,8 +77,11 @@ export function resolveLiteralFilePath(path: string, workspaceRoot: string): str
   return root === separator ? `${root}${relativePath}` : `${root}${separator}${relativePath}`;
 }
 
-const EMPTY_FILE_MANAGER_NAME_ATOM = Atom.make<FileManagerName | null>(null).pipe(
-  Atom.withLabel("web-file-manager-name:empty"),
+const EMPTY_FILE_MANAGER_OPEN_NAME_ATOM = Atom.make<FileManagerOpenName | null>(null).pipe(
+  Atom.withLabel("web-file-manager-open-name:empty"),
+);
+const EMPTY_FILE_MANAGER_REVEAL_NAME_ATOM = Atom.make<FileManagerRevealName | null>(null).pipe(
+  Atom.withLabel("web-file-manager-reveal-name:empty"),
 );
 
 type FileManagerPresentation = Pick<EnvironmentPresentation, "entry"> & {
@@ -83,27 +115,41 @@ function isLocalEnvironment(presentation: FileManagerPresentation): boolean {
   return remoteOpenState.mode === "local-exec";
 }
 
-function fileManagerNameForPresentation(
+function fileManagerOpenNameForPresentation(
   presentation: FileManagerPresentation,
-): FileManagerName | null {
+): FileManagerOpenName | null {
   const serverConfig = presentation.serverConfig;
   if (
     serverConfig === null ||
-    serverConfig.shellRevealInFileManager !== true ||
     !serverConfig.availableEditors.includes("file-manager") ||
     !isLocalEnvironment(presentation)
   ) {
     return null;
   }
 
+  return fileManagerOpenNameForOs(serverConfig.environment.platform.os);
+}
+
+function fileManagerRevealNameForPresentation(
+  presentation: FileManagerPresentation,
+): FileManagerRevealName | null {
+  const serverConfig = presentation.serverConfig;
+  if (
+    fileManagerOpenNameForPresentation(presentation) === null ||
+    serverConfig?.shellRevealInFileManager !== true
+  ) {
+    return null;
+  }
+
   return serverConfig.shellRevealInFileManagerKind === undefined
-    ? fileManagerNameForOs(serverConfig.environment.platform.os)
-    : fileManagerNameForKind(serverConfig.shellRevealInFileManagerKind);
+    ? fileManagerRevealNameForOs(serverConfig.environment.platform.os)
+    : fileManagerRevealNameForKind(serverConfig.shellRevealInFileManagerKind);
 }
 
 function createFileManagerAction(
   environmentId: EnvironmentId,
-  fileManagerName: FileManagerName,
+  openManagerName: FileManagerOpenName,
+  revealManagerName: FileManagerRevealName | null,
   openInEditor: (input: {
     readonly environmentId: EnvironmentId;
     readonly input: {
@@ -113,19 +159,28 @@ function createFileManagerAction(
     };
   }) => Promise<FileManagerActionResult>,
 ): FileManagerAction {
+  const reveal =
+    revealManagerName === null
+      ? null
+      : {
+          label: revealInFileExplorerLabelForManager(revealManagerName),
+          run: (targetPath: string) =>
+            openInEditor({
+              environmentId,
+              input: { cwd: targetPath, editor: "file-manager", reveal: true },
+            }),
+        };
+
   return {
-    fileManagerName,
-    revealLabel: revealInFileExplorerLabelForManager(fileManagerName),
-    open: (targetPath) =>
-      openInEditor({
-        environmentId,
-        input: { cwd: targetPath, editor: "file-manager" },
-      }),
-    reveal: (targetPath) =>
-      openInEditor({
-        environmentId,
-        input: { cwd: targetPath, editor: "file-manager", reveal: true },
-      }),
+    open: {
+      managerName: openManagerName,
+      run: (targetPath) =>
+        openInEditor({
+          environmentId,
+          input: { cwd: targetPath, editor: "file-manager" },
+        }),
+    },
+    reveal,
   };
 }
 
@@ -141,24 +196,41 @@ export function fileManagerActionForPresentation(
     };
   }) => Promise<FileManagerActionResult>,
 ): FileManagerAction | null {
-  const fileManagerName = fileManagerNameForPresentation(presentation);
-  return fileManagerName === null
-    ? null
-    : createFileManagerAction(environmentId, fileManagerName, openInEditor);
+  const openManagerName = fileManagerOpenNameForPresentation(presentation);
+  if (openManagerName === null) {
+    return null;
+  }
+  return createFileManagerAction(
+    environmentId,
+    openManagerName,
+    fileManagerRevealNameForPresentation(presentation),
+    openInEditor,
+  );
 }
 
-const fileManagerNameAtom = Atom.family((environmentId: EnvironmentId) =>
+const openManagerNameAtom = Atom.family((environmentId: EnvironmentId) =>
   Atom.make((get) => {
     const presentation = get(environmentPresentations.presentationAtom(environmentId));
-    return presentation === null ? null : fileManagerNameForPresentation(presentation);
-  }).pipe(Atom.withLabel(`web-file-manager-name:${environmentId}`)),
+    return presentation === null ? null : fileManagerOpenNameForPresentation(presentation);
+  }).pipe(Atom.withLabel(`web-file-manager-open-name:${environmentId}`)),
+);
+const revealManagerNameAtom = Atom.family((environmentId: EnvironmentId) =>
+  Atom.make((get) => {
+    const presentation = get(environmentPresentations.presentationAtom(environmentId));
+    return presentation === null ? null : fileManagerRevealNameForPresentation(presentation);
+  }).pipe(Atom.withLabel(`web-file-manager-reveal-name:${environmentId}`)),
 );
 
 export function useFileManagerActionForEnvironment(
   environmentId: EnvironmentId | null,
 ): FileManagerAction | null {
-  const fileManagerName = useAtomValue(
-    environmentId === null ? EMPTY_FILE_MANAGER_NAME_ATOM : fileManagerNameAtom(environmentId),
+  const openManagerName = useAtomValue(
+    environmentId === null ? EMPTY_FILE_MANAGER_OPEN_NAME_ATOM : openManagerNameAtom(environmentId),
+  );
+  const revealManagerName = useAtomValue(
+    environmentId === null
+      ? EMPTY_FILE_MANAGER_REVEAL_NAME_ATOM
+      : revealManagerNameAtom(environmentId),
   );
   const openInEditor = useAtomCommand(shellEnvironment.openInEditor, {
     reportFailure: false,
@@ -166,10 +238,10 @@ export function useFileManagerActionForEnvironment(
 
   return useMemo(
     () =>
-      environmentId === null || fileManagerName === null
+      environmentId === null || openManagerName === null
         ? null
-        : createFileManagerAction(environmentId, fileManagerName, openInEditor),
-    [environmentId, fileManagerName, openInEditor],
+        : createFileManagerAction(environmentId, openManagerName, revealManagerName, openInEditor),
+    [environmentId, openInEditor, openManagerName, revealManagerName],
   );
 }
 

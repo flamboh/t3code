@@ -950,13 +950,13 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         props.environmentId !== null &&
         props.workspaceRoot !== null &&
         props.workspaceRoot !== undefined
-          ? fileManagerAction
+          ? (fileManagerAction?.reveal ?? null)
           : null;
       const items: ContextMenuItem<TabContextMenuAction>[] = [];
       if (isWorkspaceFile) {
         items.push({ id: "copy-path", label: "Copy path" });
         if (revealAction !== null) {
-          items.push({ id: "reveal-in-file-manager", label: revealAction.revealLabel });
+          items.push({ id: "reveal-in-file-manager", label: revealAction.label });
         }
       }
       const menuPreviewTabId = previewTabIdOf(surface, props.previewSessions);
@@ -1013,7 +1013,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           ) {
             const targetPath = resolveLiteralFilePath(surface.relativePath, props.workspaceRoot);
             try {
-              const result = await revealAction.reveal(targetPath);
+              const result = await revealAction.run(targetPath);
               if (result._tag === "Success" || isAtomCommandInterrupted(result)) break;
               const error = squashAtomCommandFailure(result);
               toastManager.add(
