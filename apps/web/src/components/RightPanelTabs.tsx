@@ -83,7 +83,6 @@ interface RightPanelTabsProps {
   surfaces: readonly RightPanelSurface[];
   /** Fallback environment for surfaces that do not carry their own. */
   environmentId: EnvironmentId | null;
-  /** Workspace root used to turn file-tab paths into absolute host paths. */
   workspaceRoot?: string | null;
   activeSurfaceId: string | null;
   pendingSurfaceIds: ReadonlySet<string>;
@@ -191,7 +190,6 @@ function tabScrollViewport(root: HTMLDivElement | null): HTMLDivElement | null {
 type FileSurface = Extract<RightPanelSurface, { kind: "file" }>;
 type WorkspaceFileSurface = FileSurface & { readonly attachment?: undefined };
 
-/** Attachment tabs do not have a host workspace path for file-manager actions. */
 function isWorkspaceFileSurface(surface: RightPanelSurface): surface is WorkspaceFileSurface {
   return surface.kind === "file" && surface.attachment === undefined;
 }
