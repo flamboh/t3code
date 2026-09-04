@@ -1,7 +1,12 @@
 import { ExternalLinkIcon, PaperclipIcon } from "lucide-react";
 import { markdownImageSourceFragment } from "@t3tools/client-runtime/markdown-images";
 import { githubMediaFetchUrl } from "@t3tools/shared/githubMedia";
-import type { AssetResource, EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import {
+  isGitHubUserAttachmentUrl,
+  type AssetResource,
+  type EnvironmentId,
+  type ScopedThreadRef,
+} from "@t3tools/contracts";
 import { createContext, useContext, useMemo } from "react";
 import type { Options as ReactMarkdownOptions } from "react-markdown";
 
@@ -58,6 +63,12 @@ function PullRequestGitHubVideo({
   );
 }
 
+function resolveGitHubUserAttachmentAsset(
+  url: string,
+): Extract<AssetResource, { readonly _tag: "github-user-attachment" }> | null {
+  return isGitHubUserAttachmentUrl(url) ? { _tag: "github-user-attachment", url } : null;
+}
+
 /** Renders PR uploads inline, with retry and an original link when video playback fails. */
 export function PullRequestMarkdown({
   text,
@@ -101,6 +112,7 @@ export function PullRequestMarkdown({
               environmentId={environmentId}
               extraRemarkPlugins={extraRemarkPlugins}
               githubMedia
+              resolveDirectImageAsset={resolveGitHubUserAttachmentAsset}
             />
           );
         }

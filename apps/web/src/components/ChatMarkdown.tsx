@@ -228,13 +228,15 @@ interface ChatMarkdownProps {
       text nests under the heading that introduces it, such as a chat message's
       author. Rendered tags and their styling are unchanged. */
   headingLevelOffset?: number | undefined;
+  resolveDirectImageAsset?: (
+    url: string,
+  ) => Extract<AssetResource, { readonly _tag: "github-user-attachment" }> | null;
 }
 
 export interface ChatMarkdownContextReference {
   kind: string;
   contextId: string;
   label: string;
-}
 
 export function canUseMarkdownFileShellActions(
   environmentId: EnvironmentId | null,
@@ -1580,7 +1582,14 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
   readonly environmentId: EnvironmentId;
   readonly resource: Extract<
     AssetResource,
-    { readonly _tag: "attachment" | "workspace-file" | "media-file" | "github-media" }
+    {
+      readonly _tag:
+        | "attachment"
+        | "workspace-file"
+        | "media-file"
+        | "github-media"
+        | "github-user-attachment";
+    }
   >;
   readonly kind?: "image" | "video";
   readonly alt: string;
@@ -1615,11 +1624,14 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       : resource._tag === "workspace-file" && props.workspaceRoot
         ? `${props.workspaceRoot.replace(/[\\/]+$/, "")}/${resource.path}`
         : undefined;
-  const reference = path
-    ? mediaFileReference(path, props.workspaceRoot)
-    : props.originalUrl
-      ? mediaUrlReference(props.originalUrl)
-      : undefined;
+  const reference =
+    resource._tag === "github-user-attachment"
+      ? mediaUrlReference(resource.url)
+      : path
+        ? mediaFileReference(path, props.workspaceRoot)
+        : props.originalUrl
+          ? mediaUrlReference(props.originalUrl)
+          : undefined;
   const relativePath = reference?.kind === "file" ? reference.relativePath : undefined;
   const fallbackSrc = assetUrl._tag === "Failure" ? props.fallbackSrc : undefined;
   const src =
@@ -2264,6 +2276,7 @@ function useChatMarkdownState({
   renderContextReference,
   headingLevelOffset = 0,
   githubMedia = false,
+  resolveDirectImageAsset,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
   const [localMediaPreview, setLocalMediaPreview] = useState<ExpandedImagePreview | null>(null);
@@ -2677,6 +2690,7 @@ function useChatMarkdownState({
       openMarkdownMedia,
       projects,
       linkedThreadPullRequestFor,
+      resolveDirectImageAsset,
       resolveThreadPullRequest,
       resolvedTheme,
       serverConfig,
@@ -2707,6 +2721,7 @@ function useChatMarkdownState({
       openMarkdownMedia,
       projects,
       linkedThreadPullRequestFor,
+      resolveDirectImageAsset,
       resolveThreadPullRequest,
       resolvedTheme,
       serverConfig,
@@ -3112,6 +3127,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
       imageBaseDir,
       threadRef,
       renderContextReference,
+      resolveDirectImageAsset,
     } = use(ChatMarkdownRendererContext);
     const imageExpand = use(MarkdownLinkContext) ? undefined : expandMedia;
     const contextReference = typeof src === "string" ? parseComposerContextHref(src) : null;
@@ -3182,6 +3198,19 @@ const CHAT_MARKDOWN_COMPONENTS = {
         src: mediaSrc,
         ...(reference ? { reference } : {}),
       };
+      const directImageAsset = kind === "image" ? resolveDirectImageAsset?.(mediaSrc) : undefined;
+      if (directImageAsset && environmentId) {
+        return (
+          <ChatMarkdownAssetImage
+            environmentId={environmentId}
+            resource={directImageAsset}
+            alt={altText}
+            copyMarkdown={copyMarkdown}
+            style={authoredSizeStyle}
+            onImageExpand={imageExpand}
+          />
+        );
+      }
       if (kind === "video") {
         return (
           <ChatMarkdownVideo
