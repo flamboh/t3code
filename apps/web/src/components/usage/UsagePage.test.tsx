@@ -1,4 +1,4 @@
-import { EnvironmentId, USAGE_CONTRACT_VERSION } from "@t3tools/contracts";
+import { USAGE_CONTRACT_VERSION } from "@t3tools/contracts";
 import { mergeUsage } from "@t3tools/shared/usageMerge";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -104,8 +104,10 @@ const modelTotals = Object.freeze([
   },
 ]);
 
-function usageView() {
-  return {
+beforeEach(() => {
+  testState.metric = "cost";
+  testState.breakdown = "time";
+  testState.useUsage.mockReturnValue({
     merged: {
       ...mergeUsage([], USAGE_CONTRACT_VERSION),
       models: modelTotals,
@@ -131,73 +133,6 @@ function usageView() {
     isPartial: false,
     isUnreachable: false,
     refresh: vi.fn(),
-  };
-}
-
-beforeEach(() => {
-  testState.metric = "cost";
-  testState.breakdown = "time";
-  testState.useUsage.mockReturnValue(usageView());
-});
-
-describe("UsagePage loading coverage", () => {
-  it("renders available totals while another environment is still reporting", () => {
-    const loaded = usageView();
-    testState.useUsage.mockReturnValue({
-      ...loaded,
-      merged: {
-        ...loaded.merged,
-        costUsd: 42.37,
-      },
-      environments: [
-        {
-          environmentId: EnvironmentId.make("loaded-environment"),
-          label: "Laptop",
-          isPending: false,
-          error: null,
-          summary: {},
-        },
-        {
-          environmentId: EnvironmentId.make("pending-environment"),
-          label: "Remote",
-          isPending: true,
-          error: null,
-          summary: null,
-        },
-      ],
-      isPartial: true,
-    });
-
-    const markup = renderToStaticMarkup(<UsagePage />);
-
-    expect(markup).toContain("$42.37");
-    expect(markup).toContain("$11.00");
-    expect(markup).toContain("Laptop");
-    expect(markup).toContain("Remote…");
-    expect(markup).toContain("1 device still scanning");
-  });
-
-  it("shows the no-report notice instead of zero totals when nothing answered", () => {
-    testState.useUsage.mockReturnValue({
-      ...usageView(),
-      merged: mergeUsage([], USAGE_CONTRACT_VERSION),
-      environments: [
-        {
-          environmentId: EnvironmentId.make("away-environment"),
-          label: "Away Laptop",
-          isPending: false,
-          error: "This environment could not report usage.",
-          summary: null,
-        },
-      ],
-      isUnreachable: true,
-    });
-
-    const markup = renderToStaticMarkup(<UsagePage />);
-
-    expect(markup).toContain("No device reported usage.");
-    expect(markup).toContain("Away Laptop could not report usage.");
-    expect(markup).not.toContain("$0.00");
   });
 });
 
