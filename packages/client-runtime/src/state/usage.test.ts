@@ -83,6 +83,7 @@ describe("usage state", () => {
     expect(deriveUsageState([retrying])).toMatchObject({
       isPending: true,
       isPartial: false,
+      isUnreachable: false,
     });
 
     const partial = deriveUsageState([
@@ -120,9 +121,45 @@ describe("usage state", () => {
       error: "This environment could not report usage.",
       summary: null,
     });
-    expect(settled).toMatchObject({ isPending: false, isPartial: false });
+    expect(settled).toMatchObject({ isPending: false, isPartial: false, isUnreachable: false });
     expect(settled.merged.costUsd).toBe(10);
     expect(settled.merged.contributingEnvironments).toEqual([ENVIRONMENT_A]);
+  });
+
+  it("reports unreachable instead of zero totals once every environment has settled without an answer", () => {
+    const timedOut = (environmentId: typeof ENVIRONMENT_A) =>
+      status(environmentId, AsyncResult.failure(Cause.fail("timeout")));
+    const unreachable = deriveUsageState([timedOut(ENVIRONMENT_A), timedOut(ENVIRONMENT_B)]);
+    expect(unreachable).toMatchObject({ isPending: false, isPartial: false, isUnreachable: true });
+    expect(unreachable.merged.costUsd).toBe(0);
+
+    // A late answer restores totals.
+    const lateAnswer = deriveUsageState([
+      timedOut(ENVIRONMENT_A),
+      status(ENVIRONMENT_B, AsyncResult.success(summary(10))),
+    ]);
+    expect(lateAnswer).toMatchObject({ isPending: false, isPartial: false, isUnreachable: false });
+    expect(lateAnswer.merged.costUsd).toBe(10);
+
+    // Refresh puts the timed-out queries back to waiting, which reads as a new scan.
+    const retrying = deriveUsageState([
+      status(
+        ENVIRONMENT_A,
+        AsyncResult.waitingFrom(Option.some(AsyncResult.failure(Cause.fail("timeout")))),
+      ),
+      timedOut(ENVIRONMENT_B),
+    ]);
+    expect(retrying).toMatchObject({ isPending: true, isPartial: false, isUnreachable: false });
+
+    // An environment added after the others settled gets its own attempt.
+    const added = deriveUsageState([
+      timedOut(ENVIRONMENT_A),
+      timedOut(ENVIRONMENT_B),
+      status(EnvironmentId.make("environment-c"), AsyncResult.initial(true)),
+    ]);
+    expect(added).toMatchObject({ isPending: true, isPartial: false, isUnreachable: false });
+
+    expect(deriveUsageState([])).toMatchObject({ isUnreachable: false });
   });
 
   it("keeps the initial placeholder when only an incompatible environment has answered", () => {

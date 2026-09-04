@@ -64,7 +64,7 @@ export function UsageRouteScreen() {
   const [metric, setMetric] = useState<UsageChartMetric>("cost");
   const { days: windowDays, window } = windowSelection;
   const isPast24Hours = windowDays === 1;
-  const { merged, environments, isPending, isPartial, refresh } = useUsage(window);
+  const { merged, environments, isPending, isPartial, isUnreachable, refresh } = useUsage(window);
   const limits = useRefreshLimits();
 
   const days = useMemo(
@@ -182,6 +182,10 @@ export function UsageRouteScreen() {
             ) : environments.length === 0 ? (
               <Text className="py-16 text-center text-base text-foreground-muted">
                 Connect an environment to see usage.
+              </Text>
+            ) : isUnreachable ? (
+              <Text className="py-16 text-center text-base text-foreground-muted">
+                No device reported usage. Reconnect a device or pull to scan again.
               </Text>
             ) : (
               <>

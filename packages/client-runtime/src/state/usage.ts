@@ -21,6 +21,12 @@ export interface DerivedUsageState {
   readonly isPending: boolean;
   /** True after a compatible answer lands while another environment is still answering. */
   readonly isPartial: boolean;
+  /**
+   * True when environments exist but none gave a usable answer and none is
+   * still trying: every one failed, timed out, or runs an incompatible server.
+   * The merged zeros are not data, so pages must not show them as totals.
+   */
+  readonly isUnreachable: boolean;
 }
 
 /** A waiting failure is retrying; only a settled failure should surface as an error. */
@@ -67,5 +73,6 @@ export function deriveUsageState(
     merged,
     isPending: compatibleAnswers === 0 && stillReporting > 0,
     isPartial: compatibleAnswers > 0 && stillReporting > 0,
+    isUnreachable: environments.length > 0 && compatibleAnswers === 0 && stillReporting === 0,
   };
 }

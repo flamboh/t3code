@@ -65,6 +65,11 @@ export interface UsageView {
    * improve by waiting on them, so they must not read as "still reporting".
    */
   readonly isPartial: boolean;
+  /**
+   * True when environments exist but none answered: every one failed or timed
+   * out. Pages show a no-report state instead of zero totals.
+   */
+  readonly isUnreachable: boolean;
   readonly refresh: () => void;
 }
 
@@ -119,6 +124,7 @@ export function useUsage(input: UsageSummaryInput): UsageView {
     environments,
     isPending: usage.isPending,
     isPartial: usage.isPartial,
+    isUnreachable: usage.isUnreachable,
     refresh,
   };
 }

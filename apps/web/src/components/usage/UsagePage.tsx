@@ -69,7 +69,7 @@ export function UsagePage() {
   const [breakdown, setBreakdown] = useState<"model" | "time">("model");
   const { days: windowDays, window } = windowSelection;
   const isPast24Hours = windowDays === 1;
-  const { merged, environments, isPending, isPartial, refresh } = useUsage(window);
+  const { merged, environments, isPending, isPartial, isUnreachable, refresh } = useUsage(window);
   const presentations = useAtomValue(environmentPresentations.presentationsAtom);
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
@@ -271,6 +271,17 @@ export function UsagePage() {
               <>
                 {environments.length > 1 ? <UsageDeviceStrip environments={environments} /> : null}
                 <UsageSkeleton />
+              </>
+            ) : isUnreachable ? (
+              <>
+                <UsageCoverageNotice
+                  environments={environments}
+                  duplicateSources={merged.duplicateSources}
+                  staleEnvironments={merged.staleEnvironments}
+                />
+                <p className="py-16 text-center text-sm text-muted-foreground">
+                  No device reported usage. Reconnect a device or refresh to scan again.
+                </p>
               </>
             ) : (
               <>

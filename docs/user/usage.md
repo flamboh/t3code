@@ -13,7 +13,8 @@ If recent work is missing or a new model shows no cost, refresh to rescan sessio
 update model pricing.
 
 Results appear as each environment responds. An environment that cannot report within 30 seconds
-is marked unavailable without hiding results from other environments. Refresh to retry it.
+is marked unavailable without hiding results from other environments. If no environment reports,
+the page shows a no-report notice instead of zero totals. Refresh to retry.
 
 ## Set custom model prices
 

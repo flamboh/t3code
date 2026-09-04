@@ -129,6 +129,7 @@ function usageView() {
     environments: [],
     isPending: false,
     isPartial: false,
+    isUnreachable: false,
     refresh: vi.fn(),
   };
 }
@@ -174,6 +175,29 @@ describe("UsagePage loading coverage", () => {
     expect(markup).toContain("Laptop");
     expect(markup).toContain("Remote…");
     expect(markup).toContain("1 device still scanning");
+  });
+
+  it("shows the no-report notice instead of zero totals when nothing answered", () => {
+    testState.useUsage.mockReturnValue({
+      ...usageView(),
+      merged: mergeUsage([], USAGE_CONTRACT_VERSION),
+      environments: [
+        {
+          environmentId: EnvironmentId.make("away-environment"),
+          label: "Away Laptop",
+          isPending: false,
+          error: "This environment could not report usage.",
+          summary: null,
+        },
+      ],
+      isUnreachable: true,
+    });
+
+    const markup = renderToStaticMarkup(<UsagePage />);
+
+    expect(markup).toContain("No device reported usage.");
+    expect(markup).toContain("Away Laptop could not report usage.");
+    expect(markup).not.toContain("$0.00");
   });
 });
 
