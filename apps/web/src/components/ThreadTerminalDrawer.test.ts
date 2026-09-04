@@ -4,9 +4,31 @@ import {
   shouldClearTerminalSelectionAction,
   shouldHandleTerminalExit,
   terminalContextMenuItems,
+  terminalFileManagerPath,
   terminalLinkChatText,
+  terminalLinkCopyText,
   terminalSelectionLineRange,
 } from "./ThreadTerminalDrawer";
+
+describe("terminalFileManagerPath", () => {
+  it("resolves relative paths and removes terminal positions", () => {
+    expect(terminalFileManagerPath("src/index.ts:12:3", "/Users/olive/project")).toBe(
+      "/Users/olive/project/src/index.ts",
+    );
+  });
+});
+
+describe("terminalLinkCopyText", () => {
+  it("removes terminal positions from paths", () => {
+    expect(terminalLinkCopyText("src/index.ts:12:3")).toBe("src/index.ts");
+  });
+
+  it("leaves URLs intact", () => {
+    expect(terminalLinkCopyText("https://t3.codes/docs#terminal")).toBe(
+      "https://t3.codes/docs#terminal",
+    );
+  });
+});
 
 describe("terminalLinkChatText", () => {
   it("resolves relative paths against the terminal cwd", () => {
@@ -42,12 +64,13 @@ describe("terminalContextMenuItems", () => {
       hasSelection: false,
       link: "src/components/ThreadTerminalDrawer.tsx",
       canOpenInPreview: false,
-      openLabel: "Open in editor",
-      revealLabel: null,
+      openLabel: "Open in Zed",
+      revealLabel: "Reveal in Finder",
     };
 
     expect(terminalContextMenuItems(options)).toEqual([
-      { id: "open-link", label: "Open in editor" },
+      { id: "open-link", label: "Open in Zed" },
+      { id: "reveal-link", label: "Reveal in Finder" },
       { id: "add-link-to-chat", label: "Add path to chat" },
       { id: "copy-link", label: "Copy path", icon: "copy" },
       { id: "add-to-chat", label: "Add to chat", disabled: true },
@@ -72,6 +95,25 @@ describe("terminalContextMenuItems", () => {
       { id: "copy-link", label: "Copy link", icon: "copy" },
       { id: "add-to-chat", label: "Add to chat", disabled: false },
       { id: "copy", label: "Copy", disabled: false },
+      { id: "paste", label: "Paste" },
+    ]);
+  });
+
+  it("omits file-manager actions when reveal is unavailable", () => {
+    expect(
+      terminalContextMenuItems({
+        hasSelection: false,
+        link: "src/index.ts",
+        canOpenInPreview: false,
+        openLabel: "Open in editor",
+        revealLabel: null,
+      }),
+    ).toEqual([
+      { id: "open-link", label: "Open in editor" },
+      { id: "add-link-to-chat", label: "Add path to chat" },
+      { id: "copy-link", label: "Copy path", icon: "copy" },
+      { id: "add-to-chat", label: "Add to chat", disabled: true },
+      { id: "copy", label: "Copy", disabled: true },
       { id: "paste", label: "Paste" },
     ]);
   });
