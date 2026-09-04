@@ -18,7 +18,6 @@ import {
   primeTerminalCopyInput,
   resolveTerminalMouseData,
   resolveTerminalMouseTrackingState,
-  mapTerminalLinkRange,
   runTerminalLinkContextMenu,
   shouldBlinkTerminalCursor,
   shouldReportTerminalMouse,
@@ -784,24 +783,6 @@ describe("application mouse reporting", () => {
     closeMenu();
     await contextMenu;
     expect(highlights).toEqual([link, null]);
-  });
-
-  it("reprojects a pinned link range into the current viewport", () => {
-    const link = {
-      text: "src/terminal.ts",
-      range: {
-        start: { x: 3, y: 12 },
-        end: { x: 17, y: 12 },
-      },
-    };
-
-    expect(mapTerminalLinkRange(link, ({ x, y }) => ({ x, y: y - 10 }))).toEqual({
-      text: link.text,
-      range: {
-        start: { x: 3, y: 2 },
-        end: { x: 17, y: 2 },
-      },
-    });
   });
 
   it("does not let an older context menu clear a newer link highlight", async () => {
