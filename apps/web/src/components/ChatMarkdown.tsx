@@ -22,12 +22,13 @@ import {
   WrapTextIcon,
   type LucideIcon,
 } from "lucide-react";
-import type {
-  AssetResource,
-  EnvironmentId,
-  ScopedThreadRef,
-  ServerProviderSkill,
-  ThreadPullRequestKey,
+import {
+  isGitHubUserAttachmentUrl,
+  type AssetResource,
+  type EnvironmentId,
+  type ScopedThreadRef,
+  type ServerProviderSkill,
+  type ThreadPullRequestKey,
 } from "@t3tools/contracts";
 import { faviconUrlForOrigin } from "@t3tools/shared/favicon";
 import {
@@ -205,9 +206,7 @@ interface ChatMarkdownProps {
   imageBaseDir?: string | undefined;
   onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
   extraRemarkPlugins?: NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
-  resolveDirectImageAsset?: (
-    url: string,
-  ) => Extract<AssetResource, { readonly _tag: "github-user-attachment" }> | null;
+  normalizeGitHubImages?: boolean;
 }
 
 export function canUseMarkdownFileShellActions(
@@ -2187,7 +2186,7 @@ function useChatMarkdownState({
   onUseArtifactTemplate,
   imageBaseDir,
   onImageExpand,
-  resolveDirectImageAsset,
+  normalizeGitHubImages,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
   const [localMediaPreview, setLocalMediaPreview] = useState<ExpandedImagePreview | null>(null);
@@ -2590,7 +2589,7 @@ function useChatMarkdownState({
       openMarkdownMedia,
       projects,
       linkedThreadPullRequestFor,
-      resolveDirectImageAsset,
+      normalizeGitHubImages,
       resolveThreadPullRequest,
       resolvedTheme,
       serverConfig,
@@ -2618,7 +2617,7 @@ function useChatMarkdownState({
       openMarkdownMedia,
       projects,
       linkedThreadPullRequestFor,
-      resolveDirectImageAsset,
+      normalizeGitHubImages,
       resolveThreadPullRequest,
       resolvedTheme,
       serverConfig,
@@ -2998,8 +2997,9 @@ const CHAT_MARKDOWN_COMPONENTS = {
     );
   },
   img: function MarkdownImage({ node, title, src, alt, ...props }) {
-    const { environmentId, expandMedia, cwd, imageBaseDir, resolveDirectImageAsset, threadRef } =
-      use(ChatMarkdownRendererContext);
+    const { environmentId, expandMedia, cwd, imageBaseDir, normalizeGitHubImages, threadRef } = use(
+      ChatMarkdownRendererContext,
+    );
     const imageExpand = use(MarkdownLinkContext) ? undefined : expandMedia;
     const localSrc = node?.properties?.dataLocalSrc;
     const markdownTitle = node?.properties?.dataMarkdownTitle;
@@ -3027,12 +3027,16 @@ const CHAT_MARKDOWN_COMPONENTS = {
         src: mediaSrc,
         ...(reference ? { reference } : {}),
       };
-      const directImageAsset = kind === "image" ? resolveDirectImageAsset?.(mediaSrc) : undefined;
-      if (directImageAsset && environmentId) {
+      if (
+        normalizeGitHubImages &&
+        kind === "image" &&
+        environmentId &&
+        isGitHubUserAttachmentUrl(mediaSrc)
+      ) {
         return (
           <ChatMarkdownAssetImage
             environmentId={environmentId}
-            resource={directImageAsset}
+            resource={{ _tag: "github-user-attachment", url: mediaSrc }}
             alt={altText}
             copyMarkdown={copyMarkdown}
             style={authoredSizeStyle}

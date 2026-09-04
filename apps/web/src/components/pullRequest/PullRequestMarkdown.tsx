@@ -1,10 +1,5 @@
 import { ExternalLinkIcon, PaperclipIcon } from "lucide-react";
-import {
-  isGitHubUserAttachmentUrl,
-  type AssetResource,
-  type EnvironmentId,
-  type ScopedThreadRef,
-} from "@t3tools/contracts";
+import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { createContext, useContext, useMemo } from "react";
 import type { Options as ReactMarkdownOptions } from "react-markdown";
 
@@ -19,12 +14,6 @@ export const PullRequestMarkdownContext = createContext<{
   repositoryUrl: string | null;
   threadRef: ScopedThreadRef | null;
 } | null>(null);
-
-function resolveGitHubUserAttachmentAsset(
-  url: string,
-): Extract<AssetResource, { readonly _tag: "github-user-attachment" }> | null {
-  return isGitHubUserAttachmentUrl(url) ? { _tag: "github-user-attachment", url } : null;
-}
 
 /** Renders PR uploads inline, with retry and an original link when video playback fails. */
 export function PullRequestMarkdown({
@@ -62,7 +51,7 @@ export function PullRequestMarkdown({
               pullRequestPanelRef={resolvedThreadRef ?? PULL_REQUESTS_PANEL_REF}
               environmentId={environmentId}
               extraRemarkPlugins={extraRemarkPlugins}
-              resolveDirectImageAsset={resolveGitHubUserAttachmentAsset}
+              normalizeGitHubImages
             />
           );
         }
