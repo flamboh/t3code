@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { connectionStatusText } from "@t3tools/client-runtime/connection";
+import { connectionStatusTitle } from "@t3tools/client-runtime/connection";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import {
   isAtomCommandInterrupted,
@@ -67,6 +67,7 @@ import { ScrollArea } from "../ui/scroll-area";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
+import { ExpandableText } from "./ExpandableText";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { UsageProviderSettings } from "./UsageProviderSettings";
 import { ProviderSetupSection, readAntigravityAuthMethod } from "./ProviderSetupSection";
@@ -174,17 +175,27 @@ function EnvironmentUnavailableRow({
     : access.kind === "error"
       ? "Could not connect to this device"
       : "Provider settings are unavailable";
+  // Keep the description to a short status; the raw failure can be a
+  // multi-paragraph CLI dump, so it goes below, clamped and expandable.
   const description = isLoading
     ? access.reason === "permissions"
       ? "Checking what this session is allowed to change."
       : `Waiting for ${environment.label}'s configuration.`
-    : connectionStatusText(environment.connection);
+    : connectionStatusTitle(environment.connection);
+  const error = isLoading ? null : environment.connection.error;
   // No spinner: this state can persist indefinitely for a wedged device, and a
   // continuously repainting animation would run the whole time.
   return (
     <SettingsSection {...searchableSetting("providers")}>
       {deviceTabs}
-      <SettingsRow title={title} description={description} />
+      <SettingsRow title={title} description={description}>
+        {error ? (
+          <ExpandableText
+            text={error}
+            className="mb-2 max-w-xl font-mono text-xs leading-relaxed text-muted-foreground"
+          />
+        ) : null}
+      </SettingsRow>
     </SettingsSection>
   );
 }
@@ -260,7 +271,7 @@ function ProviderSettingsPanelContent(target: ProviderSettingsTarget) {
             const machine = resolveEnvironmentMachineKind(environment.serverConfig);
             const selected = environment.environmentId === effectiveEnvironmentId;
             const detail = providerEnvironmentDetail(environment);
-            const statusText = connectionStatusText(environment.connection);
+            const statusText = connectionStatusTitle(environment.connection);
             return (
               <Tooltip key={environment.environmentId}>
                 <TooltipTrigger
