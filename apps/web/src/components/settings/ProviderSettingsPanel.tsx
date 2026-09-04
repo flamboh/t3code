@@ -57,6 +57,14 @@ import {
 } from "../ProviderUpdateLaunchNotification.logic";
 import { Button } from "../ui/button";
 import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "../ui/empty";
+import {
   NumberField,
   NumberFieldDecrement,
   NumberFieldGroup,
@@ -160,7 +168,47 @@ function providerEnvironmentDetail(environment: EnvironmentPresentation): string
   return environment.displayUrl ?? "Remote device";
 }
 
-function EnvironmentUnavailableRow({
+const providerCardClassName =
+  "overflow-hidden rounded-xl border border-border/60 bg-card/40 shadow-xs/5";
+// Shared by the editor grid and the placeholder states so switching devices
+// never changes the card's footprint.
+const providerCardHeightClassName = "lg:h-[min(44rem,calc(100dvh-11rem))] lg:min-h-[32rem]";
+
+/**
+ * Same chrome as the provider editor (section heading, floating device tabs,
+ * tall card) for states that cannot render provider settings yet.
+ */
+function ProviderSettingsPlaceholder({
+  deviceTabs,
+  icon,
+  title,
+  description,
+  children,
+}: {
+  readonly deviceTabs?: ReactNode;
+  readonly icon: ReactNode;
+  readonly title: string;
+  readonly description: string;
+  readonly children?: ReactNode;
+}) {
+  return (
+    <SettingsSection {...searchableSetting("providers")} variant="plain">
+      {deviceTabs}
+      <div className={cn(providerCardClassName, providerCardHeightClassName, "flex")}>
+        <Empty className="min-h-88">
+          <EmptyMedia variant="icon">{icon}</EmptyMedia>
+          <EmptyHeader>
+            <EmptyTitle>{title}</EmptyTitle>
+            <EmptyDescription>{description}</EmptyDescription>
+          </EmptyHeader>
+          {children ? <EmptyContent className="max-w-xl">{children}</EmptyContent> : null}
+        </Empty>
+      </div>
+    </SettingsSection>
+  );
+}
+
+function EnvironmentUnavailablePlaceholder({
   environment,
   access,
   deviceTabs,
@@ -186,17 +234,21 @@ function EnvironmentUnavailableRow({
   // No spinner: this state can persist indefinitely for a wedged device, and a
   // continuously repainting animation would run the whole time.
   return (
-    <SettingsSection {...searchableSetting("providers")}>
-      {deviceTabs}
-      <SettingsRow title={title} description={description}>
-        {error ? (
-          <ExpandableText
-            text={error}
-            className="mb-2 max-w-xl font-mono text-xs leading-relaxed text-muted-foreground"
-          />
-        ) : null}
-      </SettingsRow>
-    </SettingsSection>
+    <ProviderSettingsPlaceholder
+      deviceTabs={deviceTabs}
+      icon={
+        <EnvironmentMachineIcon kind={resolveEnvironmentMachineKind(environment.serverConfig)} />
+      }
+      title={title}
+      description={description}
+    >
+      {error ? (
+        <ExpandableText
+          text={error}
+          className="w-full text-left font-mono text-xs leading-relaxed text-muted-foreground"
+        />
+      ) : null}
+    </ProviderSettingsPlaceholder>
   );
 }
 
@@ -313,25 +365,23 @@ function ProviderSettingsPanelContent(target: ProviderSettingsTarget) {
   return (
     <>
       {targetEnvironmentMissing ? (
-        <SettingsSection {...searchableSetting("providers")}>
-          {deviceTabs}
-          <SettingsRow
-            title="Device unavailable"
-            description="Reconnect this device to set up its provider, or select another device."
-          />
-        </SettingsSection>
+        <ProviderSettingsPlaceholder
+          deviceTabs={deviceTabs}
+          icon={<EnvironmentMachineIcon kind={resolveEnvironmentMachineKind(null)} />}
+          title="Device unavailable"
+          description="Reconnect this device to set up its provider, or select another device."
+        />
       ) : null}
       {options.length === 0 && !targetEnvironmentMissing ? (
-        <SettingsSection {...searchableSetting("providers")}>
-          <SettingsRow
-            title={isReady ? "No connected devices" : "Loading devices"}
-            description={
-              isReady
-                ? "Connect an execution environment before configuring providers."
-                : "Reading connected execution environments."
-            }
-          />
-        </SettingsSection>
+        <ProviderSettingsPlaceholder
+          icon={<EnvironmentMachineIcon kind={resolveEnvironmentMachineKind(null)} />}
+          title={isReady ? "No connected devices" : "Loading devices"}
+          description={
+            isReady
+              ? "Connect an execution environment before configuring providers."
+              : "Reading connected execution environments."
+          }
+        />
       ) : null}
 
       {selectedEnvironment ? (
@@ -461,7 +511,7 @@ function AccessGatedProviderSettings({
   });
   if (access.kind !== "editable" && access.kind !== "read-only") {
     return (
-      <EnvironmentUnavailableRow
+      <EnvironmentUnavailablePlaceholder
         environment={environment}
         access={access}
         deviceTabs={deviceTabs}
@@ -978,14 +1028,20 @@ export function EnvironmentProviderSettings({
       >
         {deviceTabs}
         {readOnly ? (
-          <div className="overflow-hidden rounded-xl border border-border/60 bg-card/40 shadow-xs/5">
+          <div className={providerCardClassName}>
             <SettingsRow
               title="Limited permissions"
               description={`This session can view ${environmentLabel}'s providers but can't change their settings.`}
             />
           </div>
         ) : null}
-        <div className="overflow-hidden rounded-xl border border-border/60 bg-card/40 shadow-xs/5 lg:grid lg:h-[min(44rem,calc(100dvh-11rem))] lg:min-h-[32rem] lg:grid-cols-[17rem_minmax(0,1fr)]">
+        <div
+          className={cn(
+            providerCardClassName,
+            providerCardHeightClassName,
+            "lg:grid lg:grid-cols-[17rem_minmax(0,1fr)]",
+          )}
+        >
           <div className="border-b border-border/60 bg-muted/10 lg:flex lg:min-h-0 lg:flex-col lg:border-r lg:border-b-0">
             <ScrollArea scrollFade chainVerticalScroll className="lg:min-h-0 lg:flex-1">
               <div className="divide-y divide-border/50">

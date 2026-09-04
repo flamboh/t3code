@@ -543,9 +543,27 @@ export function ProviderInstanceCard({
     </span>
   );
 
-  const titleTailNode = headerAction ? (
-    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">{headerAction}</span>
-  ) : null;
+  // The editor header always reserves this slot, whether it holds the reset
+  // button, the delete button, or nothing, so the version badge sits at the
+  // same offset in every editor.
+  const titleTailNode = (
+    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+      {headerAction ??
+        (onDelete ? (
+          <Button
+            type="button"
+            size="icon-micro"
+            variant="ghost-muted"
+            disabled={readOnly}
+            className="[--control-icon-color:currentColor] hover:text-destructive"
+            onClick={onDelete}
+            aria-label={`Delete instance ${instanceId}`}
+          >
+            <Trash2Icon className="size-3" />
+          </Button>
+        ) : null)}
+    </span>
+  );
 
   const versionCodeNode = versionLabel ? (
     <code className="text-xs text-muted-foreground">{versionLabel}</code>
@@ -607,7 +625,11 @@ export function ProviderInstanceCard({
                   {instanceId}
                 </code>
               ) : null}
-              {versionCodeNode}
+              {versionLabel ? (
+                <code className="max-w-24 shrink-0 truncate text-xs text-muted-foreground">
+                  {versionLabel}
+                </code>
+              ) : null}
               {versionAdvisory ? (
                 <span role="img" aria-label="Update available" className="inline-flex shrink-0">
                   <ArrowUpCircleIcon className="size-3.5 text-muted-foreground" />
@@ -742,19 +764,6 @@ export function ProviderInstanceCard({
           </Popover>
         ) : null}
         {titleTailNode}
-        {onDelete ? (
-          <Button
-            type="button"
-            size="icon-micro"
-            variant="ghost-muted"
-            disabled={readOnly}
-            className="[--control-icon-color:currentColor] hover:text-destructive"
-            onClick={onDelete}
-            aria-label={`Delete instance ${instanceId}`}
-          >
-            <Trash2Icon className="size-3" />
-          </Button>
-        ) : null}
       </span>
     </div>
   );
