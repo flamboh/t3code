@@ -280,7 +280,7 @@ export function UsagePage() {
                   staleEnvironments={merged.staleEnvironments}
                 />
                 <p className="py-16 text-center text-sm text-muted-foreground">
-                  No device reported usage. Reconnect a device or refresh to scan again.
+                  No device reported usage.
                 </p>
               </>
             ) : (

@@ -185,7 +185,7 @@ export function UsageRouteScreen() {
               </Text>
             ) : isUnreachable ? (
               <Text className="py-16 text-center text-base text-foreground-muted">
-                No device reported usage. Reconnect a device or pull to scan again.
+                No device reported usage.
               </Text>
             ) : (
               <>
