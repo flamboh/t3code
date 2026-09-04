@@ -168,8 +168,7 @@ function providerEnvironmentDetail(environment: EnvironmentPresentation): string
   return environment.displayUrl ?? "Remote device";
 }
 
-const providerCardClassName =
-  "overflow-hidden rounded-xl border border-border/60 bg-card/40 shadow-xs/5";
+const providerCardClassName = "rounded-xl border border-border/60 bg-card/40 shadow-xs/5";
 // Shared by the editor grid and the placeholder states so switching devices
 // never changes the card's footprint.
 const providerCardHeightClassName = "lg:h-[min(44rem,calc(100dvh-11rem))] lg:min-h-[32rem]";
@@ -194,7 +193,13 @@ function ProviderSettingsPlaceholder({
   return (
     <SettingsSection {...searchableSetting("providers")} variant="plain">
       {deviceTabs}
-      <div className={cn(providerCardClassName, providerCardHeightClassName, "flex")}>
+      <div
+        className={cn(
+          providerCardClassName,
+          providerCardHeightClassName,
+          "flex overflow-x-hidden overflow-y-auto",
+        )}
+      >
         <Empty className="min-h-88">
           <EmptyMedia variant="icon">{icon}</EmptyMedia>
           <EmptyHeader>
@@ -244,6 +249,7 @@ function EnvironmentUnavailablePlaceholder({
     >
       {error ? (
         <ExpandableText
+          key={environment.environmentId}
           text={error}
           className="w-full text-left font-mono text-xs leading-relaxed text-muted-foreground"
         />
@@ -1028,7 +1034,7 @@ export function EnvironmentProviderSettings({
       >
         {deviceTabs}
         {readOnly ? (
-          <div className={providerCardClassName}>
+          <div className={cn(providerCardClassName, "overflow-hidden")}>
             <SettingsRow
               title="Limited permissions"
               description={`This session can view ${environmentLabel}'s providers but can't change their settings.`}
@@ -1039,7 +1045,7 @@ export function EnvironmentProviderSettings({
           className={cn(
             providerCardClassName,
             providerCardHeightClassName,
-            "lg:grid lg:grid-cols-[17rem_minmax(0,1fr)]",
+            "overflow-hidden lg:grid lg:grid-cols-[17rem_minmax(0,1fr)]",
           )}
         >
           <div className="border-b border-border/60 bg-muted/10 lg:flex lg:min-h-0 lg:flex-col lg:border-r lg:border-b-0">
