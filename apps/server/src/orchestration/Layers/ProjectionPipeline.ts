@@ -1,6 +1,7 @@
 import {
   ApprovalRequestId,
   type ChatAttachment,
+  type MessageId,
   type OrchestrationEvent,
   type OrchestrationSessionStatus,
   ThreadId,
@@ -503,6 +504,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const serverConfig = yield* ServerConfig;
+    const compactRequestIds = new Map<ThreadId, MessageId>();
 
     const applyProjectsProjection: ProjectorDefinition["apply"] = Effect.fn(
       "applyProjectsProjection",
@@ -1263,35 +1265,35 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     )(function* (event, _attachmentSideEffects) {
       switch (event.type) {
         case "thread.created":
+          compactRequestIds.delete(event.payload.threadId);
           yield* projectionTurnRepository.deleteByThreadId({
             threadId: event.payload.threadId,
           });
           return;
 
         case "thread.turn-start-requested": {
-          const pendingTurnStart = yield* projectionTurnRepository.getPendingTurnStartByThreadId({
-            threadId: event.payload.threadId,
-          });
-          if (Option.isSome(pendingTurnStart)) {
-            const pendingMessage = yield* projectionThreadMessageRepository.getByMessageId({
-              messageId: pendingTurnStart.value.messageId,
-            });
-            if (
-              Option.isSome(pendingMessage) &&
-              pendingMessage.value.role === "user" &&
-              (pendingMessage.value.attachments?.length ?? 0) === 0 &&
-              pendingMessage.value.text.trim().toLowerCase() === "/compact"
-            ) {
-              return;
-            }
-          }
-          yield* projectionTurnRepository.replacePendingTurnStart({
+          const nextPendingTurnStart = {
             threadId: event.payload.threadId,
             messageId: event.payload.messageId,
             sourceProposedPlanThreadId: event.payload.sourceProposedPlan?.threadId ?? null,
             sourceProposedPlanId: event.payload.sourceProposedPlan?.planId ?? null,
             requestedAt: event.payload.createdAt,
+          };
+          const requestedMessage = yield* projectionThreadMessageRepository.getByMessageId({
+            messageId: event.payload.messageId,
           });
+          const isCompactRequest =
+            Option.isSome(requestedMessage) &&
+            requestedMessage.value.role === "user" &&
+            (requestedMessage.value.attachments?.length ?? 0) === 0 &&
+            requestedMessage.value.text.trim().toLowerCase() === "/compact";
+          if (isCompactRequest) {
+            if (compactRequestIds.has(event.payload.threadId)) {
+              return;
+            }
+            compactRequestIds.set(event.payload.threadId, event.payload.messageId);
+          }
+          yield* projectionTurnRepository.replacePendingTurnStart(nextPendingTurnStart);
           return;
         }
 
@@ -1328,16 +1330,29 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         case "thread.session-set": {
           const turnId = event.payload.session.activeTurnId;
           if (turnId === null || event.payload.session.status !== "running") {
-            if (
-              (event.payload.session.status === "ready" &&
-                event.commandId?.startsWith("server:provider-session-set:") === true) ||
+            const restoredReadySession =
+              event.payload.session.status === "ready" &&
+              event.commandId?.startsWith("server:provider-session-set:") === true;
+            const terminalSession =
               event.payload.session.status === "error" ||
               event.payload.session.status === "stopped" ||
-              event.payload.session.status === "interrupted"
-            ) {
-              yield* projectionTurnRepository.deletePendingTurnStartByThreadId({
-                threadId: event.payload.threadId,
-              });
+              event.payload.session.status === "interrupted";
+            if (restoredReadySession || terminalSession) {
+              const pendingTurnStart =
+                yield* projectionTurnRepository.getPendingTurnStartByThreadId({
+                  threadId: event.payload.threadId,
+                });
+              const compactRequestId = compactRequestIds.get(event.payload.threadId);
+              const pendingTurnBelongsToCompaction =
+                compactRequestId === undefined ||
+                Option.isNone(pendingTurnStart) ||
+                pendingTurnStart.value.messageId === compactRequestId;
+              if (terminalSession || pendingTurnBelongsToCompaction) {
+                yield* projectionTurnRepository.deletePendingTurnStartByThreadId({
+                  threadId: event.payload.threadId,
+                });
+              }
+              compactRequestIds.delete(event.payload.threadId);
             }
             // Leaving the "running" session status is the turn-end signal:
             // settle still-running turns so their duration reflects the whole
@@ -1461,6 +1476,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           yield* projectionTurnRepository.deletePendingTurnStartByThreadId({
             threadId: event.payload.threadId,
           });
+          compactRequestIds.delete(event.payload.threadId);
           return;
         }
 

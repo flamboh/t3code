@@ -3259,6 +3259,145 @@ it.layer(makeProjectionPipelinePrefixedTestLayer("t3-pending-turn-terminal-test-
         assert.deepEqual(pendingRows, [{ messageId: "new-message" }]);
       }),
     );
+
+    it.effect("promotes a turn start deferred behind compaction when the session restores", () =>
+      Effect.gen(function* () {
+        const projectionPipeline = yield* OrchestrationProjectionPipeline;
+        const eventStore = yield* OrchestrationEventStore;
+        const sql = yield* SqlClient.SqlClient;
+        const threadId = ThreadId.make("thread-deferred-compaction-turn");
+        const compactMessageId = MessageId.make("message-deferred-compact");
+        const queuedMessageId = MessageId.make("message-deferred-queued");
+        const compactAt = "2026-02-26T16:00:00.000Z";
+        const queuedAt = "2026-02-26T16:00:01.000Z";
+
+        for (const [index, message] of [
+          { id: compactMessageId, text: "/compact", createdAt: compactAt },
+          { id: queuedMessageId, text: "send after compact", createdAt: queuedAt },
+        ].entries()) {
+          yield* eventStore.append({
+            type: "thread.message-sent",
+            eventId: EventId.make(`evt-deferred-message-${index}`),
+            aggregateKind: "thread",
+            aggregateId: threadId,
+            occurredAt: message.createdAt,
+            commandId: CommandId.make(`cmd-deferred-message-${index}`),
+            causationEventId: null,
+            correlationId: CorrelationId.make(`cmd-deferred-message-${index}`),
+            metadata: {},
+            payload: {
+              threadId,
+              messageId: message.id,
+              role: "user",
+              text: message.text,
+              attachments: [],
+              turnId: null,
+              streaming: false,
+              createdAt: message.createdAt,
+              updatedAt: message.createdAt,
+            },
+          });
+          yield* eventStore.append({
+            type: "thread.turn-start-requested",
+            eventId: EventId.make(`evt-deferred-turn-${index}`),
+            aggregateKind: "thread",
+            aggregateId: threadId,
+            occurredAt: message.createdAt,
+            commandId: CommandId.make(`cmd-deferred-turn-${index}`),
+            causationEventId: null,
+            correlationId: CorrelationId.make(`cmd-deferred-turn-${index}`),
+            metadata: {},
+            payload: {
+              threadId,
+              messageId: message.id,
+              ...(index === 1
+                ? {
+                    sourceProposedPlan: {
+                      threadId: ThreadId.make("thread-deferred-plan-source"),
+                      planId: "plan-deferred",
+                    },
+                  }
+                : {}),
+              runtimeMode: "full-access",
+              createdAt: message.createdAt,
+            },
+          });
+        }
+        yield* eventStore.append({
+          type: "thread.activity-appended",
+          eventId: EventId.make("evt-deferred-compaction-complete"),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: "2026-02-26T16:00:02.000Z",
+          commandId: CommandId.make("cmd-deferred-compaction-complete"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-deferred-compaction-complete"),
+          metadata: {},
+          payload: {
+            threadId,
+            activity: {
+              id: EventId.make("activity-deferred-compaction-complete"),
+              tone: "info",
+              kind: "context-compaction",
+              summary: "Context compacted",
+              payload: { requestId: compactMessageId },
+              turnId: null,
+              createdAt: "2026-02-26T16:00:02.000Z",
+            },
+          },
+        });
+        yield* eventStore.append({
+          type: "thread.session-set",
+          eventId: EventId.make("evt-deferred-session-ready"),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: "2026-02-26T16:00:03.000Z",
+          commandId: CommandId.make("server:provider-session-set:deferred"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("server:provider-session-set:deferred"),
+          metadata: {},
+          payload: {
+            threadId,
+            session: {
+              threadId,
+              status: "ready",
+              providerName: "codex",
+              runtimeMode: "full-access",
+              activeTurnId: null,
+              lastError: null,
+              updatedAt: "2026-02-26T16:00:03.000Z",
+            },
+          },
+        });
+
+        yield* projectionPipeline.bootstrap;
+
+        const pendingRows = yield* sql<{
+          readonly messageId: string;
+          readonly sourceThreadId: string | null;
+          readonly sourcePlanId: string | null;
+          readonly requestedAt: string;
+        }>`
+          SELECT
+            pending_message_id AS "messageId",
+            source_proposed_plan_thread_id AS "sourceThreadId",
+            source_proposed_plan_id AS "sourcePlanId",
+            requested_at AS "requestedAt"
+          FROM projection_turns
+          WHERE thread_id = ${threadId}
+            AND turn_id IS NULL
+            AND state = 'pending'
+        `;
+        assert.deepEqual(pendingRows, [
+          {
+            messageId: queuedMessageId,
+            sourceThreadId: "thread-deferred-plan-source",
+            sourcePlanId: "plan-deferred",
+            requestedAt: queuedAt,
+          },
+        ]);
+      }),
+    );
   },
 );
 

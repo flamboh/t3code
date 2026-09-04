@@ -260,7 +260,7 @@ describe("ProviderCommandReactor", () => {
         ),
       );
     });
-    const sendTurn = vi.fn((_: unknown) =>
+    const sendTurn = vi.fn<ProviderServiceShape["sendTurn"]>((_) =>
       Effect.succeed({
         threadId: ThreadId.make("thread-1"),
         turnId: asTurnId("turn-1"),
@@ -351,7 +351,7 @@ describe("ProviderCommandReactor", () => {
     const unsupported = () => Effect.die(new Error("Unsupported provider call in test")) as never;
     const service: ProviderServiceShape = {
       startSession: startSession as ProviderServiceShape["startSession"],
-      sendTurn: sendTurn as ProviderServiceShape["sendTurn"],
+      sendTurn,
       compactThread,
       interruptTurn: interruptTurn as ProviderServiceShape["interruptTurn"],
       respondToRequest: respondToRequest as ProviderServiceShape["respondToRequest"],
@@ -910,13 +910,21 @@ describe("ProviderCommandReactor", () => {
     }),
   );
 
-  effectIt.effect("keeps turns blocked until compaction restores the session", () =>
+  effectIt.effect("queues turns until failed compaction restores the session", () =>
     Effect.gen(function* () {
       const readyDispatchStarted = yield* Deferred.make<void>();
       const releaseReadyDispatch = yield* Deferred.make<void>();
       let blockReadyDispatch = false;
       const harness = yield* Effect.promise(() =>
         createHarness({
+          compactThreadEffect: () =>
+            Effect.fail(
+              new ProviderAdapterRequestError({
+                provider: "codex",
+                method: "thread.compact",
+                detail: "compaction failed",
+              }),
+            ),
           beforeReadySessionDispatch: () =>
             blockReadyDispatch
               ? Deferred.succeed(readyDispatchStarted, undefined).pipe(
@@ -966,29 +974,188 @@ describe("ProviderCommandReactor", () => {
       yield* dispatchTurn("blocked-compact", "/compact", "2026-01-01T00:00:01.000Z");
       yield* Deferred.await(readyDispatchStarted);
 
-      yield* dispatchTurn("during-compact-recovery", "too soon", "2026-01-01T00:00:02.000Z");
+      const queuedMessageId = asMessageId("user-message-during-compact-recovery");
+      yield* dispatchTurn(
+        "during-compact-recovery",
+        "send after compact",
+        "2026-01-01T00:00:02.000Z",
+      );
       yield* Effect.promise(() =>
         waitFor(async () => {
           const thread = (await harness.readModel()).threads.find((entry) => entry.id === threadId);
-          return (
-            thread?.activities.some(
-              (activity) => activity.kind === "provider.turn.start.failed",
-            ) === true
-          );
+          return thread?.messages.some((message) => message.id === queuedMessageId) === true;
         }),
       );
       expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+      const compactingThread = (yield* Effect.promise(() => harness.readModel())).threads.find(
+        (entry) => entry.id === threadId,
+      );
+      expect(
+        compactingThread?.activities.some(
+          (activity) =>
+            activity.kind === "provider.turn.start.failed" &&
+            (activity.payload as { readonly requestId?: unknown } | null)?.requestId ===
+              queuedMessageId,
+        ),
+      ).toBe(false);
       expect(yield* Effect.promise(() => harness.readPendingTurnStarts())).toEqual([
         { threadId: "thread-1" },
       ]);
 
       yield* Deferred.succeed(releaseReadyDispatch, undefined);
+      yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 2));
+      expect(harness.sendTurn.mock.calls[1]?.[0]).toMatchObject({
+        threadId,
+        input: "send after compact",
+      });
+    }),
+  );
+
+  effectIt.effect("sends turns queued during compaction in FIFO order", () =>
+    Effect.gen(function* () {
+      const releaseCompaction = yield* Deferred.make<void>();
+      const harness = yield* Effect.promise(() =>
+        createHarness({ compactThreadEffect: () => Deferred.await(releaseCompaction) }),
+      );
+      const threadId = ThreadId.make("thread-1");
+      const now = "2026-01-01T00:00:00.000Z";
+      const dispatchTurn = (id: string, text: string, createdAt: string) =>
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make(`cmd-${id}`),
+          threadId,
+          message: {
+            messageId: asMessageId(`user-message-${id}`),
+            role: "user",
+            text,
+            attachments: [],
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt,
+        });
+
+      yield* dispatchTurn("before-fifo-compact", "hello", now);
+      yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+      yield* harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cmd-session-ready-before-fifo-compact"),
+        threadId,
+        session: {
+          threadId,
+          status: "ready",
+          providerName: "codex",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          runtimeMode: "approval-required",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: now,
+        },
+        createdAt: now,
+      });
+
+      yield* dispatchTurn("fifo-compact", "/compact", "2026-01-01T00:00:01.000Z");
+      yield* Effect.promise(() => waitFor(() => harness.compactThread.mock.calls.length === 1));
+      yield* dispatchTurn("fifo-first", "first queued", "2026-01-01T00:00:02.000Z");
+      yield* dispatchTurn("fifo-second", "second queued", "2026-01-01T00:00:03.000Z");
       yield* Effect.promise(() =>
         waitFor(async () => {
           const thread = (await harness.readModel()).threads.find((entry) => entry.id === threadId);
-          return thread?.session?.status === "ready";
+          return thread?.messages.some((message) => message.text === "second queued") === true;
         }),
       );
+      expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+
+      yield* Deferred.succeed(releaseCompaction, undefined);
+      yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 3));
+      expect(harness.sendTurn.mock.calls.slice(1).map(([request]) => request.input)).toEqual([
+        "first queued",
+        "second queued",
+      ]);
+      const thread = (yield* Effect.promise(() => harness.readModel())).threads.find(
+        (entry) => entry.id === threadId,
+      );
+      expect(
+        thread?.activities.filter((activity) => activity.kind === "provider.turn.start.failed"),
+      ).toEqual([]);
+    }),
+  );
+
+  effectIt.effect("fails a queued turn when the thread stops during compaction", () =>
+    Effect.gen(function* () {
+      const releaseCompaction = yield* Deferred.make<void>();
+      const harness = yield* Effect.promise(() =>
+        createHarness({ compactThreadEffect: () => Deferred.await(releaseCompaction) }),
+      );
+      const threadId = ThreadId.make("thread-1");
+      const now = "2026-01-01T00:00:00.000Z";
+      const dispatchTurn = (id: string, text: string, createdAt: string) =>
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make(`cmd-${id}`),
+          threadId,
+          message: {
+            messageId: asMessageId(`user-message-${id}`),
+            role: "user",
+            text,
+            attachments: [],
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt,
+        });
+
+      yield* dispatchTurn("before-stopped-compact", "hello", now);
+      yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+      yield* harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cmd-session-ready-before-stopped-compact"),
+        threadId,
+        session: {
+          threadId,
+          status: "ready",
+          providerName: "codex",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          runtimeMode: "approval-required",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: now,
+        },
+        createdAt: now,
+      });
+
+      yield* dispatchTurn("stopped-compact", "/compact", "2026-01-01T00:00:01.000Z");
+      yield* Effect.promise(() => waitFor(() => harness.compactThread.mock.calls.length === 1));
+      const queuedMessageId = asMessageId("user-message-stopped-queued");
+      yield* dispatchTurn("stopped-queued", "never send", "2026-01-01T00:00:02.000Z");
+      yield* harness.engine.dispatch({
+        type: "thread.session.stop",
+        commandId: CommandId.make("cmd-stop-with-queued-turn"),
+        threadId,
+        createdAt: "2026-01-01T00:00:03.000Z",
+      });
+      yield* Effect.promise(() =>
+        waitFor(async () => {
+          const thread = (await harness.readModel()).threads.find((entry) => entry.id === threadId);
+          return thread?.session?.status === "stopped";
+        }),
+      );
+
+      yield* Deferred.succeed(releaseCompaction, undefined);
+      yield* Effect.promise(() =>
+        waitFor(async () => {
+          const thread = (await harness.readModel()).threads.find((entry) => entry.id === threadId);
+          return (
+            thread?.activities.some(
+              (activity) =>
+                activity.kind === "provider.turn.start.failed" &&
+                (activity.payload as { readonly requestId?: unknown } | null)?.requestId ===
+                  queuedMessageId,
+            ) === true
+          );
+        }),
+      );
+      expect(harness.sendTurn).toHaveBeenCalledTimes(1);
     }),
   );
 
