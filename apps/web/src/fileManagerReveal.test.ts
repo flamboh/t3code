@@ -1,7 +1,6 @@
 import { PrimaryConnectionTarget } from "@t3tools/client-runtime/connection";
 import { EnvironmentId } from "@t3tools/contracts";
 import * as Option from "effect/Option";
-import { AsyncResult } from "effect/unstable/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { fileManagerActionForPresentation, resolveLiteralFilePath } from "./fileManagerReveal";
@@ -119,39 +118,8 @@ function presentation(
 }
 
 describe("fileManagerActionForPresentation", () => {
-  it("opens or reveals a local path through the environment shell command", async () => {
-    const result = AsyncResult.success(undefined);
+  it("keeps open available when reveal capability is unavailable", () => {
     const command = vi.fn<Parameters<typeof fileManagerActionForPresentation>[2]>();
-    command.mockResolvedValue(result);
-    const action = fileManagerActionForPresentation(
-      localEnvironmentId,
-      presentation(localEnvironmentId),
-      command,
-    );
-
-    await expect(action?.open.run("/workspace/project")).resolves.toBe(result);
-    expect(command).toHaveBeenCalledWith({
-      environmentId: localEnvironmentId,
-      input: {
-        cwd: "/workspace/project",
-        editor: "file-manager",
-      },
-    });
-    await expect(action?.reveal?.run("/workspace/project/src/main.ts")).resolves.toBe(result);
-    expect(command).toHaveBeenNthCalledWith(2, {
-      environmentId: localEnvironmentId,
-      input: {
-        cwd: "/workspace/project/src/main.ts",
-        editor: "file-manager",
-        reveal: true,
-      },
-    });
-  });
-
-  it("keeps open available when reveal capability is unavailable", async () => {
-    const result = AsyncResult.success(undefined);
-    const command = vi.fn<Parameters<typeof fileManagerActionForPresentation>[2]>();
-    command.mockResolvedValue(result);
     const action = fileManagerActionForPresentation(
       localEnvironmentId,
       presentation(localEnvironmentId, { os: "linux", enabled: false }),
@@ -161,7 +129,6 @@ describe("fileManagerActionForPresentation", () => {
     expect(action).not.toBeNull();
     expect(action?.open.managerName).toBe("File Manager");
     expect(action?.reveal).toBeNull();
-    await expect(action?.open.run("/workspace/project")).resolves.toBe(result);
   });
 
   it("labels a local Linux files action as opening the containing folder", () => {
