@@ -118,6 +118,7 @@ import { ensureLocalApi, readLocalApi } from "../localApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useDesktopUpdateState } from "../state/desktopUpdate";
+import { useFileManagerAction } from "../fileManagerReveal";
 
 import { useThreadActions } from "../hooks/useThreadActions";
 import { projectEnvironment } from "../state/projects";
@@ -218,6 +219,7 @@ import {
   type SidebarProjectGroupMember,
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
+import { openWorkspaceMenuLabel } from "./threadActionMenu.logic";
 const SIDEBAR_SORT_LABELS: Record<SidebarProjectSortOrder, string> = {
   updated_at: "Last user message",
   created_at: "Created at",
@@ -1142,6 +1144,7 @@ interface SidebarProjectItemProps {
   handleNewThread: ReturnType<typeof useNewThreadHandler>;
   archiveThread: ReturnType<typeof useThreadActions>["archiveThread"];
   deleteThread: ReturnType<typeof useThreadActions>["deleteThread"];
+  resolveFileManagerAction: ReturnType<typeof useFileManagerAction>;
   threadJumpLabelByKey: ReadonlyMap<string, string>;
   attachThreadListAutoAnimateRef: (node: HTMLElement | null) => void;
   expandThreadListForProject: (projectKey: string) => void;
@@ -1163,6 +1166,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     handleNewThread,
     archiveThread,
     deleteThread,
+    resolveFileManagerAction,
     threadJumpLabelByKey,
     attachThreadListAutoAnimateRef,
     expandThreadListForProject,
@@ -2248,6 +2252,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       );
       const threadWorkspacePath =
         thread.worktreePath ?? threadProject?.workspaceRoot ?? project.workspaceRoot ?? null;
+      const fileManagerAction = threadWorkspacePath
+        ? resolveFileManagerAction(thread.environmentId)
+        : null;
       const clicked = await api.contextMenu.show(
         [
           ...(thread.branch
@@ -2257,6 +2264,18 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           { id: "mark-unread", label: "Mark unread" },
           { id: "copy-path", label: "Copy Path" },
           { id: "copy-thread-id", label: "Copy Thread ID" },
+          ...(fileManagerAction
+            ? [
+                {
+                  id: "open-in-file-manager",
+                  label: openWorkspaceMenuLabel(
+                    fileManagerAction.open.managerName,
+                    thread.worktreePath !== null,
+                  ),
+                  icon: "folder" as const,
+                },
+              ]
+            : []),
           { id: "project-settings", label: "Project settings" },
           { id: "delete", label: "Delete", destructive: true, icon: "trash" },
         ],
@@ -2323,6 +2342,30 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         copyThreadIdToClipboard(thread.id, { threadId: thread.id });
         return;
       }
+      if (clicked === "open-in-file-manager") {
+        if (!threadWorkspacePath || !fileManagerAction) return;
+        try {
+          const result = await fileManagerAction.open.run(threadWorkspacePath);
+          if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
+          const error = squashAtomCommandFailure(result);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: `Failed to open ${thread.worktreePath ? "worktree" : "project"}`,
+              description: error instanceof Error ? error.message : "An error occurred.",
+            }),
+          );
+        } catch (cause) {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: `Failed to open ${thread.worktreePath ? "worktree" : "project"}`,
+              description: cause instanceof Error ? cause.message : "An error occurred.",
+            }),
+          );
+        }
+        return;
+      }
       if (clicked !== "delete") return;
       if (appSettingsConfirmThreadDelete) {
         const confirmed = await api.dialogs.confirm(
@@ -2359,6 +2402,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       memberProjectByScopedKey,
       project.projectKey,
       project.workspaceRoot,
+      resolveFileManagerAction,
       router,
       setOpenMobile,
       startThreadRename,
@@ -2896,6 +2940,7 @@ interface SidebarProjectsContentProps {
   handleNewThread: ReturnType<typeof useNewThreadHandler>;
   archiveThread: ReturnType<typeof useThreadActions>["archiveThread"];
   deleteThread: ReturnType<typeof useThreadActions>["deleteThread"];
+  resolveFileManagerAction: ReturnType<typeof useFileManagerAction>;
   sortedProjects: readonly SidebarProjectSnapshot[];
   expandedThreadListsByProject: ReadonlySet<string>;
   activeRouteProjectKey: string | null;
@@ -2938,6 +2983,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     handleNewThread,
     archiveThread,
     deleteThread,
+    resolveFileManagerAction,
     sortedProjects,
     expandedThreadListsByProject,
     activeRouteProjectKey,
@@ -3089,6 +3135,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                         handleNewThread={handleNewThread}
                         archiveThread={archiveThread}
                         deleteThread={deleteThread}
+                        resolveFileManagerAction={resolveFileManagerAction}
                         threadJumpLabelByKey={threadJumpLabelByKey}
                         attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
                         expandThreadListForProject={expandThreadListForProject}
@@ -3122,6 +3169,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                 handleNewThread={handleNewThread}
                 archiveThread={archiveThread}
                 deleteThread={deleteThread}
+                resolveFileManagerAction={resolveFileManagerAction}
                 threadJumpLabelByKey={threadJumpLabelByKey}
                 attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
                 expandThreadListForProject={expandThreadListForProject}
@@ -3158,6 +3206,7 @@ export default function LegacySidebar() {
   const updateSettings = useUpdateClientSettings();
   const handleNewThread = useNewThreadHandler();
   const { archiveThread, deleteThread } = useThreadActions();
+  const resolveFileManagerAction = useFileManagerAction();
   const { isMobile, setOpenMobile } = useSidebar();
   const routeTarget = useParams({
     strict: false,
@@ -3809,6 +3858,7 @@ export default function LegacySidebar() {
         handleNewThread={handleNewThread}
         archiveThread={archiveThread}
         deleteThread={deleteThread}
+        resolveFileManagerAction={resolveFileManagerAction}
         sortedProjects={sortedProjects}
         expandedThreadListsByProject={expandedThreadListsByProject}
         activeRouteProjectKey={activeRouteProjectKey}
