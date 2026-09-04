@@ -1361,6 +1361,7 @@ function ChatMarkdownImage(props: {
   /** Null while the URL is being resolved; the last decoded image stays up. */
   readonly src: string | null;
   readonly sourceFailed?: boolean | undefined;
+  readonly onSourceError?: ((src: string) => void) | undefined;
   readonly alt: string;
   readonly copyMarkdown: string | undefined;
   readonly standalone: boolean;
@@ -1390,6 +1391,7 @@ function ChatMarkdownImage(props: {
       setFailedSrc(null);
     },
     onError: () => {
+      props.onSourceError?.(loadingSrc);
       setFailedSrc(loadingSrc);
       setLoadedSrc(null);
     },
@@ -1511,7 +1513,7 @@ function ChatMarkdownVideo(props: {
   );
 }
 
-/** Environment-hosted media loads through an exact-file signed asset URL. */
+/** Media served by an environment loads through a signed asset URL. */
 export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props: {
   readonly environmentId: EnvironmentId;
   readonly resource: Extract<
@@ -1532,6 +1534,8 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
 }) {
   const assetUrl = useAssetUrlState(props.environmentId, props.resource);
   const refreshAssetUrl = useAssetUrlRefresh(props.environmentId, props.resource);
+  const [failedAssetSrc, setFailedAssetSrc] = useState<string | null>(null);
+  const [failedFallbackSrc, setFailedFallbackSrc] = useState<string | null>(null);
   const resource = props.resource;
   const path =
     resource._tag === "media-file"
@@ -1546,12 +1550,18 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
         ? mediaFileReference(path, props.workspaceRoot)
         : undefined;
   const relativePath = reference?.kind === "file" ? reference.relativePath : undefined;
-  const src = assetUrl._tag === "Success" ? assetUrl.url + (props.srcFragment ?? "") : null;
+  const assetSrc = assetUrl._tag === "Success" ? assetUrl.url + (props.srcFragment ?? "") : null;
+  const fallbackSrc = resource._tag === "github-user-attachment" ? resource.url : null;
+  const assetSourceFailed =
+    assetUrl._tag === "Failure" || (assetSrc !== null && failedAssetSrc === assetSrc);
+  const usesFallback = assetSourceFailed && fallbackSrc !== null;
+  const src = usesFallback ? fallbackSrc : assetSrc;
+  const fallbackSourceFailed = usesFallback && failedFallbackSrc === fallbackSrc;
   const actionsSource: MediaActionSource = {
     kind: props.kind ?? "image",
     name: props.alt || (props.kind ?? "image"),
     src,
-    asset: { environmentId: props.environmentId, resource },
+    ...(usesFallback ? {} : { asset: { environmentId: props.environmentId, resource } }),
     ...(reference ? { reference } : {}),
     ...(relativePath && (resource._tag === "workspace-file" || resource._tag === "media-file")
       ? {
@@ -1570,7 +1580,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
     return (
       <ChatMarkdownVideo
         src={src}
-        sourceFailed={assetUrl._tag === "Failure"}
+        sourceFailed={(assetSourceFailed && !usesFallback) || fallbackSourceFailed}
         alt={props.alt}
         copyMarkdown={props.copyMarkdown}
         style={props.style}
@@ -1585,13 +1595,18 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
     <ChatMarkdownImage
       key={JSON.stringify([props.environmentId, props.resource, props.srcFragment])}
       src={src}
-      sourceFailed={assetUrl._tag === "Failure"}
+      sourceFailed={(assetSourceFailed && !usesFallback) || fallbackSourceFailed}
       alt={props.alt}
       copyMarkdown={props.copyMarkdown}
       standalone={props.standalone ?? true}
       className={CHAT_MARKDOWN_WORKSPACE_IMAGE_CLASS_NAME}
       style={props.style}
       actionsSource={actionsSource}
+      originalUrl={fallbackSrc ?? undefined}
+      onSourceError={(failedSrc) => {
+        if (usesFallback) setFailedFallbackSrc(failedSrc);
+        else setFailedAssetSrc(failedSrc);
+      }}
       onImageExpand={props.onImageExpand}
     />
   );
