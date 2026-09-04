@@ -1865,4 +1865,19 @@ export default function ThreadTerminalDrawer({
                                 onClick={() => onActiveTerminalChange(terminalId)}
                               >
                                 <span className="truncate">{terminalLabel}</span>
-                
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </aside>
+          )}
+        </div>
+      </div>
+    </aside>
+  );
+}
