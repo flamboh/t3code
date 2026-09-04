@@ -10,6 +10,7 @@ import {
   type TerminalOutputUpdate,
   type TerminalSessionState,
 } from "@t3tools/client-runtime/state/terminal";
+import { splitFilePathPosition } from "@t3tools/client-runtime/markdown-links";
 import {
   Plus,
   Square,
@@ -59,11 +60,10 @@ import { type GhosttyColor, type GhosttyTheme } from "~/terminal/ghostty/core";
 import { useOpenInPreferredEditor, usePreferredEditor } from "../editorPreferences";
 import { openInEditorMenuLabel } from "../editorLabels";
 import {
-  isTerminalLinkActivation,
-  isTerminalUrl,
-  resolvePathLinkTarget,
-  splitPathAndPosition,
-} from "../terminal-links";
+  revealInFileExplorerLabelForKind,
+  revealInFileExplorerLabelForOs,
+} from "./preview/fileExplorerLabel";
+import { isTerminalLinkActivation, isTerminalUrl, resolvePathLinkTarget } from "../terminal-links";
 import {
   isDiffToggleShortcut,
   isTerminalClearShortcut,
@@ -86,7 +86,9 @@ import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useAttachedTerminalSession } from "../state/terminalSessions";
 import { serverEnvironment } from "../state/server";
 import { previewEnvironment } from "../state/preview";
+import { shellEnvironment } from "../state/shell";
 import { terminalEnvironment } from "../state/terminal";
+import { useRemoteOpenResolution } from "../remoteOpen";
 import {
   canOpenTerminalLinkInPreview,
   openTerminalLinkInIntegratedBrowser,
@@ -250,16 +252,21 @@ export type TerminalContextMenuAction =
   | "open-link"
   | "open-link-external"
   | "open-link-in-preview"
+  | "reveal-link"
   | "paste";
+
+export function terminalFileManagerPath(link: string, cwd: string): string {
+  return splitFilePathPosition(resolvePathLinkTarget(link, cwd)).path;
+}
 
 export function terminalLinkChatText(link: string, cwd: string): string {
   if (isTerminalUrl(link)) return link;
-  const { path } = splitPathAndPosition(resolvePathLinkTarget(link, cwd));
+  const path = terminalFileManagerPath(link, cwd);
   return serializeComposerFileLink(path.replace(/(?!^)[/\\]+$/u, ""));
 }
 
 export function terminalLinkCopyText(link: string): string {
-  return isTerminalUrl(link) ? link : splitPathAndPosition(link).path;
+  return isTerminalUrl(link) ? link : splitFilePathPosition(link).path;
 }
 
 /** Post-selection popup: just the two selection actions, always enabled. */
@@ -280,6 +287,7 @@ export function terminalContextMenuItems(options: {
   link: string | null;
   canOpenInPreview: boolean;
   openLabel: string;
+  revealLabel: string | null;
 }): ContextMenuItem<TerminalContextMenuAction>[] {
   const linkItems: ContextMenuItem<TerminalContextMenuAction>[] = options.link
     ? isTerminalUrl(options.link)
@@ -293,6 +301,9 @@ export function terminalContextMenuItems(options: {
         ]
       : [
           { id: "open-link", label: options.openLabel },
+          ...(options.revealLabel
+            ? [{ id: "reveal-link" as const, label: options.revealLabel }]
+            : []),
           { id: "add-link-to-chat", label: "Add path to chat" },
           { id: "copy-link", label: "Copy path", icon: "copy" },
         ]
@@ -382,6 +393,7 @@ export function TerminalViewport({
   const visibleRef = useRef(visible);
   const environmentId = threadRef.environmentId;
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
+  const remoteOpen = useRemoteOpenResolution(environmentId);
   const availableEditors = serverConfig?.availableEditors ?? [];
   const [preferredEditor] = usePreferredEditor(availableEditors);
   const openInPreferredEditor = useOpenInPreferredEditor(environmentId, availableEditors);
@@ -389,6 +401,9 @@ export function TerminalViewport({
     openInPreferredEditor(target, editorOverride),
   );
   const openPreview = useAtomCommand(previewEnvironment.open, {
+    reportFailure: false,
+  });
+  const revealInFileManager = useAtomCommand(shellEnvironment.openInEditor, {
     reportFailure: false,
   });
   const runTerminalWrite = useAtomCommand(terminalEnvironment.write, {
@@ -414,6 +429,22 @@ export function TerminalViewport({
   const handleAddTerminalLink = useEffectEvent((link: string) => {
     onAddTerminalLink(terminalLinkChatText(link, cwd));
   });
+  const fileManagerRevealLabel =
+    remoteOpen.isResolved &&
+    remoteOpen.state.mode === "local-exec" &&
+    serverConfig?.shellRevealInFileManager === true &&
+    serverConfig.availableEditors.includes("file-manager")
+      ? serverConfig.shellRevealInFileManagerKind === undefined
+        ? revealInFileExplorerLabelForOs(serverConfig.environment.platform.os)
+        : revealInFileExplorerLabelForKind(serverConfig.shellRevealInFileManagerKind)
+      : null;
+  const readFileManagerRevealLabel = useEffectEvent(() => fileManagerRevealLabel);
+  const runFileManagerReveal = useEffectEvent((target: string) =>
+    revealInFileManager({
+      environmentId,
+      input: { cwd: target, editor: "file-manager", reveal: true },
+    }),
+  );
   const readPreferredEditor = useEffectEvent(() => preferredEditor);
   const readTerminalLabel = useEffectEvent(() => terminalLabel);
   const terminalFontFamily = useClientSettings((settings) =>
@@ -698,6 +729,7 @@ export function TerminalViewport({
         const selectionAction = readSelectionAction();
         const requestId = selectionActionRequestIdRef.current;
         const editorAtMenuOpen = readPreferredEditor();
+        const revealLabelAtMenuOpen = readFileManagerRevealLabel();
         let clicked: TerminalContextMenuAction | null;
         try {
           clicked = await localApi.contextMenu.show(
@@ -709,6 +741,7 @@ export function TerminalViewport({
                 link !== null &&
                 isTerminalUrl(link) &&
                 canOpenTerminalLinkInPreview(link, threadRef),
+              revealLabel: revealLabelAtMenuOpen,
             }),
             { x: event.clientX, y: event.clientY },
           );
@@ -749,6 +782,9 @@ export function TerminalViewport({
             return;
           case "open-link-in-preview":
             if (link) openTerminalUrlInPreview(link);
+            return;
+          case "reveal-link":
+            if (link && revealLabelAtMenuOpen !== null) revealTerminalPath(link);
             return;
           case "paste":
             await pasteFromClipboard(requestId);
@@ -898,6 +934,19 @@ export function TerminalViewport({
           writeSystemMessage(
             latestTerminal,
             error instanceof Error ? error.message : "Unable to open path",
+          );
+        })();
+      }
+
+      function revealTerminalPath(text: string): void {
+        const target = terminalFileManagerPath(text, cwd);
+        void (async () => {
+          const result = await runFileManagerReveal(target);
+          if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
+          const error = squashAtomCommandFailure(result);
+          writeSystemMessage(
+            terminal,
+            error instanceof Error ? error.message : "Unable to reveal path",
           );
         })();
       }
