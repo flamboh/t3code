@@ -97,6 +97,7 @@ export function PairingRouteSurface({
           </label>
           <Input
             id="pairing-token"
+            aria-describedby={errorMessage ? "pairing-token-error" : undefined}
             aria-invalid={errorMessage ? true : undefined}
             autoCapitalize="none"
             autoComplete="off"
@@ -109,7 +110,11 @@ export function PairingRouteSurface({
             value={credential}
           />
           {/* Always rendered so an error fills reserved space instead of pushing the buttons down. */}
-          <p aria-live="polite" className="min-h-5 text-sm leading-5 text-destructive">
+          <p
+            aria-live="polite"
+            className="min-h-5 text-sm leading-5 text-destructive"
+            id="pairing-token-error"
+          >
             {errorMessage}
           </p>
         </div>

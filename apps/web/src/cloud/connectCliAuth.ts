@@ -116,22 +116,14 @@ export function readConnectCliCallbackResult(
   return { code, state };
 }
 
-export interface ConnectCliCallbackError {
-  readonly error: string;
-  readonly description: string | null;
-}
-
 /**
- * The OAuth error Clerk redirects back with when sign-in is refused or
+ * The OAuth error code Clerk redirects back with when sign-in is refused or
  * cancelled, so the callback page can say why instead of only that it failed.
+ * Only the code is read: `error_description` is free text on a public URL and
+ * must not be rendered as page copy.
  */
 export function readConnectCliCallbackError(
   url: URL = new URL(window.location.href),
-): ConnectCliCallbackError | null {
-  const error = url.searchParams.get("error")?.trim() ?? "";
-  if (!error) {
-    return null;
-  }
-  const description = url.searchParams.get("error_description")?.trim() ?? "";
-  return { error, description: description || null };
+): string | null {
+  return url.searchParams.get("error")?.trim() || null;
 }

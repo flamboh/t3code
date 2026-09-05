@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 import { APP_STAGE_LABEL } from "../../branding";
 import { resolveEnvironmentIdentificationPillLabel } from "../SidebarStageBackdrop";
-import { EnvironmentStagePill, T3CodeBrand } from "../T3CodeBrand";
+import { EnvironmentStagePill, T3CodeWordmark } from "../T3Wordmark";
 
 /**
  * Card for standalone auth pages, sized and styled like the app's dialogs so
@@ -15,8 +15,8 @@ export function AuthSurfaceShell({ children }: { readonly children: ReactNode })
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4 py-10 text-foreground sm:px-6">
       <main className="w-full max-w-lg rounded-2xl border bg-card p-6 sm:p-8">
-        <div className="flex items-center gap-1">
-          <T3CodeBrand />
+        <div className="flex items-center">
+          <T3CodeWordmark />
           {stageLabel ? <EnvironmentStagePill>{stageLabel}</EnvironmentStagePill> : null}
         </div>
         {children}
