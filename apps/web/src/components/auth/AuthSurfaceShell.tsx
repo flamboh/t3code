@@ -4,11 +4,6 @@ import { APP_STAGE_LABEL } from "../../branding";
 import { resolveEnvironmentIdentificationPillLabel } from "../SidebarStageBackdrop";
 import { EnvironmentStagePill, T3CodeWordmark } from "../T3Wordmark";
 
-/**
- * Card for standalone auth pages, sized and styled like the app's dialogs so
- * the CLI-connect authorize and callback pages read as part of the product.
- * The brand row mirrors the sidebar header, including its release-channel pill.
- */
 export function AuthSurfaceShell({ children }: { readonly children: ReactNode }) {
   const stageLabel = resolveEnvironmentIdentificationPillLabel(APP_STAGE_LABEL);
 
@@ -25,7 +20,6 @@ export function AuthSurfaceShell({ children }: { readonly children: ReactNode })
   );
 }
 
-/** Title and lead paragraph for a page in the shell, sized like a dialog header. */
 export function AuthSurfaceMessage({
   title,
   description,

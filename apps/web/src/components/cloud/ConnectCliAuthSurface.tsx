@@ -21,7 +21,6 @@ function ConnectCommand() {
   return <code className="font-mono text-[0.9em] text-foreground">t3 connect</code>;
 }
 
-/** The CLI stops waiting for the browser on this horizon; see CliTokenManager. */
 const terminalWaitNote = "Your terminal stops waiting 10 minutes after it printed the link.";
 
 function useClerkAccountLabel(): string | null {
@@ -93,8 +92,6 @@ export function ConnectCliAuthorizeSurface() {
     );
   }
 
-  // Loopback requests hand the code straight to the CLI; the hosted flow
-  // comes back to /connect/callback and asks the user to paste it.
   const finishesInTerminal = request.loopbackPort !== undefined;
 
   return (
@@ -221,7 +218,6 @@ export function ConnectCliCallbackSurface() {
               <button
                 type="button"
                 className="cursor-pointer text-foreground underline underline-offset-4"
-                // The callback form keeps Clerk from navigating away after sign-out.
                 onClick={() => void clerk.signOut(() => setSignedOut(true))}
               >
                 Sign out

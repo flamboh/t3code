@@ -116,12 +116,6 @@ export function readConnectCliCallbackResult(
   return { code, state };
 }
 
-/**
- * The OAuth error code Clerk redirects back with when sign-in is refused or
- * cancelled, so the callback page can say why instead of only that it failed.
- * Only the code is read: `error_description` is free text on a public URL and
- * must not be rendered as page copy.
- */
 export function readConnectCliCallbackError(
   url: URL = new URL(window.location.href),
 ): string | null {
