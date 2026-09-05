@@ -222,7 +222,8 @@ export function ConnectCliCallbackSurface() {
               <button
                 type="button"
                 className="cursor-pointer text-foreground underline underline-offset-4"
-                onClick={() => void clerk.signOut().then(() => setSignedOut(true))}
+                // Keep this page mounted so the user can start a fresh request.
+                onClick={() => void clerk.signOut(() => setSignedOut(true))}
               >
                 Sign out
               </button>{" "}
