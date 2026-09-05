@@ -109,7 +109,6 @@ export function PairingRouteSurface({
             spellCheck={false}
             value={credential}
           />
-          {/* Always rendered so an error fills reserved space instead of pushing the buttons down. */}
           <p
             aria-live="polite"
             className="min-h-5 text-sm leading-5 text-destructive"

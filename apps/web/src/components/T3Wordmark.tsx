@@ -14,11 +14,6 @@ export function T3Wordmark(props: SVGProps<SVGSVGElement>) {
   );
 }
 
-/**
- * The wordmark with its "Code" label, as the sidebar header and the standalone
- * auth pages show it. `onBackdrop` switches to the white treatment used over
- * release-channel artwork.
- */
 export function T3CodeWordmark({ onBackdrop = false }: { readonly onBackdrop?: boolean }) {
   return (
     <span
@@ -40,7 +35,6 @@ export function T3CodeWordmark({ onBackdrop = false }: { readonly onBackdrop?: b
   );
 }
 
-/** Release-channel pill ("Dev", "Nightly") shown beside the wordmark. */
 export function EnvironmentStagePill({ className, ...props }: ComponentProps<typeof Badge>) {
   return (
     <Badge
