@@ -152,16 +152,15 @@ export function ConnectCliCallbackSurface() {
       <AuthSurfaceShell>
         <AuthSurfaceMessage
           title={
-            callbackError?.error === "access_denied"
+            callbackError === "access_denied"
               ? "Sign-in was cancelled"
               : "Authorization did not complete"
           }
           description={
             <>
-              {callbackError?.error === "access_denied"
+              {callbackError === "access_denied"
                 ? "No code was issued."
-                : (callbackError?.description ??
-                  "Sign-in did not return a code, so there is nothing to give your terminal.")}{" "}
+                : "Sign-in did not return a code, so there is nothing to give your terminal."}{" "}
               Open the link from your terminal again to retry, or run <ConnectCommand /> if it has
               stopped waiting.
             </>
@@ -222,7 +221,7 @@ export function ConnectCliCallbackSurface() {
               <button
                 type="button"
                 className="cursor-pointer text-foreground underline underline-offset-4"
-                // Keep this page mounted so the user can start a fresh request.
+                // The callback form keeps Clerk from navigating away after sign-out.
                 onClick={() => void clerk.signOut(() => setSignedOut(true))}
               >
                 Sign out
