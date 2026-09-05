@@ -3217,6 +3217,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
           <ChatMarkdownAssetImage
             environmentId={environmentId}
             resource={{ _tag: "github-user-attachment", url: mediaSrc }}
+            imageProps={imageProps}
             standalone={standalone}
             alt={altText}
             copyMarkdown={copyMarkdown}
