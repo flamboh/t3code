@@ -1528,6 +1528,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
   /** Reserve a slot while loading; off for images that share a line with text. */
   readonly standalone?: boolean | undefined;
   readonly style?: CSSProperties | undefined;
+  readonly imageProps?: ComponentProps<typeof ChatMarkdownImage>["imageProps"];
   readonly workspaceRoot?: string | undefined;
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
 }) {
@@ -1601,6 +1602,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       className={CHAT_MARKDOWN_WORKSPACE_IMAGE_CLASS_NAME}
       style={props.style}
       actionsSource={actionsSource}
+      imageProps={props.imageProps}
       originalUrl={fallbackSrc ?? undefined}
       onSourceError={(failedSrc) => {
         if (usesFallback) setFailedFallbackSrc(failedSrc);
@@ -3002,6 +3004,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
           <ChatMarkdownAssetImage
             environmentId={environmentId}
             resource={{ _tag: "github-user-attachment", url: mediaSrc }}
+            imageProps={imageProps}
             standalone={standalone}
             alt={altText}
             copyMarkdown={copyMarkdown}
