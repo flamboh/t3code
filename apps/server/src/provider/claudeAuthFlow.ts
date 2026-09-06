@@ -340,7 +340,9 @@ export const make = Effect.gen(function* () {
     attemptId: ServerProviderReauthenticateAttemptId,
   ) {
     const state = (yield* Ref.get(attemptsRef)).get(String(attemptId));
-    if (state === undefined) {
+    // The instance id is kept as an internal alias for single-flight checks,
+    // but it is not a bearer capability for the auth attempt endpoints.
+    if (state === undefined || state.attemptId !== attemptId) {
       return yield* makeError("Authentication attempt was not found or has expired.");
     }
     return state;

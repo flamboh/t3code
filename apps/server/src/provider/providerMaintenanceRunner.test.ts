@@ -5,6 +5,7 @@ import {
   MessageId,
   ProviderDriverKind,
   ProviderInstanceId,
+  type ModelSelection,
   type ServerProvider,
   type ServerProviderUpdateState,
 } from "@t3tools/contracts";
@@ -232,6 +233,10 @@ const makeTestRunnerLayer = (
             Effect.succeed({
               threadId,
               instanceId,
+              modelSelection: {
+                instanceId,
+                model: "claude-sonnet-4-5",
+              } satisfies ModelSelection,
               runId: RunId.make("failed-run"),
               messageId: MessageId.make("failed-message"),
               text: "Resume this task",

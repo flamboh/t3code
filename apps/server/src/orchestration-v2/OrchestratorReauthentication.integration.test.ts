@@ -25,6 +25,7 @@ import {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
@@ -83,6 +84,7 @@ const REAUTH_ATTACHMENT = {
 const REAUTH_CWD = process.cwd();
 
 interface SyntheticAdapterState {
+  adapterAvailable?: boolean;
   readonly openedSessionIds: Array<ProviderSessionId>;
   readonly closedSessionIds: Array<ProviderSessionId>;
   readonly startedMessages: Array<{
@@ -228,7 +230,9 @@ const makeTestLayer = (state: SyntheticAdapterState) => {
     getInstance: (instanceId) =>
       Effect.succeed(
         instanceId === CLAUDE_INSTANCE_ID
-          ? providerInstance
+          ? state.adapterAvailable === false
+            ? undefined
+            : providerInstance
           : instanceId === OTHER_INSTANCE_ID
             ? otherProviderInstance
             : undefined,
@@ -550,6 +554,7 @@ it.effect("resumes the captured Claude turn once after releasing its stale sessi
     assert.deepEqual(fixture.capture.attachments, [REAUTH_ATTACHMENT]);
     assert.equal(fixture.capture.cwd, REAUTH_CWD);
     assert.equal(fixture.capture.providerSessionId, fixture.providerSessionId);
+    assert.deepEqual(fixture.capture.modelSelection, CLAUDE_SELECTION);
 
     assert.equal(yield* orchestrator.continueAfterReauthentication(fixture.capture), "resumed");
     yield* worker.drain();
@@ -720,6 +725,71 @@ it.effect("skips a captured turn after its provider is switched", () => {
     assert.deepEqual(projection.thread.modelSelection, OTHER_SELECTION);
     assert.lengthOf(projection.runs, 1);
     assert.deepEqual(state.startedMessages, []);
+  }).pipe(Effect.provide(makeTestLayer(state)));
+});
+
+it.effect("skips a captured turn after its same-provider model is switched", () => {
+  const state: SyntheticAdapterState = {
+    openedSessionIds: [],
+    closedSessionIds: [],
+    startedMessages: [],
+  };
+  return Effect.gen(function* () {
+    const orchestrator = yield* OrchestratorV2;
+    const fixture = yield* setupFailedTurn("model-switch");
+
+    yield* orchestrator.dispatch({
+      type: "thread.model-selection.set",
+      commandId: CommandId.make("claude-reauth-model-switch"),
+      threadId: fixture.threadId,
+      modelSelection: {
+        instanceId: CLAUDE_INSTANCE_ID,
+        model: "claude-opus-4-5",
+      },
+    });
+
+    assert.equal(yield* orchestrator.continueAfterReauthentication(fixture.capture), "skipped");
+    const projection = yield* orchestrator.getThreadProjection(fixture.threadId);
+    assert.deepEqual(projection.thread.modelSelection, {
+      instanceId: CLAUDE_INSTANCE_ID,
+      model: "claude-opus-4-5",
+    });
+    assert.lengthOf(projection.runs, 1);
+    assert.deepEqual(state.startedMessages, []);
+  }).pipe(Effect.provide(makeTestLayer(state)));
+});
+
+it.effect("uses a fresh retry command after a rejected dispatch receipt", () => {
+  const state: SyntheticAdapterState = {
+    openedSessionIds: [],
+    closedSessionIds: [],
+    startedMessages: [],
+  };
+  return Effect.gen(function* () {
+    const orchestrator = yield* OrchestratorV2;
+    const worker = yield* OrchestrationEffectWorkerV2;
+    const fixture = yield* setupFailedTurn("rejected-retry");
+
+    // Make the first retry fail during command planning. The capture remains
+    // current, so a later OAuth callback should be able to try again.
+    state.adapterAvailable = false;
+    const firstAttempt = yield* Effect.exit(
+      orchestrator.continueAfterReauthentication(fixture.capture),
+    );
+    assert.isTrue(Exit.isFailure(firstAttempt));
+
+    state.adapterAvailable = true;
+    assert.equal(yield* orchestrator.continueAfterReauthentication(fixture.capture), "resumed");
+    yield* worker.drain();
+
+    const projection = yield* orchestrator.getThreadProjection(fixture.threadId);
+    assert.lengthOf(projection.runs, 2);
+    assert.deepEqual(state.startedMessages, [
+      {
+        text: REAUTH_TEXT,
+        attachments: [REAUTH_ATTACHMENT],
+      },
+    ]);
   }).pipe(Effect.provide(makeTestLayer(state)));
 });
 

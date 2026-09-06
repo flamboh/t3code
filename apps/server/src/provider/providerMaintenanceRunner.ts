@@ -635,25 +635,31 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
         onSuccess: () =>
           Effect.gen(function* () {
             const providers = yield* providerRegistry.refreshInstance(configuration.instanceId);
-            const current = yield* resolveClaudeAuthenticationConfig(input).pipe(Effect.option);
-            if (
-              Option.isNone(current) ||
-              current.value.command !== configuration.command ||
-              !NodeUtil.isDeepStrictEqual(current.value.environment, configuration.environment)
-            ) {
-              return { providers, continuation: "skipped" as const, continuationError: null };
-            }
-            const continuation = yield* orchestrator.continueAfterReauthentication(capture).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new ServerProviderReauthenticateError({
-                    provider: input.provider,
-                    reason: "Claude is signed in, but the task could not resume.",
-                    cause,
-                  }),
-              ),
+            return yield* serverSettings.withSettingsLock(
+              Effect.gen(function* () {
+                const current = yield* resolveClaudeAuthenticationConfig(input).pipe(Effect.option);
+                if (
+                  Option.isNone(current) ||
+                  current.value.command !== configuration.command ||
+                  !NodeUtil.isDeepStrictEqual(current.value.environment, configuration.environment)
+                ) {
+                  return { providers, continuation: "skipped" as const, continuationError: null };
+                }
+                const continuation = yield* orchestrator
+                  .continueAfterReauthentication(capture)
+                  .pipe(
+                    Effect.mapError(
+                      (cause) =>
+                        new ServerProviderReauthenticateError({
+                          provider: input.provider,
+                          reason: "Claude is signed in, but the task could not resume.",
+                          cause,
+                        }),
+                    ),
+                  );
+                return { providers, continuation, continuationError: null };
+              }),
             );
-            return { providers, continuation, continuationError: null };
           }),
       });
     });

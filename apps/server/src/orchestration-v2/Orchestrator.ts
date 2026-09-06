@@ -182,6 +182,8 @@ export interface OrchestratorV2DispatchResult {
 export interface ClaudeReauthenticationCapture {
   readonly threadId: ThreadId;
   readonly instanceId: ProviderInstanceId;
+  /** The thread selection at login start, including same-instance model changes. */
+  readonly modelSelection: ModelSelection;
   readonly runId: RunId;
   readonly messageId: MessageId;
   readonly text: string;
@@ -7268,6 +7270,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         return {
           threadId: input.threadId,
           instanceId: input.instanceId,
+          modelSelection: projection.thread.modelSelection,
           runId: run.id,
           messageId: message.id,
           text: message.text,
@@ -7296,6 +7299,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         if (
           current === null ||
           current.runId !== capture.runId ||
+          !modelSelectionsEqual(current.modelSelection, capture.modelSelection) ||
           current.messageId !== capture.messageId ||
           current.text !== capture.text ||
           current.cwd !== capture.cwd ||
@@ -7322,11 +7326,28 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               ),
             );
         }
+        const retryCommandId = yield* idAllocator.allocate
+          .command({
+            fixtureName: "claude-reauth",
+            commandName: `retry:${capture.runId}`,
+          })
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new OrchestratorDispatchError({
+                  commandId: CommandId.make(
+                    `command:claude-reauth-retry-allocation:${capture.runId}`,
+                  ),
+                  commandType: "message.dispatch",
+                  cause,
+                }),
+            ),
+          );
         const command = {
           type: "message.dispatch" as const,
           createdBy: "user" as const,
           creationSource: "server" as const,
-          commandId: CommandId.make(`command:claude-reauth-retry:${capture.runId}`),
+          commandId: retryCommandId,
           threadId: capture.threadId,
           messageId: MessageId.make(`message:claude-reauth-retry:${capture.runId}`),
           text: capture.text,

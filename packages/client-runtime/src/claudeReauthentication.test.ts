@@ -131,11 +131,20 @@ describe("getClaudeReauthenticationTarget", () => {
       ordinal: 2,
       failure: { class: "transport_error", message: "Disconnected", code: null, retryable: true },
     };
+    for (const turnItems of [
+      [errorItem, laterError],
+      [laterError, errorItem],
+    ]) {
+      expect(getClaudeReauthenticationTarget({ ...projection, turnItems }, providers)).toBeNull();
+    }
     expect(
       getClaudeReauthenticationTarget(
-        { ...projection, turnItems: [errorItem, laterError] },
+        {
+          ...projection,
+          turnItems: [{ ...errorItem, ordinal: 3 }, laterError],
+        },
         providers,
-      ),
-    ).toBeNull();
+      )?.runId,
+    ).toBe(run.id);
   });
 });

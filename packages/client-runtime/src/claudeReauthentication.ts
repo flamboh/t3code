@@ -34,10 +34,17 @@ export function getClaudeReauthenticationTarget(
   ) {
     return null;
   }
-  const failure = projection.turnItems.findLast(
-    (item) =>
-      item.runId === latestRun.id && item.nodeId === latestRun.rootNodeId && item.type === "error",
-  );
+  let failure: OrchestrationV2ThreadProjection["turnItems"][number] | undefined;
+  for (const item of projection.turnItems) {
+    if (
+      item.runId === latestRun.id &&
+      item.nodeId === latestRun.rootNodeId &&
+      item.type === "error" &&
+      (failure === undefined || item.ordinal > failure.ordinal)
+    ) {
+      failure = item;
+    }
+  }
   if (failure?.type !== "error" || failure.failure.class !== "auth_error") return null;
   return {
     threadId: thread.id,

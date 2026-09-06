@@ -4,7 +4,7 @@ import {
   ServerProviderReauthenticateAttemptId,
   ThreadId,
 } from "@t3tools/contracts";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -18,7 +18,7 @@ vi.mock("../ui/alert", () => {
 });
 
 vi.mock("../ui/button", () => ({
-  Button: ({ children }: { readonly children?: ReactNode }) => <button>{children}</button>,
+  Button: (props: ComponentProps<"button">) => <button {...props} />,
 }));
 
 vi.mock("../ui/dialog", () => {
@@ -156,6 +156,42 @@ function renderDialog(open: boolean, actions: ClaudeReauthenticationActions) {
 }
 
 describe("ClaudeReauthenticationDialog lifecycle", () => {
+  it("keeps the app open when a noopener sign-in popup returns null", async () => {
+    const openWindow = vi.fn(() => null);
+    const navigate = vi.fn();
+    vi.stubGlobal("window", { open: openWindow, location: { assign: navigate } });
+    const harness = makeHarness();
+    await act(async () => {
+      renderer = create(
+        <ClaudeReauthenticationDialog
+          open
+          request={request}
+          actions={harness.actions}
+          onOpenChange={() => {}}
+        />,
+      );
+    });
+    await flushMicrotasks();
+    const loginAttempt = attempt("popup");
+    harness.begins[0]!.resolve(loginAttempt);
+    await flushMicrotasks();
+    const signInButton = renderer!.root
+      .findAllByType("button")
+      .find((button) => button.children.includes("Open Claude sign-in"));
+    expect(signInButton).toBeDefined();
+    await act(async () => {
+      signInButton!.props.onClick();
+    });
+    await flushMicrotasks();
+    expect(openWindow).toHaveBeenCalledWith(
+      loginAttempt.authorizationUrl,
+      "_blank",
+      "noopener,noreferrer",
+    );
+    expect(navigate).not.toHaveBeenCalled();
+    expect(harness.cancellations).toHaveLength(0);
+  });
+
   it("waits for a deferred cancellation before starting the reopened attempt", async () => {
     const harness = makeHarness();
     await act(async () => {

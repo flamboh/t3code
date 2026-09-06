@@ -124,10 +124,7 @@ async function openAuthorizationUrl(url: string): Promise<void> {
   if (typeof window === "undefined") {
     throw new Error("Unable to open Claude sign-in from this client.");
   }
-  const openedWindow = window.open(url, "_blank", "noopener,noreferrer");
-  if (openedWindow === null) {
-    window.location.assign(url);
-  }
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 function isActiveAttemptState(

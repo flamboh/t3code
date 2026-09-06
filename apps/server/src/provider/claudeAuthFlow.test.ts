@@ -2,6 +2,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ServerProviderReauthenticateError,
+  ServerProviderReauthenticateAttemptId,
   ThreadId,
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
@@ -178,6 +179,53 @@ describe("ClaudeAuthFlow", () => {
       assert.equal(result.submitted.status, "awaiting_code");
       assert.equal(result.stdin, "pasted-code-that-must-stay-private\n");
       assert.notInclude(result.submitted.error ?? "", "pasted-code-that-must-stay-private");
+      assert.equal(result.cancelled.status, "cancelled");
+    }),
+  );
+
+  it.effect("rejects provider instance ids as auth attempt ids", () =>
+    Effect.gen(function* () {
+      const process = yield* makeFakeProcess({
+        output: ["Open https://claude.ai/oauth/authorize?state=attempt-alias\n"],
+      });
+      const spawner = ChildProcessSpawner.make(() => Effect.succeed(process.handle));
+
+      const result = yield* runWithFlow(spawner, (flow) =>
+        Effect.gen(function* () {
+          const started = yield* flow.begin(
+            beginInput(() => Effect.succeed({ providers: [] as const })),
+          );
+          const alias = ServerProviderReauthenticateAttemptId.make(String(instanceId));
+          const submitError = yield* flow
+            .submitCode({ attemptId: alias, code: "alias-code" })
+            .pipe(Effect.flip);
+          const statusError = yield* flow.status(alias).pipe(Effect.flip);
+          const cancelError = yield* flow.cancel(alias).pipe(Effect.flip);
+          const stillActive = yield* flow.status(started.attemptId);
+          const submitted = yield* flow.submitCode({
+            attemptId: started.attemptId,
+            code: "live-code",
+          });
+          const stdin = yield* Ref.get(process.stdin);
+          const cancelled = yield* flow.cancel(started.attemptId);
+          return {
+            submitError,
+            statusError,
+            cancelError,
+            stillActive,
+            submitted,
+            stdin,
+            cancelled,
+          };
+        }),
+      );
+
+      for (const error of [result.submitError, result.statusError, result.cancelError]) {
+        assert.equal(error.reason, "Authentication attempt was not found or has expired.");
+      }
+      assert.equal(result.stillActive.status, "awaiting_code");
+      assert.equal(result.submitted.status, "awaiting_code");
+      assert.equal(result.stdin, "live-code\n");
       assert.equal(result.cancelled.status, "cancelled");
     }),
   );
