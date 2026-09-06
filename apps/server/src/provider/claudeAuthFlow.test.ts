@@ -1,3 +1,4 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   ProviderDriverKind,
   ProviderInstanceId,
@@ -75,6 +76,17 @@ const runWithFlow = <A, E>(
     return yield* effect(flow);
   }).pipe(Effect.provide(flowLayer(spawner)), Effect.provideService(HostProcessPlatform, "linux"));
 
+const runWithNativeFlow = <A, E>(
+  effect: (flow: ClaudeAuthFlow.ClaudeAuthFlow["Service"]) => Effect.Effect<A, E>,
+) =>
+  Effect.gen(function* () {
+    const flow = yield* ClaudeAuthFlow.ClaudeAuthFlow;
+    return yield* effect(flow);
+  }).pipe(
+    Effect.provide(ClaudeAuthFlow.layer.pipe(Layer.provide(NodeServices.layer))),
+    Effect.provideService(HostProcessPlatform, "linux"),
+  );
+
 const beginInput = (
   onSuccess: () => Effect.Effect<
     { readonly providers: ReadonlyArray<never> },
@@ -98,6 +110,41 @@ const beginInput = (
 });
 
 describe("ClaudeAuthFlow", () => {
+  it.effect("keeps native login stdin open for multiple code submissions", () =>
+    runWithNativeFlow((flow) =>
+      Effect.gen(function* () {
+        const loginScript = String.raw`
+process.stdout.write("Open https://claude.ai/oauth/authorize?state=multi-code\n");
+process.stdin.setEncoding("utf8");
+let received = "";
+process.stdin.on("data", (chunk) => {
+  received += chunk;
+  if (received.endsWith("second-code\n")) process.exit(0);
+});
+process.stdin.on("end", () => process.exit(1));
+`;
+        const started = yield* flow.begin({
+          ...beginInput(() => Effect.succeed({ providers: [] as const })),
+          command: process.execPath,
+          cwd: process.cwd(),
+          args: ["-e", loginScript],
+        });
+        const first = yield* flow.submitCode({
+          attemptId: started.attemptId,
+          code: "first-code",
+        });
+        const second = yield* flow.submitCode({
+          attemptId: started.attemptId,
+          code: "second-code",
+        });
+        const completed = yield* flow.awaitCompletion(started.attemptId);
+        assert.equal(first.status, "awaiting_code");
+        assert.isTrue(second.status === "awaiting_code" || second.status === "succeeded");
+        assert.equal(completed.status, "succeeded");
+      }),
+    ).pipe(Effect.scoped),
+  );
+
   it.effect("surfaces an ANSI-wrapped authorization URL assembled across output chunks", () =>
     Effect.gen(function* () {
       const process = yield* makeFakeProcess({

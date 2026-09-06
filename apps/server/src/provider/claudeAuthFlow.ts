@@ -220,7 +220,7 @@ export const make = Effect.gen(function* () {
     yield* Deferred.succeed(state.completion, undefined).pipe(Effect.asVoid);
     yield* Deferred.succeed(state.ready, undefined).pipe(Effect.asVoid);
     if ((status === "cancelled" || status === "expired") && state.child !== undefined) {
-      yield* state.child.kill().pipe(Effect.ignore);
+      yield* state.child.kill({ forceKillAfter: Duration.seconds(2) }).pipe(Effect.ignore);
     }
     yield* closeAttempt(state);
     yield* removeAfterRetention(state);
@@ -431,7 +431,11 @@ export const make = Effect.gen(function* () {
           env: input.env,
           cwd: input.cwd,
           shell: resolved.shell,
-          stdin: "pipe",
+          forceKillAfter: Duration.seconds(2),
+          // Code submission runs a finite stream for each pasted code. Keep
+          // the process stdin open between submissions; the default
+          // `endOnDone: true` would close it after the first one.
+          stdin: { stream: "pipe", endOnDone: false },
         }),
       )
       .pipe(
