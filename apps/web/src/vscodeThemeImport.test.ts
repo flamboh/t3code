@@ -173,6 +173,22 @@ describe("VS Code theme import", () => {
     expect(asHex(theme.colors.focus)).toBe("#4d9375");
   });
 
+  it("keeps the fallback focus visible against an explicit raised surface", () => {
+    const theme = parseVsCodeThemeFile({
+      name: "Raised fallback focus",
+      type: "dark",
+      colors: {
+        "editor.background": "#121212",
+        "editorWidget.background": "#346bf1",
+      },
+    });
+    expect(asHex(theme.colors.focus)).toBe("#ffffff");
+    expect(contrastRatio(theme.colors.focus, theme.colors.canvas)).toBeGreaterThanOrEqual(1.1);
+    expect(contrastRatio(theme.colors.focus, theme.colors.surfaceRaised)).toBeGreaterThanOrEqual(
+      1.1,
+    );
+  });
+
   it("skips a transparent button background for the action color", () => {
     const theme = parseVsCodeThemeFile({
       name: "Transparent button",

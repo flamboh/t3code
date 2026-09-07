@@ -248,7 +248,13 @@ export function parseVsCodeThemeFile(value: unknown): ThemeDefinition {
     break;
   }
   if (!accentColor || !accentHex) {
-    accentHex = themeColorToHex(getStandardThemeColors(appearance).accent)!;
+    const standardAccentHex = themeColorToHex(getStandardThemeColors(appearance).accent)!;
+    accentHex =
+      [standardAccentHex, "#ffffff", "#000000"].find(
+        (candidate) =>
+          standsApart(candidate, canvasHex) &&
+          (raisedSurfaceCandidateHex === null || standsApart(candidate, raisedSurfaceCandidateHex)),
+      ) ?? standardAccentHex;
     accentColor = parseVsCodeColor(accentHex)!;
   }
 
