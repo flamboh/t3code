@@ -310,6 +310,7 @@ export function terminalContextMenuItems(options: {
   hasSelection: boolean;
   link: string | null;
   canAddToChat?: boolean;
+  canAddLinkToChat?: boolean;
   canOpenInPreview: boolean;
   openLabel: string;
   revealLabel: string | null;
@@ -321,7 +322,9 @@ export function terminalContextMenuItems(options: {
             ? [{ id: "open-link-in-preview" as const, label: "Open in integrated browser" }]
             : []),
           { id: "open-link-external", label: "Open in system browser" },
-          { id: "add-link-to-chat", label: "Add link to chat" },
+          ...(options.canAddLinkToChat === false
+            ? []
+            : [{ id: "add-link-to-chat" as const, label: "Add link to chat" }]),
           { id: "copy-link", label: "Copy link", icon: "copy" },
         ]
       : [
@@ -329,7 +332,9 @@ export function terminalContextMenuItems(options: {
           ...(options.revealLabel
             ? [{ id: "reveal-link" as const, label: options.revealLabel }]
             : []),
-          { id: "add-link-to-chat", label: "Add path to chat" },
+          ...(options.canAddLinkToChat === false
+            ? []
+            : [{ id: "add-link-to-chat" as const, label: "Add path to chat" }]),
           { id: "copy-link", label: "Copy path", icon: "copy" },
         ]
     : [];
@@ -456,6 +461,7 @@ export function TerminalViewport({
     onAddTerminalContext?.(selection);
   });
   const canAddSelectionToChat = useEffectEvent(() => onAddTerminalContext !== undefined);
+  const canAddLinkToChat = useEffectEvent(() => onAddTerminalLink !== undefined);
   const handleAddTerminalLink = useEffectEvent((link: string) => {
     onAddTerminalLink?.(terminalLinkChatText(link, cwd));
   });
@@ -771,6 +777,7 @@ export function TerminalViewport({
               hasSelection: selectionAction !== null,
               link,
               canAddToChat: canAddSelectionToChat(),
+              canAddLinkToChat: canAddLinkToChat(),
               openLabel: openInEditorMenuLabel(editorAtMenuOpen),
               canOpenInPreview:
                 link !== null &&
@@ -795,7 +802,7 @@ export function TerminalViewport({
             }
             return;
           case "add-link-to-chat":
-            if (link) handleAddTerminalLink(link);
+            if (link && canAddLinkToChat()) handleAddTerminalLink(link);
             return;
           case "copy":
             if (selectionAction) await copySelection(selectionAction.clipboardText, requestId);
@@ -944,6 +951,14 @@ export function TerminalViewport({
           threadRef,
           openPreview,
           fallbackToBrowser: () => openTerminalUrlInBrowser(text),
+        }).catch((error: unknown) => {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Unable to open link",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            }),
+          );
         });
       }
 

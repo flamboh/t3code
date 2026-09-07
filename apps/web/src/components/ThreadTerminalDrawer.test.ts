@@ -143,6 +143,25 @@ describe("terminalContextMenuItems", () => {
       { id: "paste", label: "Paste" },
     ]);
   });
+
+  it("omits link chat actions when no chat target is available", () => {
+    expect(
+      terminalContextMenuItems({
+        hasSelection: false,
+        link: "https://t3.codes",
+        canAddLinkToChat: false,
+        canOpenInPreview: false,
+        openLabel: "Open in editor",
+        revealLabel: null,
+      }),
+    ).toEqual([
+      { id: "open-link-external", label: "Open in system browser" },
+      { id: "copy-link", label: "Copy link", icon: "copy" },
+      { id: "add-to-chat", label: "Add to chat", disabled: true },
+      { id: "copy", label: "Copy", disabled: true },
+      { id: "paste", label: "Paste" },
+    ]);
+  });
 });
 
 describe("terminal selection actions", () => {
