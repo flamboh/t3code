@@ -104,7 +104,11 @@ export const make = Effect.gen(function* () {
       const resolvedWorktree = yield* canonicalizePath(expandHomePathWith(worktreePath, path)).pipe(
         Effect.orElseSucceed(() => null),
       );
-      if (resolvedWorktree !== null && isWithinRoot(candidate, resolvedWorktree)) {
+      if (
+        resolvedWorktree !== null &&
+        path.dirname(resolvedWorktree) !== resolvedWorktree &&
+        isWithinRoot(candidate, resolvedWorktree)
+      ) {
         return;
       }
     }
