@@ -215,13 +215,15 @@ export function ConnectCliCallbackSurface() {
             <>
               It connects your terminal to T3 Connect as{" "}
               <span className="text-foreground">{accountLabel}</span>. Not you?{" "}
-              <button
+              <Button
                 type="button"
-                className="cursor-pointer text-foreground underline underline-offset-4"
+                className="h-auto p-0 align-baseline text-foreground"
                 onClick={() => void clerk.signOut(() => setSignedOut(true))}
+                size="xs"
+                variant="link"
               >
                 Sign out
-              </button>{" "}
+              </Button>{" "}
               and open the link from your terminal again.
             </>
           ) : (
