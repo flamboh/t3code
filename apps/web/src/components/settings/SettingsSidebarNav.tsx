@@ -116,6 +116,7 @@ const SETTINGS_PAGE_SECTIONS: Partial<
   ],
   "/settings/connections": [
     { label: "This environment", targetId: "connections-environment" },
+    { label: "Directories", targetId: "environment-directories" },
     { label: "Remote environments", targetId: "remote-environments" },
   ],
 };

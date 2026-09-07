@@ -3,7 +3,7 @@ import { useState } from "react";
 
 import { useEnvironmentOperateAccess } from "../../hooks/useEnvironmentOperateAccess";
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
-import type { EnvironmentPresentation } from "../../state/environments";
+import { type EnvironmentPresentation, usePrimaryEnvironmentId } from "../../state/environments";
 import { DraftInput } from "../ui/draft-input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
@@ -73,9 +73,12 @@ export function EnvironmentDirectorySettings({
 }: {
   environments: ReadonlyArray<EnvironmentPresentation>;
 }) {
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const [selectedId, setSelectedId] = useState<EnvironmentId | null>(null);
   const selected =
-    environments.find((environment) => environment.environmentId === selectedId) ?? environments[0];
+    environments.find((environment) => environment.environmentId === selectedId) ??
+    environments.find((environment) => environment.environmentId === primaryEnvironmentId) ??
+    environments[0];
 
   return (
     <SettingsSection {...searchableSetting("environment-directories")}>
