@@ -10,6 +10,8 @@
  *
  * @module ServerSettings
  */
+import * as NodePath from "@effect/platform-node/NodePath";
+
 import {
   DEFAULT_TEXT_GENERATION_MODEL,
   DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
@@ -61,6 +63,7 @@ import {
   isModelSelectionProviderEnabled,
 } from "@t3tools/shared/serverSettings";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
+import { expandHomePathWith } from "./pathExpansion.ts";
 
 export { resolveSourceControlWriterModelSelection } from "@t3tools/shared/serverSettings";
 
@@ -119,13 +122,27 @@ const foldProviderInstanceEnabledFlags = (settings: ServerSettings): ServerSetti
   };
 };
 
+const worktreeBaseDirectorySchema = (path: Path.Path) =>
+  Schema.String.check(
+    Schema.makeFilter(
+      (value) =>
+        value === "" ||
+        (!value.includes("\0") && path.isAbsolute(expandHomePathWith(value, path))) ||
+        "Worktree directory must be an absolute path or start with ~/.",
+    ),
+  );
+
 const normalizeServerSettings = (
   settings: ServerSettings,
+  path: Path.Path,
 ): Effect.Effect<ServerSettings, ServerSettingsError> =>
   encodeServerSettings(settings).pipe(
     Effect.flatMap(decodeServerSettings),
     Effect.map(foldProviderInstanceEnabledFlags),
     Effect.map((next) => ({ ...next, ...deriveLegacyProjectOverrides(next) })),
+    Effect.tap((settings) =>
+      Schema.decodeUnknownEffect(worktreeBaseDirectorySchema(path))(settings.worktreeBaseDirectory),
+    ),
     Effect.mapError(
       (cause) =>
         new ServerSettingsError({
@@ -271,18 +288,22 @@ export class ServerSettingsService extends Context.Service<
 
 const makeTest = (overrides: DeepPartial<ServerSettings> = {}) =>
   Effect.gen(function* () {
+    const path = yield* Path.Path;
     const { automaticGitFetchInterval, providerHealthRefreshInterval, ...overridesForMerge } =
       overrides;
     const merged = deepMerge(DEFAULT_SERVER_SETTINGS, overridesForMerge);
-    const initialSettings = yield* normalizeServerSettings({
-      ...merged,
-      ...(automaticGitFetchInterval !== undefined
-        ? { automaticGitFetchInterval: automaticGitFetchInterval as Duration.Duration }
-        : {}),
-      ...(providerHealthRefreshInterval !== undefined
-        ? { providerHealthRefreshInterval: providerHealthRefreshInterval as Duration.Duration }
-        : {}),
-    });
+    const initialSettings = yield* normalizeServerSettings(
+      {
+        ...merged,
+        ...(automaticGitFetchInterval !== undefined
+          ? { automaticGitFetchInterval: automaticGitFetchInterval as Duration.Duration }
+          : {}),
+        ...(providerHealthRefreshInterval !== undefined
+          ? { providerHealthRefreshInterval: providerHealthRefreshInterval as Duration.Duration }
+          : {}),
+      },
+      path,
+    );
     const currentSettingsRef = yield* Ref.make<ServerSettings>(initialSettings);
     const writeSemaphore = yield* Semaphore.make(1);
     const getSettings = Ref.get(currentSettingsRef).pipe(Effect.map(resolveTextGenerationProvider));
@@ -293,7 +314,7 @@ const makeTest = (overrides: DeepPartial<ServerSettings> = {}) =>
       writeSemaphore.withPermits(1)(
         Ref.get(currentSettingsRef).pipe(
           Effect.flatMap(update),
-          Effect.flatMap(normalizeServerSettings),
+          Effect.flatMap((settings) => normalizeServerSettings(settings, path)),
           Effect.tap((nextSettings) => Ref.set(currentSettingsRef, nextSettings)),
           Effect.map(resolveTextGenerationProvider),
         ),
@@ -327,7 +348,7 @@ const makeTest = (overrides: DeepPartial<ServerSettings> = {}) =>
   });
 
 export const layerTest = (overrides: DeepPartial<ServerSettings> = {}) =>
-  Layer.effect(ServerSettingsService, makeTest(overrides));
+  Layer.effect(ServerSettingsService, makeTest(overrides)).pipe(Layer.provide(NodePath.layer));
 
 // Migrate saved token delivery without accepting it in settings writes or
 // letting one retired value reset the rest of the environment's settings.
@@ -754,7 +775,7 @@ const make = Effect.gen(function* () {
     if (folded !== loaded) {
       yield* writeSettingsAtomically(folded);
     }
-    return folded;
+    return yield* normalizeServerSettings(folded, pathService);
   });
 
   const settingsCache = yield* Cache.make<typeof cacheKey, ServerSettings, ServerSettingsError>({

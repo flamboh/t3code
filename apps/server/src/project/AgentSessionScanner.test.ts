@@ -57,6 +57,7 @@ const makeProjectionSnapshotQueryLayer = (importedWorkspaceRoots: ReadonlyArray<
     getActiveProjectByWorkspaceRoot: () => Effect.die("unused"),
     getProjectShells: () => Effect.die("unused"),
     getProjectShellById: () => Effect.die("unused"),
+    listThreadWorktreePaths: () => Effect.succeed([]),
     getImportedAgentSessionSources: () => Effect.succeed([]),
     getFirstActiveThreadIdByProjectId: () => Effect.die("unused"),
     getThreadCheckpointContext: () => Effect.die("unused"),
@@ -79,6 +80,7 @@ interface ScannerTestInput {
   readonly importedWorkspaceRoots?: ReadonlyArray<string>;
   /** Base dir for the test ServerConfig; worktreesDir derives from it. */
   readonly configBaseDir?: string;
+  readonly worktreeBaseDirectory?: string;
   readonly providerInstances?: ContractServerSettings["providerInstances"];
 }
 
@@ -87,6 +89,7 @@ const makeScannerTestLayer = (input: ScannerTestInput) =>
     Layer.provide(
       Layer.mergeAll(
         ServerSettings.layerTest({
+          worktreeBaseDirectory: input.worktreeBaseDirectory ?? "",
           providers: {
             claudeAgent: { homePath: input.claudeHomePath },
             codex: { homePath: input.codexHomePath },
@@ -1000,6 +1003,36 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
 
         expect(result.candidates).toEqual([]);
       }),
+    );
+
+    it.effect(
+      "excludes sandboxes under the custom worktrees setting without a Git worktree marker",
+      () =>
+        Effect.gen(function* () {
+          const path = yield* Path.Path;
+          const claudeHomePath = yield* makeTempDir("t3code-claude-home-");
+          const codexHomePath = yield* makeTempDir("t3code-codex-home-");
+          const configBaseDir = yield* makeTempDir("t3code-scanner-base-");
+          const fileSystem = yield* FileSystem.FileSystem;
+
+          const worktreeBaseDirectory = yield* makeTempDir("custom-checkouts-");
+          const worktreeCwd = path.join(worktreeBaseDirectory, "t3code", "wt-2");
+          yield* fileSystem.makeDirectory(worktreeCwd, { recursive: true });
+          yield* writeTranscript({
+            filePath: path.join(claudeHomePath, "projects", "-slug", "a.jsonl"),
+            contents: claudeSessionLine(worktreeCwd),
+            mtimeMs: Date.parse("2026-01-01T00:00:00.000Z"),
+          });
+
+          const result = yield* runScan({
+            claudeHomePath,
+            codexHomePath,
+            configBaseDir,
+            worktreeBaseDirectory,
+          });
+
+          expect(result.candidates).toEqual([]);
+        }),
     );
 
     it.effect("excludes sandboxes reached through a symlink into the worktrees dir", () =>

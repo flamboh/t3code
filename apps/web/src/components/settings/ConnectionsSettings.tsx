@@ -75,6 +75,7 @@ import {
   formatDesktopSshTarget,
 } from "./EnvironmentRow";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
+import { EnvironmentDirectorySettings } from "./EnvironmentDirectorySettings";
 import { LoadBalancingSettings } from "./LoadBalancingSettings";
 import { GitHubRoutingSettings } from "./GitHubRoutingSettings";
 import { Input } from "../ui/input";
@@ -3684,6 +3685,7 @@ export function ConnectionsSettings() {
   return (
     <SettingsPageContainer width="wide">
       {primarySettings}
+      <EnvironmentDirectorySettings environments={environments} />
       <SettingsSection
         {...searchableSetting("remote-environments")}
         title="Environments"

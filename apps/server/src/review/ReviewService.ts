@@ -16,6 +16,8 @@ import {
 } from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
+import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { expandHomePathWith } from "../pathExpansion.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 
@@ -38,6 +40,7 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
+  const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
 
   const canonicalizePath = (value: string) => {
     const resolvedPath = path.resolve(value);
@@ -75,6 +78,35 @@ export const make = Effect.gen(function* () {
 
     if (isWithinRoot(candidate, workspaceRoot) || isWithinRoot(candidate, worktreesRoot)) {
       return;
+    }
+
+    // A worktree outside both defaults is authorized by the path a thread
+    // actually holds, not by the server's current worktree directory: the
+    // recorded path stays valid after that setting changes, and it cannot widen
+    // the guard the way a root like `/` would. A failed read honors only the
+    // defaults, denying rather than over-permitting.
+    const worktreePaths = yield* projectionSnapshotQuery
+      .listThreadWorktreePaths()
+      .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
+    // Check likely matches first so a normal diff does not realpath every
+    // archived worktree. The second pass handles alternate symlink spellings.
+    const likelyPaths: Array<string> = [];
+    const otherPaths: Array<string> = [];
+    const requestedPath = path.resolve(cwd);
+    for (const recordedPath of worktreePaths) {
+      const root = path.resolve(expandHomePathWith(recordedPath, path));
+      (isWithinRoot(candidate, root) || isWithinRoot(requestedPath, root)
+        ? likelyPaths
+        : otherPaths
+      ).push(root);
+    }
+    for (const worktreePath of [...likelyPaths, ...otherPaths]) {
+      const resolvedWorktree = yield* canonicalizePath(expandHomePathWith(worktreePath, path)).pipe(
+        Effect.orElseSucceed(() => null),
+      );
+      if (resolvedWorktree !== null && isWithinRoot(candidate, resolvedWorktree)) {
+        return;
+      }
     }
 
     return yield* new VcsRepositoryDetectionError({

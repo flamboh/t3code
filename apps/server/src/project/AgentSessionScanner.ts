@@ -646,7 +646,7 @@ export const make = Effect.gen(function* () {
     path.join(homeDir, "Documents", "Codex"),
   ];
 
-  const isExcludedProjectPath = (candidatePath: string) =>
+  const isExcludedProjectPath = (candidatePath: string, configuredWorktreesDir: string) =>
     excludedProjectRoots.has(normalizeProjectPathForComparison(candidatePath)) ||
     excludedProjectAncestors.some((ancestor) =>
       normalizeForWorktreeMatch(candidatePath, foldWorktreeCase).startsWith(
@@ -656,7 +656,8 @@ export const make = Effect.gen(function* () {
     normalizeForWorktreeMatch(candidatePath, foldWorktreeCase).startsWith(
       normalizeForWorktreeMatch(baseDir, foldWorktreeCase),
     ) ||
-    isT3ManagedWorktree(candidatePath, worktreesDir, foldWorktreeCase);
+    isT3ManagedWorktree(candidatePath, worktreesDir, foldWorktreeCase) ||
+    isT3ManagedWorktree(candidatePath, configuredWorktreesDir, foldWorktreeCase);
 
   const listDirectory = (directory: string) =>
     fileSystem.readDirectory(directory).pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
@@ -1198,7 +1199,15 @@ export const make = Effect.gen(function* () {
 
   let cachedCandidates: ReadonlyArray<RawCandidate> | null = null;
 
+  const readWorktreesDirectory = serverSettings.getSettings.pipe(
+    Effect.map((settings) =>
+      path.resolve(expandHomePath(settings.worktreeBaseDirectory || worktreesDir)),
+    ),
+    Effect.mapError((cause) => new AgentSessionScanError({ operation: "read-settings", cause })),
+  );
+
   const scan: AgentSessionScanner["Service"]["scan"] = Effect.gen(function* () {
+    const configuredWorktreesDir = yield* readWorktreesDirectory;
     const { candidates: raw, truncated } = yield* collectCandidates();
     cachedCandidates = raw;
 
@@ -1221,7 +1230,7 @@ export const make = Effect.gen(function* () {
       const expanded = expandHomePath(candidate.cwd.trim());
       if (!path.isAbsolute(expanded)) continue;
       const resolved = path.resolve(expanded);
-      if (isExcludedProjectPath(resolved)) continue;
+      if (isExcludedProjectPath(resolved, configuredWorktreesDir)) continue;
       let key = directoryKeys.get(resolved);
       if (key === undefined) {
         const stats = yield* statOption(resolved);
@@ -1235,7 +1244,7 @@ export const make = Effect.gen(function* () {
           .pipe(Effect.orElseSucceed(() => resolved));
         // A symlink can point into the worktrees directory even when its own
         // spelling doesn't; check again with links resolved.
-        if (isExcludedProjectPath(realPath)) {
+        if (isExcludedProjectPath(realPath, configuredWorktreesDir)) {
           key = "";
         } else {
           const gitIdentity = yield* readGitIdentity(resolved);
@@ -1329,9 +1338,14 @@ export const make = Effect.gen(function* () {
     workspaceRoot: string,
     completedSources: ReadonlyArray<AgentSessionImportSource>,
   ) {
+    const configuredWorktreesDir = yield* readWorktreesDirectory;
     const root = path.resolve(expandHomePath(workspaceRoot));
     const realRoot = yield* fileSystem.realPath(root).pipe(Effect.orElseSucceed(() => root));
-    if (isExcludedProjectPath(root) || isExcludedProjectPath(realRoot)) return Stream.empty;
+    if (
+      isExcludedProjectPath(root, configuredWorktreesDir) ||
+      isExcludedProjectPath(realRoot, configuredWorktreesDir)
+    )
+      return Stream.empty;
     const rootIdentity = yield* directoryIdentity(root);
     const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
     const cutoffMs = nowMs - RECENT_THREAD_WINDOW_MS;

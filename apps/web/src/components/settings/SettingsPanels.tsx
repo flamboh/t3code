@@ -2932,7 +2932,16 @@ export function GeneralSettingsPanel() {
           serverScoped
           settingKeys={["addProjectBaseDirectory"]}
           {...searchableSetting("add-project-starts-in")}
-          description='Leave empty to use "~/" when the Add Project browser opens.'
+          description={
+            <>
+              Leave empty to use "~/" when the Add Project browser opens. Configure directories for
+              each server in{" "}
+              <Link to="/settings/connections" className="underline">
+                Connections
+              </Link>
+              .
+            </>
+          }
           resetAction={
             settings.addProjectBaseDirectory !==
             DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory ? (

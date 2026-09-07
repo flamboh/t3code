@@ -194,6 +194,13 @@ export interface ProjectionSnapshotQueryShape {
     workspaceRoot: string,
   ) => Effect.Effect<Option.Option<OrchestrationProject>, ProjectionRepositoryError>;
 
+  /** Recorded nondeleted thread worktrees, including archived threads, so
+   * reviews keep working after the server directory default changes. */
+  readonly listThreadWorktreePaths: () => Effect.Effect<
+    ReadonlyArray<string>,
+    ProjectionRepositoryError
+  >;
+
   /**
    * Read a single active project shell row by id.
    */
