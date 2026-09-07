@@ -217,9 +217,8 @@ export function ConnectCliCallbackSurface() {
               <span className="text-foreground">{accountLabel}</span>. Not you?{" "}
               <Button
                 type="button"
-                className="h-auto p-0 align-baseline text-foreground"
                 onClick={() => void clerk.signOut(() => setSignedOut(true))}
-                size="xs"
+                size="micro"
                 variant="link"
               >
                 Sign out
