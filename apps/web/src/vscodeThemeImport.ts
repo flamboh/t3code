@@ -214,6 +214,11 @@ export function parseVsCodeThemeFile(value: unknown): ThemeDefinition {
   const appearance = resolveAppearance(value, canvas);
 
   const canvasHex = toHex(canvas);
+  const raisedSurfaceCandidateHex = solidOver(
+    canvas,
+    "editorWidget.background",
+    "dropdown.background",
+  );
 
   /** Accent and control candidates must clear this small separation floor
    * from every adjacent surface or state checked by the importer. */
@@ -233,7 +238,11 @@ export function parseVsCodeThemeFile(value: unknown): ThemeDefinition {
     const candidate = parseVsCodeColor(colors[key]);
     if (!candidate) continue;
     const candidateHex = flattenOver(candidate, canvas);
-    if (!standsApart(candidateHex, canvasHex)) continue;
+    if (
+      !standsApart(candidateHex, canvasHex) ||
+      (raisedSurfaceCandidateHex !== null && !standsApart(candidateHex, raisedSurfaceCandidateHex))
+    )
+      continue;
     accentColor = candidate;
     accentHex = candidateHex;
     break;
@@ -279,8 +288,7 @@ export function parseVsCodeThemeFile(value: unknown): ThemeDefinition {
     return relativeLuminance(surfaceRgb) < 0.179 ? "#ffffff" : "#000000";
   };
 
-  const surfaceRaisedHex =
-    solidOver(canvas, "editorWidget.background", "dropdown.background") ?? derived.surfaceRaised;
+  const surfaceRaisedHex = raisedSurfaceCandidateHex ?? derived.surfaceRaised;
   // The checked switch track maps to messageAction, so resolve it before
   // choosing the input role used by the unchecked track.
   const buttonHex = solidOver(canvas, "button.background");

@@ -156,6 +156,23 @@ describe("VS Code theme import", () => {
     expect(contrastRatio(vitesse.colors.focus, vitesse.colors.canvas)).toBeGreaterThanOrEqual(1.1);
   });
 
+  it("keeps focus visible against an explicit raised surface", () => {
+    const theme = parseVsCodeThemeFile({
+      name: "Raised focus",
+      type: "dark",
+      colors: {
+        "editor.background": "#000000",
+        focusBorder: "#111111",
+        "editorWidget.background": "#111111",
+        "button.background": "#4d9375",
+      },
+    });
+    expect(contrastRatio(theme.colors.focus, theme.colors.surfaceRaised)).toBeGreaterThanOrEqual(
+      1.1,
+    );
+    expect(asHex(theme.colors.focus)).toBe("#4d9375");
+  });
+
   it("skips a transparent button background for the action color", () => {
     const theme = parseVsCodeThemeFile({
       name: "Transparent button",
