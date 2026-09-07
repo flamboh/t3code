@@ -4,6 +4,8 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
+import * as Path from "effect/Path";
+import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 
 import { ServerConfig } from "../config.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
@@ -208,6 +210,41 @@ describe("ReviewService", () => {
       assert.deepStrictEqual(detectCalls, []);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
+
+  for (const useSymlink of [false, true]) {
+    it.effect.skipIf(useSymlink && !symlinksSupported)(
+      `rejects a recorded filesystem root${useSymlink ? " through a symlink" : ""}`,
+      () =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const workspaceRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "t3-review-workspace-",
+          });
+          const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
+          const outsideRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-outside-" });
+          const filesystemRoot = path.parse(outsideRoot).root;
+          const recordedPath = useSymlink ? path.join(baseDir, "root-link") : filesystemRoot;
+          if (useSymlink) yield* fs.symlink(filesystemRoot, recordedPath);
+          const detectCalls: Array<{ readonly cwd: string }> = [];
+          const error = yield* Effect.gen(function* () {
+            const review = yield* ReviewService.ReviewService;
+            return yield* review.getDiffPreview({ cwd: outsideRoot }).pipe(Effect.flip);
+          }).pipe(
+            Effect.provide(
+              makeLayer({
+                workspaceRoot,
+                baseDir,
+                detectCalls,
+                threadWorktreePaths: [recordedPath],
+              }),
+            ),
+          );
+          assert.equal(error._tag, "VcsRepositoryDetectionError");
+          assert.deepStrictEqual(detectCalls, []);
+        }).pipe(Effect.provide(NodeServices.layer)),
+    );
+  }
 
   it.effect("resolves the matching recorded worktree before unrelated archived paths", () =>
     Effect.gen(function* () {
