@@ -1280,3 +1280,43 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 });
+
+it.effect("persists and resets the worktree directory and rejects relative paths", () =>
+  Effect.gen(function* () {
+    const settings = yield* ServerSettingsModule.ServerSettingsService;
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const config = yield* ServerConfig.ServerConfig;
+    const root = path.join(config.baseDir, "custom-worktrees");
+    const updated = yield* settings.updateSettings({ worktreeBaseDirectory: root });
+    assert.equal(updated.worktreeBaseDirectory, root);
+    assert.equal(
+      (yield* Schema.decodeUnknownEffect(
+        Schema.fromJsonString(
+          Schema.Struct({
+            worktreeBaseDirectory: Schema.optionalKey(Schema.String),
+          }),
+        ),
+      )(yield* fs.readFileString(config.settingsPath))).worktreeBaseDirectory,
+      root,
+    );
+    const failure = yield* settings
+      .updateSettings({ worktreeBaseDirectory: "relative/worktrees" })
+      .pipe(Effect.flip);
+    assert.equal(failure.operation, "normalize");
+    assert.equal((yield* settings.getSettings).worktreeBaseDirectory, root);
+    yield* settings.updateSettings({ worktreeBaseDirectory: "~/worktrees" });
+    assert.equal((yield* settings.getSettings).worktreeBaseDirectory, "~/worktrees");
+    yield* settings.updateSettings({ worktreeBaseDirectory: "" });
+    assert.equal((yield* settings.getSettings).worktreeBaseDirectory, "");
+    assert.isUndefined(
+      (yield* Schema.decodeUnknownEffect(
+        Schema.fromJsonString(
+          Schema.Struct({
+            worktreeBaseDirectory: Schema.optionalKey(Schema.String),
+          }),
+        ),
+      )(yield* fs.readFileString(config.settingsPath))).worktreeBaseDirectory,
+    );
+  }).pipe(Effect.provide(makeServerSettingsLayer().pipe(Layer.provideMerge(NodeServices.layer)))),
+);
