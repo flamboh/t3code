@@ -290,7 +290,7 @@ export function terminalLinkCopyText(link: string): string {
 }
 
 /** Post-selection popup actions. Add to chat is available when a chat target exists. */
-export function terminalSelectionMenuItems(options?: {
+function terminalSelectionMenuItems(options?: {
   canAddToChat?: boolean;
 }): ContextMenuItem<"add-to-chat" | "copy">[] {
   return [
