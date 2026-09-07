@@ -51,6 +51,16 @@ describe("terminalLinkChatText", () => {
     );
   });
 
+  it("keeps a Windows drive root intact", () => {
+    const separator = String.fromCharCode(92);
+    expect(
+      terminalLinkChatText(
+        `C:${separator}`,
+        `C:${separator}Users${separator}olive${separator}project`,
+      ),
+    ).toBe("[](C:%5C)");
+  });
+
   it("leaves URLs intact regardless of scheme casing", () => {
     expect(terminalLinkChatText("HTTPS://t3.codes/docs", "/Users/olive/project")).toBe(
       "HTTPS://t3.codes/docs",
@@ -114,6 +124,22 @@ describe("terminalContextMenuItems", () => {
       { id: "copy-link", label: "Copy path", icon: "copy" },
       { id: "add-to-chat", label: "Add to chat", disabled: true },
       { id: "copy", label: "Copy", disabled: true },
+      { id: "paste", label: "Paste" },
+    ]);
+  });
+
+  it("omits selection chat actions when no chat target is available", () => {
+    expect(
+      terminalContextMenuItems({
+        hasSelection: true,
+        link: null,
+        canOpenInPreview: false,
+        openLabel: "Open in editor",
+        revealLabel: null,
+        canAddToChat: false,
+      }),
+    ).toEqual([
+      { id: "copy", label: "Copy", disabled: false },
       { id: "paste", label: "Paste" },
     ]);
   });

@@ -279,17 +279,24 @@ export function terminalFileManagerPath(link: string, cwd: string): string {
 export function terminalLinkChatText(link: string, cwd: string): string {
   if (isTerminalUrl(link)) return link;
   const path = terminalFileManagerPath(link, cwd);
-  return serializeComposerFileLink(path.replace(/(?!^)[/\\]+$/u, ""));
+  const trimmedPath = path.replace(/(?!^)[/\\]+$/u, "");
+  const normalizedPath =
+    /^[A-Za-z]:$/u.test(trimmedPath) && /^[A-Za-z]:[\\/]+$/u.test(path) ? path : trimmedPath;
+  return serializeComposerFileLink(normalizedPath);
 }
 
 export function terminalLinkCopyText(link: string): string {
   return isTerminalUrl(link) ? link : splitFilePathPosition(link).path;
 }
 
-/** Post-selection popup: available selection actions, always enabled. */
-export function terminalSelectionMenuItems(): ContextMenuItem<"add-to-chat" | "copy">[] {
+/** Post-selection popup actions. Add to chat is available when a chat target exists. */
+export function terminalSelectionMenuItems(options?: {
+  canAddToChat?: boolean;
+}): ContextMenuItem<"add-to-chat" | "copy">[] {
   return [
-    { id: "add-to-chat", label: "Add to chat" },
+    ...(options?.canAddToChat === false
+      ? []
+      : ([{ id: "add-to-chat", label: "Add to chat" }] satisfies ContextMenuItem<"add-to-chat">[])),
     { id: "copy", label: "Copy" },
   ];
 }
@@ -302,6 +309,7 @@ export function terminalSelectionMenuItems(): ContextMenuItem<"add-to-chat" | "c
 export function terminalContextMenuItems(options: {
   hasSelection: boolean;
   link: string | null;
+  canAddToChat?: boolean;
   canOpenInPreview: boolean;
   openLabel: string;
   revealLabel: string | null;
@@ -327,7 +335,9 @@ export function terminalContextMenuItems(options: {
     : [];
   return [
     ...linkItems,
-    ...terminalSelectionMenuItems().map((item) => ({
+    ...terminalSelectionMenuItems(
+      options.canAddToChat === undefined ? undefined : { canAddToChat: options.canAddToChat },
+    ).map((item) => ({
       ...item,
       disabled: !options.hasSelection,
     })),
@@ -372,7 +382,7 @@ interface TerminalViewportProps {
   providerInstanceId?: ProviderInstanceId;
   onSessionExited: () => void;
   onAddTerminalContext?: (selection: TerminalContextSelection) => void;
-  onAddTerminalLink: (link: string) => void;
+  onAddTerminalLink?: (link: string) => void;
   focusRequestId: number;
   autoFocus: boolean;
   visible: boolean;
@@ -445,8 +455,9 @@ export function TerminalViewport({
   const handleAddTerminalContext = useEffectEvent((selection: TerminalContextSelection) => {
     onAddTerminalContext?.(selection);
   });
+  const canAddSelectionToChat = useEffectEvent(() => onAddTerminalContext !== undefined);
   const handleAddTerminalLink = useEffectEvent((link: string) => {
-    onAddTerminalLink(terminalLinkChatText(link, cwd));
+    onAddTerminalLink?.(terminalLinkChatText(link, cwd));
   });
   const fileManagerRevealLabel =
     remoteOpen.isResolved &&
@@ -623,7 +634,9 @@ export function TerminalViewport({
       synchronizedStatusRef.current = "closed";
       synchronizeTerminalStatus(terminal, latestSession.status);
       // Startup may finish after the user has returned to the composer.
-      if (autoFocus && visibleRef.current) window.requestAnimationFrame(() => terminal.focus());
+      if (visibleRef.current && mount.contains(document.activeElement)) {
+        terminal.focus();
+      }
 
       const dismissSelectionAction = (supersede = false) => {
         const ownsMenu =
@@ -757,6 +770,7 @@ export function TerminalViewport({
             terminalContextMenuItems({
               hasSelection: selectionAction !== null,
               link,
+              canAddToChat: canAddSelectionToChat(),
               openLabel: openInEditorMenuLabel(editorAtMenuOpen),
               canOpenInPreview:
                 link !== null &&
@@ -776,7 +790,9 @@ export function TerminalViewport({
         }
         switch (clicked) {
           case "add-to-chat":
-            if (selectionAction) addSelectionToChat(selectionAction.selection);
+            if (selectionAction && canAddSelectionToChat()) {
+              addSelectionToChat(selectionAction.selection);
+            }
             return;
           case "add-link-to-chat":
             if (link) handleAddTerminalLink(link);
@@ -829,7 +845,10 @@ export function TerminalViewport({
         const requestId = ++selectionActionRequestIdRef.current;
         openSelectionMenuRequestIdRef.current = requestId;
         const clicked = await localApi.contextMenu
-          .show(terminalSelectionMenuItems(), nextAction.position)
+          .show(
+            terminalSelectionMenuItems({ canAddToChat: canAddSelectionToChat() }),
+            nextAction.position,
+          )
           .finally(() => {
             if (openSelectionMenuRequestIdRef.current === requestId) {
               openSelectionMenuRequestIdRef.current = null;
@@ -840,7 +859,7 @@ export function TerminalViewport({
         }
         switch (clicked) {
           case "add-to-chat":
-            addSelectionToChat(nextAction.selection);
+            if (canAddSelectionToChat()) addSelectionToChat(nextAction.selection);
             return;
           case "copy":
             await copySelection(nextAction.clipboardText, requestId);
@@ -1072,10 +1091,10 @@ export function TerminalViewport({
 
     return () => {
       cancelled = true;
+      const hadFocus = mount.contains(document.activeElement);
       teardown?.();
+      if (hadFocus && mount.isConnected) mount.focus({ preventScroll: true });
     };
-    // autoFocus is intentionally omitted;
-    // it is only read at mount time and must not trigger terminal teardown/recreation.
   }, [cwd, environmentId, runtimeEnvKey, terminalId, threadId, worktreePath]);
 
   useEffect(() => {
@@ -1106,24 +1125,14 @@ export function TerminalViewport({
       writeSystemMessage(terminal, current.error);
     }
 
-    if (previous.version === 0 && autoFocus && visibleRef.current) {
-      window.requestAnimationFrame(() => {
-        terminal.focus();
-      });
-    }
     previousSessionRef.current = current;
-  }, [autoFocus, terminalOutput, terminalError, terminalStatus, terminalVersion]);
+  }, [terminalOutput, terminalError, terminalStatus, terminalVersion]);
 
   useEffect(() => {
     if (!autoFocus || !visible) return;
-    const terminal = terminalRef.current;
-    if (!terminal) return;
-    const frame = window.requestAnimationFrame(() => {
-      terminal.focus();
-    });
-    return () => {
-      window.cancelAnimationFrame(frame);
-    };
+    // Claim focus when requested, then hand it to the terminal once ready only
+    // if the user has not focused something else in the meantime.
+    (terminalRef.current ?? containerRef.current)?.focus();
   }, [autoFocus, focusRequestId, visible]);
 
   useEffect(() => {
@@ -1146,6 +1155,7 @@ export function TerminalViewport({
   return (
     <div
       ref={containerRef}
+      tabIndex={-1}
       className="relative h-full w-full overflow-hidden bg-[var(--terminal-background)]"
     />
   );
