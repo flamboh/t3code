@@ -507,6 +507,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "environment-directories",
+    title: "Directories",
+    to: "/settings/connections",
+    searchTerms: [
+      "per server environment defaults repositories repos clone add project worktrees directory folder path",
+    ],
+  },
+  {
     id: "remote-environments",
     title: "Remote environments",
     to: "/settings/connections",

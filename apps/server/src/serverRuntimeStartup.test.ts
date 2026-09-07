@@ -149,6 +149,7 @@ it.effect("resolveAutoBootstrapWelcomeTargets returns existing project and threa
         getSnapshotSequence: () => Effect.die("unused"),
         getCounts: () => Effect.die("unused"),
         getEventReplayStats: () => Effect.die("unused"),
+        listThreadWorktreePaths: () => Effect.die("unused"),
         getActiveProjectByWorkspaceRoot: () =>
           Effect.succeed(
             Option.some({
@@ -237,6 +238,7 @@ it.effect.each([
         getSnapshotSequence: () => Effect.die("unused"),
         getCounts: () => Effect.die("unused"),
         getEventReplayStats: () => Effect.die("unused"),
+        listThreadWorktreePaths: () => Effect.die("unused"),
         getActiveProjectByWorkspaceRoot: () =>
           Effect.succeed(
             existing
@@ -320,6 +322,7 @@ it.effect(
           getSnapshotSequence: () => Effect.die("unused"),
           getCounts: () => Effect.die("unused"),
           getEventReplayStats: () => Effect.die("unused"),
+          listThreadWorktreePaths: () => Effect.die("unused"),
           getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
           getProjectShellById: () => Effect.die("unused"),
           getFirstActiveThreadIdByProjectId: () => Effect.die("thread lookup failed"),
@@ -382,6 +385,7 @@ it.effect("resolveAutoBootstrapWelcomeTargets preserves typed UUID generation fa
         getSnapshotSequence: () => Effect.die("unused"),
         getCounts: () => Effect.die("unused"),
         getEventReplayStats: () => Effect.die("unused"),
+        listThreadWorktreePaths: () => Effect.die("unused"),
         getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
         getProjectShellById: () => Effect.die("unused"),
         getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.none()),
