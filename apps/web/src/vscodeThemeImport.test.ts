@@ -141,6 +141,25 @@ describe("VS Code theme import", () => {
     ).toBeGreaterThanOrEqual(1.1);
   });
 
+  it("keeps the derived input distinct when a button reuses it", () => {
+    const theme = parseVsCodeThemeFile({
+      name: "Derived input collision",
+      type: "dark",
+      colors: {
+        "editor.background": "#1e1e2e",
+        focusBorder: "#89b4fa",
+        "button.background": "#525661",
+      },
+    });
+
+    expect(asHex(theme.colors.messageAction)).toBe("#525661");
+    expect(asHex(theme.colors.input)).not.toBe("#525661");
+    expect(contrastRatio(theme.colors.input, theme.colors.canvas)).toBeGreaterThanOrEqual(1.1);
+    expect(contrastRatio(theme.colors.input, theme.colors.messageAction)).toBeGreaterThanOrEqual(
+      1.1,
+    );
+  });
+
   it("skips a transparent focus border for a visible accent key", () => {
     const vitesse = parseVsCodeThemeFile({
       name: "Vitesse Dark",

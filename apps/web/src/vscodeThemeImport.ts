@@ -299,7 +299,18 @@ export function parseVsCodeThemeFile(value: unknown): ThemeDefinition {
   // choosing the input role used by the unchecked track.
   const buttonHex = solidOver(canvas, "button.background");
   const actionHex = buttonHex && standsApart(buttonHex, canvasHex) ? buttonHex : accentHex;
-  let inputHex = derived.input;
+  const inputCandidates = [
+    derived.input,
+    derived.surfaceRaised,
+    getStandardThemeColors(appearance).input,
+    "#000000",
+    "#ffffff",
+    "#808080",
+  ];
+  let inputHex =
+    inputCandidates.find(
+      (candidate) => standsApart(candidate, canvasHex) && standsApart(candidate, actionHex),
+    ) ?? "#808080";
   for (const key of ["input.background", "input.border"]) {
     const candidate = solidOver(canvas, key);
     if (candidate && standsApart(candidate, canvasHex) && standsApart(candidate, actionHex)) {
