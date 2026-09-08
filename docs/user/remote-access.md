@@ -63,8 +63,8 @@ another link to share.
 
 ### Choose directories for each machine
 
-On web and desktop, open **Settings → Connections → Directories** and choose an
-environment. Set the project directory to start Add Project and repository
+On web and desktop, open **Settings → Connections**. Find **Default directories**
+under **This environment**, or expand it in a remote environment's card. Set the repositories directory to start Add Project and repository
 cloning in that folder. Set the worktree directory to choose where new worktrees
 are created, grouped by repository and branch.
 

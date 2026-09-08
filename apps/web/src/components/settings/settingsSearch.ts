@@ -549,7 +549,8 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "environment-directories",
-    title: "Directories",
+    targetId: "connections-environment",
+    title: "Default directories",
     to: "/settings/connections",
     searchTerms: [
       "per server environment defaults repositories repos clone add project worktrees directory folder path",
@@ -559,7 +560,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "remote-environments",
     title: "Remote environments",
     to: "/settings/connections",
-    searchTerms: ["add pair backend host code ssh config agent tunnel saved t3 connect"],
+    searchTerms: [
+      "add pair backend host code ssh config agent tunnel saved t3 connect remote directories repositories worktrees paths",
+    ],
   },
   {
     id: "load-balancing",

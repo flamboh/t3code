@@ -1602,6 +1602,7 @@ function SavedBackendListRow({
           )}
         </div>
       </div>
+      <EnvironmentDirectorySettings environment={environment} collapsible />
     </div>
   );
 }
@@ -3211,6 +3212,12 @@ export function ConnectionsSettings() {
                 <CloudLinkRow canManageRelay={canManageRelay} />
               </>
             )}
+            {primaryEnvironment ? (
+              <EnvironmentDirectorySettings
+                key={primaryEnvironment.environmentId}
+                environment={primaryEnvironment}
+              />
+            ) : null}
           </SettingsSection>
 
           {isLocalBackendRemotelyReachable ? (
@@ -3516,10 +3523,14 @@ export function ConnectionsSettings() {
             description="Pairing links and client-session management require the access:write scope for this backend."
           />
           <CloudLinkRow canManageRelay={canManageRelay} />
+          {primaryEnvironment ? (
+            <EnvironmentDirectorySettings
+              key={primaryEnvironment.environmentId}
+              environment={primaryEnvironment}
+            />
+          ) : null}
         </SettingsSection>
       )}
-
-      <EnvironmentDirectorySettings environments={environments} />
 
       <SettingsSection
         {...searchableSetting("remote-environments")}
