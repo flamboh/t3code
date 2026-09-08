@@ -1895,27 +1895,6 @@ export default function ChatView(props: ChatViewProps) {
           },
     [parentSubagentThread?.title, parentSubagentThreadRef],
   );
-  const threadError = isServerThread
-    ? (localServerError ?? serverRuntime?.lastError ?? null)
-    : localDraftError;
-  // Dismissals can only mask the shown error, never clear it: a server thread
-  // keeps its error in session.lastError, so clearing the local shadow would
-  // just fall through to the persisted one. Mask the current error until a
-  // different error arrives, mirroring the provider status banner.
-  const threadErrorBannerKey = getThreadErrorBannerKey(routeThreadKey, threadError);
-  const visibleThreadError = shouldShowThreadErrorBanner(
-    routeThreadKey,
-    threadError,
-    isThreadErrorBannerDismissedForSession(threadErrorBannerKey),
-  )
-    ? threadError
-    : null;
-  // Dismissing only mutates the session-scoped mask set, which does not
-  // trigger a render on its own; setThreadError(null) can also bail when the
-  // local shadow is already empty and the banner is driven purely by
-  // session.lastError. Bump a tick so the banner hides immediately. Mirrors
-  // the branch mismatch banner.
-  const [, setThreadErrorBannerDismissTick] = useState(0);
   const runtimeMode = composerRuntimeMode ?? activeThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE;
   const isLocalDraftThread = !isServerThread && localDraftThread !== undefined;
   const canCheckoutPullRequestIntoThread = isLocalDraftThread;
@@ -2712,6 +2691,29 @@ export default function ChatView(props: ChatViewProps) {
       isServerThread ? getClaudeReauthenticationTarget(serverProjection, providerStatuses) : null,
     [isServerThread, providerStatuses, serverProjection],
   );
+  const threadError = isServerThread
+    ? (localServerError ??
+      serverRuntime?.lastError ??
+      claudeReauthenticationTarget?.message ??
+      null)
+    : localDraftError;
+  // Clearing the local error falls through to the persisted session or run
+  // error. Mask the current error until a different one arrives, mirroring
+  // the provider status banner.
+  const threadErrorBannerKey = getThreadErrorBannerKey(routeThreadKey, threadError);
+  const visibleThreadError = shouldShowThreadErrorBanner(
+    routeThreadKey,
+    threadError,
+    isThreadErrorBannerDismissedForSession(threadErrorBannerKey),
+  )
+    ? threadError
+    : null;
+  // Dismissing only mutates the session-scoped mask set, which does not
+  // trigger a render on its own; setThreadError(null) can also bail when the
+  // local shadow is already empty and the banner is driven purely by
+  // a persisted error. Bump a tick so the banner hides immediately. Mirrors
+  // the branch mismatch banner.
+  const [, setThreadErrorBannerDismissTick] = useState(0);
   const [claudeReauthenticationDialogOpen, setClaudeReauthenticationDialogOpen] = useState(false);
   const [claudeReauthenticationRequest, setClaudeReauthenticationRequest] =
     useState<ClaudeReauthenticationRequest | null>(null);
