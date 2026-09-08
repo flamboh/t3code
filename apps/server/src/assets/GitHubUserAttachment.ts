@@ -25,7 +25,7 @@ const SUPPORTED_IMAGE_CONTENT_TYPES = new Set([
   "image/webp",
 ]);
 
-export class GitHubUserAttachmentFetchError extends Schema.TaggedErrorClass<GitHubUserAttachmentFetchError>()(
+export class GitHubUserAttachmentFetchError extends Schema.TaggedError<GitHubUserAttachmentFetchError>()(
   "GitHubUserAttachmentFetchError",
   {
     reason: Schema.Literals([
