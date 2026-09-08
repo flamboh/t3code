@@ -1210,9 +1210,7 @@ export const make = Effect.gen(function* () {
     ),
     Effect.flatMap((directory) =>
       fileSystem.realPath(directory).pipe(
-        Effect.catchTag("PlatformError", (cause) =>
-          cause.reason._tag === "NotFound" ? Effect.succeed(directory) : Effect.fail(cause),
-        ),
+        Effect.catchTags({ PlatformError: () => Effect.succeed(directory) }),
         Effect.map((canonicalDirectory) => [directory, canonicalDirectory]),
       ),
     ),
