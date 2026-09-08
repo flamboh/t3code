@@ -115,14 +115,34 @@ const foldProviderInstanceEnabledFlags = (settings: ServerSettings): ServerSetti
   };
 };
 
+/** Whether `directory` is `ancestor` or lies below it. */
+export const isWithinDirectory = (directory: string, ancestor: string, path: Path.Path) => {
+  const relative = path.relative(ancestor, directory);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+};
+
+/**
+ * Why a worktree directory can't be used, or null when it can. The review
+ * guard authorizes everything under this directory, so the home directory and
+ * anything containing it (including the filesystem root) are refused: they
+ * would expose every repository on the machine to a review-scoped client.
+ * Symlinks are not followed here; the guard repeats the check on real paths.
+ */
+export const worktreeBaseDirectoryIssue = (value: string, path: Path.Path): string | null => {
+  if (value === "") return null;
+  if (value.includes("\0") || !path.isAbsolute(expandHomePathWith(value, path))) {
+    return "Worktree directory must be an absolute path or start with ~/.";
+  }
+  const resolved = path.resolve(expandHomePathWith(value, path));
+  if (isWithinDirectory(path.resolve(expandHomePathWith("~", path)), resolved, path)) {
+    return "Worktree directory cannot be your home directory or a directory containing it.";
+  }
+  return null;
+};
+
 const worktreeBaseDirectorySchema = (path: Path.Path) =>
   Schema.String.check(
-    Schema.makeFilter(
-      (value) =>
-        value === "" ||
-        (!value.includes("\0") && path.isAbsolute(expandHomePathWith(value, path))) ||
-        "Worktree directory must be an absolute path or start with ~/.",
-    ),
+    Schema.makeFilter((value) => worktreeBaseDirectoryIssue(value, path) ?? true),
   );
 
 const normalizeServerSettings = (
@@ -511,8 +531,20 @@ const make = Effect.gen(function* () {
       ),
     );
 
+    const restored = restoreUsedProviders(settings, persisted, providerHistory);
+    // A bad directory must not take every setting down with it. Fall back to
+    // the default worktrees directory, the way a malformed file falls back to
+    // defaults, and leave the strict check to writes where the user sees it.
+    const directoryIssue = worktreeBaseDirectoryIssue(restored.worktreeBaseDirectory, pathService);
+    if (directoryIssue !== null) {
+      yield* Effect.logWarning("ignoring worktreeBaseDirectory in settings.json, using default", {
+        path: settingsPath,
+        worktreeBaseDirectory: restored.worktreeBaseDirectory,
+        issue: directoryIssue,
+      });
+    }
     return yield* normalizeServerSettings(
-      restoreUsedProviders(settings, persisted, providerHistory),
+      directoryIssue === null ? restored : { ...restored, worktreeBaseDirectory: "" },
       pathService,
     );
   });
