@@ -1,15 +1,19 @@
-import type { EnvironmentId } from "@t3tools/contracts";
-import { useState } from "react";
+import { ChevronRightIcon } from "lucide-react";
 
 import { useEnvironmentOperateAccess } from "../../hooks/useEnvironmentOperateAccess";
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
-import { type EnvironmentPresentation, usePrimaryEnvironmentId } from "../../state/environments";
+import type { EnvironmentPresentation } from "../../state/environments";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { DraftInput } from "../ui/draft-input";
-import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
-import { SettingsRow, SettingsSection } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { SettingsRow } from "./settingsLayout";
 
-function DirectoryFields({ environment }: { environment: EnvironmentPresentation }) {
+export function EnvironmentDirectorySettings({
+  environment,
+  collapsible = false,
+}: {
+  environment: EnvironmentPresentation;
+  collapsible?: boolean;
+}) {
   const settings = useEnvironmentSettings(environment.environmentId);
   const updateSettings = useUpdateEnvironmentSettings(environment.environmentId);
   const operateAccess = useEnvironmentOperateAccess(environment.environmentId);
@@ -17,7 +21,7 @@ function DirectoryFields({ environment }: { environment: EnvironmentPresentation
   const supportsWorktreeDirectory =
     environment.serverConfig?.environment.capabilities.worktreeBaseDirectory === true;
 
-  return (
+  const fields = (
     <>
       {disabled ? (
         <p className="px-3 py-2 text-xs text-muted-foreground sm:px-4">
@@ -66,59 +70,50 @@ function DirectoryFields({ environment }: { environment: EnvironmentPresentation
       />
     </>
   );
-}
 
-export function EnvironmentDirectorySettings({
-  environments,
-}: {
-  environments: ReadonlyArray<EnvironmentPresentation>;
-}) {
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const [selectedId, setSelectedId] = useState<EnvironmentId | null>(null);
-  const selected =
-    environments.find((environment) => environment.environmentId === selectedId) ??
-    environments.find((environment) => environment.environmentId === primaryEnvironmentId) ??
-    environments[0];
+  const description = "Saved on this server and shared by every client connected to it.";
+  if (collapsible) {
+    const summary =
+      environment.connection.phase !== "connected"
+        ? "Connect to view and edit"
+        : [
+            settings.addProjectBaseDirectory && `Repositories: ${settings.addProjectBaseDirectory}`,
+            supportsWorktreeDirectory &&
+              settings.worktreeBaseDirectory &&
+              `Worktrees: ${settings.worktreeBaseDirectory}`,
+          ]
+            .filter(Boolean)
+            .join(" · ") || "Using server defaults";
+
+    return (
+      <Collapsible className="mt-3 border-t border-border/50">
+        <CollapsibleTrigger
+          className="group flex w-full min-w-0 items-center gap-2 py-3 text-left"
+          aria-label={`Default directories for ${environment.label}`}
+        >
+          <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground group-data-panel-open:rotate-90" />
+          <span className="shrink-0 text-xs font-medium">Default directories</span>
+          <span className="min-w-0 truncate text-xs text-muted-foreground">{summary}</span>
+        </CollapsibleTrigger>
+        <CollapsiblePanel>
+          <p className="pb-2 text-xs text-muted-foreground">{description}</p>
+          <div className="-mx-3 divide-y divide-border/50 sm:-mx-4 [&>[data-slot=settings-row]]:rounded-none">
+            {fields}
+          </div>
+        </CollapsiblePanel>
+      </Collapsible>
+    );
+  }
 
   return (
-    <SettingsSection {...searchableSetting("environment-directories")}>
-      {selected ? (
-        <>
-          <SettingsRow
-            title="Environment"
-            description="Directory defaults are saved on this server and used by every client connected to it."
-            control={
-              <Select
-                value={selected.environmentId}
-                onValueChange={(value) => {
-                  const environment = environments.find((entry) => entry.environmentId === value);
-                  if (environment) setSelectedId(environment.environmentId);
-                }}
-              >
-                <SelectTrigger
-                  size="sm"
-                  className="w-full sm:w-72"
-                  aria-label="Directory environment"
-                >
-                  <SelectValue>{selected.label}</SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  {environments.map((environment) => (
-                    <SelectItem key={environment.environmentId} value={environment.environmentId}>
-                      {environment.label}
-                    </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
-            }
-          />
-          <DirectoryFields key={selected.environmentId} environment={selected} />
-        </>
-      ) : (
-        <p className="px-3 py-2 text-sm text-muted-foreground sm:px-4">
-          Connect an environment to configure its directories.
-        </p>
-      )}
-    </SettingsSection>
+    <div>
+      <div className="px-3 pt-3 pb-1 sm:px-4">
+        <h3 className="text-sm font-medium">Default directories</h3>
+        <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+      </div>
+      <div className="divide-y divide-border/50 [&>[data-slot=settings-row]]:rounded-none">
+        {fields}
+      </div>
+    </div>
   );
 }

@@ -1588,11 +1588,14 @@ function SavedBackendListRow({
         </Tooltip>
       }
       below={
-        serverUpdateState.status !== "idle" ? (
-          <div className="mt-1 max-w-md">
-            <ServerUpdateProgress state={serverUpdateState} />
-          </div>
-        ) : null
+        <>
+          {serverUpdateState.status !== "idle" ? (
+            <div className="mt-1 max-w-md">
+              <ServerUpdateProgress state={serverUpdateState} />
+            </div>
+          ) : null}
+          <EnvironmentDirectorySettings environment={environment} collapsible />
+        </>
       }
     >
       {showUpdateAction ? (
@@ -3370,6 +3373,12 @@ export function ConnectionsSettings() {
                 {renderDisabledNetworkAccessRow()}
                 <CloudLinkRow canManageRelay={canManageRelay} />
               </>
+            )}
+            {primaryEnvironment ? (
+              <EnvironmentDirectorySettings
+                key={primaryEnvironment.environmentId}
+                environment={primaryEnvironment}
+              />
             ) : null}
           </SettingsSection>
 
@@ -3677,6 +3686,12 @@ export function ConnectionsSettings() {
             description="Pairing links and client-session management require the access:write scope for this backend."
           />
           <CloudLinkRow canManageRelay={canManageRelay} />
+          {primaryEnvironment ? (
+            <EnvironmentDirectorySettings
+              key={primaryEnvironment.environmentId}
+              environment={primaryEnvironment}
+            />
+          ) : null}
         </SettingsSection>
       )}
     </>
@@ -3685,7 +3700,6 @@ export function ConnectionsSettings() {
   return (
     <SettingsPageContainer width="wide">
       {primarySettings}
-      <EnvironmentDirectorySettings environments={environments} />
       <SettingsSection
         {...searchableSetting("remote-environments")}
         title="Environments"
