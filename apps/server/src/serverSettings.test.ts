@@ -1287,6 +1287,18 @@ it.layer(NodeServices.layer)("server settings", (it) => {
   );
 });
 
+it.effect("isWithinDirectory treats only a full .. segment as leaving the ancestor", () =>
+  Effect.gen(function* () {
+    const path = yield* Path.Path;
+    assert.isTrue(
+      ServerSettingsModule.isWithinDirectory("/workspace/..repos/project", "/workspace", path),
+    );
+    assert.isTrue(ServerSettingsModule.isWithinDirectory("/workspace", "/workspace", path));
+    assert.isFalse(ServerSettingsModule.isWithinDirectory("/other", "/workspace", path));
+    assert.isFalse(ServerSettingsModule.isWithinDirectory("/workspac", "/workspace", path));
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
 it.effect("persists and resets the worktree directory and rejects relative paths", () =>
   Effect.gen(function* () {
     const settings = yield* ServerSettingsModule.ServerSettingsService;

@@ -118,7 +118,10 @@ const foldProviderInstanceEnabledFlags = (settings: ServerSettings): ServerSetti
 /** Whether `directory` is `ancestor` or lies below it. */
 export const isWithinDirectory = (directory: string, ancestor: string, path: Path.Path) => {
   const relative = path.relative(ancestor, directory);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  return (
+    relative === "" ||
+    (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+  );
 };
 
 /**
