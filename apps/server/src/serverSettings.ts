@@ -148,16 +148,9 @@ const worktreeBaseDirectorySchema = (path: Path.Path) =>
     Schema.makeFilter((value) => worktreeBaseDirectoryIssue(value, path) ?? true),
   );
 
-const normalizeServerSettings = (
-  settings: ServerSettings,
-  path: Path.Path,
-): Effect.Effect<ServerSettings, ServerSettingsError> =>
-  encodeServerSettings(settings).pipe(
-    Effect.flatMap(decodeServerSettings),
-    Effect.map(foldProviderInstanceEnabledFlags),
-    Effect.tap((settings) =>
-      Schema.decodeUnknownEffect(worktreeBaseDirectorySchema(path))(settings.worktreeBaseDirectory),
-    ),
+const assertWorktreeBaseDirectory = (value: string, path: Path.Path) =>
+  Schema.decodeUnknownEffect(worktreeBaseDirectorySchema(path))(value).pipe(
+    Effect.asVoid,
     Effect.mapError(
       (cause) =>
         new ServerSettingsError({
@@ -166,6 +159,24 @@ const normalizeServerSettings = (
           cause,
         }),
     ),
+  );
+
+const normalizeServerSettings = (
+  settings: ServerSettings,
+  path: Path.Path,
+): Effect.Effect<ServerSettings, ServerSettingsError> =>
+  encodeServerSettings(settings).pipe(
+    Effect.flatMap(decodeServerSettings),
+    Effect.map(foldProviderInstanceEnabledFlags),
+    Effect.mapError(
+      (cause) =>
+        new ServerSettingsError({
+          settingsPath: "<memory>",
+          operation: "normalize",
+          cause,
+        }),
+    ),
+    Effect.tap((settings) => assertWorktreeBaseDirectory(settings.worktreeBaseDirectory, path)),
   );
 
 function providerEnvironmentSecretName(input: {
@@ -898,10 +909,9 @@ const make = Effect.gen(function* () {
       writeSemaphore.withPermits(1)(
         Effect.gen(function* () {
           const current = yield* getSettingsFromCache;
-          const nextPersisted = yield* persistProviderEnvironmentSecrets(
-            current,
-            applyServerSettingsPatch(current, patch),
-          );
+          const patched = applyServerSettingsPatch(current, patch);
+          yield* assertWorktreeBaseDirectory(patched.worktreeBaseDirectory, pathService);
+          const nextPersisted = yield* persistProviderEnvironmentSecrets(current, patched);
           const next = yield* normalizeServerSettings(nextPersisted, pathService);
           yield* writeSettingsAtomically(next);
           yield* Cache.set(settingsCache, cacheKey, next);

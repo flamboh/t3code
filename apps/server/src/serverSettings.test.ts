@@ -1118,6 +1118,60 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(settingsLayer));
   });
 
+  it.effect("rejects an invalid worktree directory before persisting secrets", () => {
+    let secretSetCalled = false;
+    const secretLayer = Layer.effect(
+      ServerSecretStore.ServerSecretStore,
+      Effect.map(ServerSecretStore.ServerSecretStore, (store) => ({
+        ...store,
+        set: (...args: Parameters<typeof store.set>) => {
+          secretSetCalled = true;
+          return store.set(...args);
+        },
+      })),
+    ).pipe(Layer.provide(ServerSecretStore.layer));
+    const settingsLayer = ServerSettingsModule.layer.pipe(
+      Layer.provide(secretLayer),
+      Layer.provideMerge(Layer.fresh(SqlitePersistenceMemory)),
+      Layer.provideMerge(
+        Layer.fresh(
+          ServerConfig.layerTest(process.cwd(), {
+            prefix: "t3code-invalid-worktree-secret-test-",
+          }),
+        ),
+      ),
+    );
+    return Effect.gen(function* () {
+      const instanceId = ProviderInstanceId.make("codex_personal");
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const original =
+        '{"providerInstances":{"codex_personal":{"driver":"codex","environment":[{"name":"API_TOKEN","value":"inline-test-token","sensitive":true}],"config":{}}}}';
+      yield* fs.writeFileString(config.settingsPath, original);
+      const error = yield* Effect.flip(
+        service.updateSettings({
+          worktreeBaseDirectory: "/",
+          providerInstances: {
+            [instanceId]: {
+              driver: ProviderDriverKind.make("codex"),
+              environment: [{ name: "API_TOKEN", value: "", sensitive: true, valueRedacted: true }],
+              config: {},
+            },
+          },
+        }),
+      );
+      assert.equal(error.operation, "normalize");
+      assert.equal(secretSetCalled, false);
+      assert.equal(yield* fs.readFileString(config.settingsPath), original);
+      const settings = yield* service.getSettings;
+      assert.equal(
+        settings.providerInstances[instanceId]?.environment?.[0]?.value,
+        "inline-test-token",
+      );
+    }).pipe(Effect.provide(settingsLayer));
+  });
+
   for (const { label, variable, expected, duplicate } of [
     {
       label: "preserves an inline secret on a redacted settings save",

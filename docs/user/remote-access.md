@@ -71,11 +71,12 @@ folder. Set the worktree directory to choose where new worktrees are created,
 grouped by repository and branch.
 
 These paths belong to the selected machine and apply from every connected
-client, including mobile. Use an absolute worktree path or `~/` for that machine's
-home directory. It cannot be the root of the filesystem or your home directory
-itself. Changing it does not move existing worktrees, and threads whose
-worktree lives in a directory you no longer have set here cannot show diffs
-until you set that directory again. Clear either field to restore its default:
+client, including mobile. Use an absolute worktree path, or a path under that
+machine's home directory such as `~/worktrees`. It cannot be the root of the
+filesystem or your home directory itself. Changing it does not move existing
+worktrees, and threads whose worktree lives in a directory you no longer have
+set here cannot show diffs until you set that directory again. Clear either
+field to restore its default:
 the home directory for Add Project, or T3 Code's worktrees directory for new
 worktrees.
 
