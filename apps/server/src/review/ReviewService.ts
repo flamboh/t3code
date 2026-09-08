@@ -16,8 +16,8 @@ import {
 } from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
-import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { expandHomePathWith } from "../pathExpansion.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 
@@ -40,7 +40,7 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
-  const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+  const serverSettings = yield* ServerSettings.ServerSettingsService;
 
   const canonicalizePath = (value: string) => {
     const resolvedPath = path.resolve(value);
@@ -61,56 +61,46 @@ export const make = Effect.gen(function* () {
     );
   };
 
-  const isWithinRoot = (candidate: string, root: string) => {
-    const relative = path.relative(root, candidate);
-    return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
-  };
+  const isWithinRoot = (candidate: string, root: string) =>
+    ServerSettings.isWithinDirectory(candidate, root, path);
 
   const assertWorkspaceBoundCwd = Effect.fn("ReviewService.assertWorkspaceBoundCwd")(function* (
     operation: "ReviewService.getDiffPreview" | "ReviewService.getDiffFileContents",
     cwd: string,
   ) {
-    const [candidate, workspaceRoot, worktreesRoot] = yield* Effect.all([
+    // A failed settings read honors only the defaults, denying rather than
+    // over-permitting. The setting refuses home and anything containing it,
+    // so the configured directory is safe to authorize wholesale; that keeps
+    // the guard a function of server configuration rather than of paths a
+    // client can write into a thread.
+    const configuredWorktreesDir = yield* serverSettings.getSettings.pipe(
+      Effect.map((settings) => settings.worktreeBaseDirectory),
+      Effect.orElseSucceed(() => ""),
+    );
+    const [candidate, workspaceRoot, worktreesRoot, configuredRoot, homeRoot] = yield* Effect.all([
       canonicalizePath(cwd),
       canonicalizePath(config.cwd),
       canonicalizePath(config.worktreesDir),
+      configuredWorktreesDir === ""
+        ? Effect.succeed(null)
+        : canonicalizePath(expandHomePathWith(configuredWorktreesDir, path)).pipe(
+            Effect.orElseSucceed(() => null),
+          ),
+      canonicalizePath(expandHomePathWith("~", path)).pipe(Effect.orElseSucceed(() => null)),
     ]);
 
-    if (isWithinRoot(candidate, workspaceRoot) || isWithinRoot(candidate, worktreesRoot)) {
+    if (
+      isWithinRoot(candidate, workspaceRoot) ||
+      isWithinRoot(candidate, worktreesRoot) ||
+      // The setting checks spellings, not links: a symlink can still resolve
+      // the configured directory to `/` or home, so repeat the check on real
+      // paths and deny when home can't be resolved.
+      (configuredRoot !== null &&
+        homeRoot !== null &&
+        !isWithinRoot(homeRoot, configuredRoot) &&
+        isWithinRoot(candidate, configuredRoot))
+    ) {
       return;
-    }
-
-    // A worktree outside both defaults is authorized by the path a thread
-    // actually holds, not by the server's current worktree directory: the
-    // recorded path stays valid after that setting changes, and it cannot widen
-    // the guard the way a root like `/` would. A failed read honors only the
-    // defaults, denying rather than over-permitting.
-    const worktreePaths = yield* projectionSnapshotQuery
-      .listThreadWorktreePaths()
-      .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
-    // Check likely matches first so a normal diff does not realpath every
-    // archived worktree. The second pass handles alternate symlink spellings.
-    const likelyPaths: Array<string> = [];
-    const otherPaths: Array<string> = [];
-    const requestedPath = path.resolve(cwd);
-    for (const recordedPath of worktreePaths) {
-      const root = path.resolve(expandHomePathWith(recordedPath, path));
-      (isWithinRoot(candidate, root) || isWithinRoot(requestedPath, root)
-        ? likelyPaths
-        : otherPaths
-      ).push(root);
-    }
-    for (const worktreePath of [...likelyPaths, ...otherPaths]) {
-      const resolvedWorktree = yield* canonicalizePath(expandHomePathWith(worktreePath, path)).pipe(
-        Effect.orElseSucceed(() => null),
-      );
-      if (
-        resolvedWorktree !== null &&
-        path.dirname(resolvedWorktree) !== resolvedWorktree &&
-        isWithinRoot(candidate, resolvedWorktree)
-      ) {
-        return;
-      }
     }
 
     return yield* new VcsRepositoryDetectionError({

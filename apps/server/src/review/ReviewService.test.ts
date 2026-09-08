@@ -8,7 +8,8 @@ import * as Path from "effect/Path";
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 
 import { ServerConfig } from "../config.ts";
-import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { expandHomePath } from "../pathExpansion.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as ReviewService from "./ReviewService.ts";
@@ -17,14 +18,13 @@ function makeLayer(input: {
   readonly workspaceRoot: string;
   readonly baseDir: string;
   readonly detectCalls?: Array<{ readonly cwd: string }>;
-  readonly threadWorktreePaths?: ReadonlyArray<string>;
-  readonly fileSystem?: FileSystem.FileSystem;
+  readonly worktreeBaseDirectory?: string;
 }) {
   return ReviewService.layer.pipe(
     Layer.provide(
-      Layer.mock(ProjectionSnapshotQuery.ProjectionSnapshotQuery)({
-        listThreadWorktreePaths: () => Effect.succeed(input.threadWorktreePaths ?? []),
-      }),
+      Layer.orDie(
+        ServerSettings.layerTest({ worktreeBaseDirectory: input.worktreeBaseDirectory ?? "" }),
+      ),
     ),
     Layer.provide(
       Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
@@ -39,9 +39,6 @@ function makeLayer(input: {
     ),
     Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
     Layer.provide(ServerConfig.layerTest(input.workspaceRoot, input.baseDir)),
-    Layer.provide(
-      input.fileSystem ? Layer.succeed(FileSystem.FileSystem, input.fileSystem) : Layer.empty,
-    ),
     Layer.provideMerge(NodeServices.layer),
   );
 }
@@ -121,7 +118,7 @@ describe("ReviewService", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("allows diff preview cwd inside a thread's recorded worktree path", () =>
+  it.effect("allows diff preview cwd inside the configured worktrees directory", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
@@ -140,7 +137,7 @@ describe("ReviewService", () => {
             workspaceRoot,
             baseDir,
             detectCalls,
-            threadWorktreePaths: [worktreeCwd],
+            worktreeBaseDirectory: worktreeRoot,
           }),
         ),
       );
@@ -150,14 +147,12 @@ describe("ReviewService", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("still rejects a cwd outside every recorded worktree path", () =>
+  it.effect("still rejects a cwd outside the configured worktrees directory", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
       const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
       const worktreeRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-worktrees-" });
-      const worktreeCwd = `${worktreeRoot}/feature-branch`;
-      yield* fs.makeDirectory(worktreeCwd, { recursive: true });
       const outsideRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-outside-" });
       const detectCalls: Array<{ readonly cwd: string }> = [];
 
@@ -170,7 +165,7 @@ describe("ReviewService", () => {
             workspaceRoot,
             baseDir,
             detectCalls,
-            threadWorktreePaths: [worktreeCwd],
+            worktreeBaseDirectory: worktreeRoot,
           }),
         ),
       );
@@ -180,40 +175,9 @@ describe("ReviewService", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("does not authorize the whole directory holding a recorded worktree", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
-      const worktreeRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-worktrees-" });
-      const worktreeCwd = `${worktreeRoot}/feature-branch`;
-      const siblingCwd = `${worktreeRoot}/unrelated-checkout`;
-      yield* fs.makeDirectory(worktreeCwd, { recursive: true });
-      yield* fs.makeDirectory(siblingCwd, { recursive: true });
-      const detectCalls: Array<{ readonly cwd: string }> = [];
-
-      const error = yield* Effect.gen(function* () {
-        const review = yield* ReviewService.ReviewService;
-        return yield* review.getDiffPreview({ cwd: siblingCwd }).pipe(Effect.flip);
-      }).pipe(
-        Effect.provide(
-          makeLayer({
-            workspaceRoot,
-            baseDir,
-            detectCalls,
-            threadWorktreePaths: [worktreeCwd],
-          }),
-        ),
-      );
-
-      assert.strictEqual(error._tag, "VcsRepositoryDetectionError");
-      assert.deepStrictEqual(detectCalls, []);
-    }).pipe(Effect.provide(NodeServices.layer)),
-  );
-
-  for (const useSymlink of [false, true]) {
-    it.effect.skipIf(useSymlink && !symlinksSupported)(
-      `rejects a recorded filesystem root${useSymlink ? " through a symlink" : ""}`,
+  for (const target of ["filesystem root", "home directory"] as const) {
+    it.effect.skipIf(!symlinksSupported)(
+      `rejects a configured worktrees directory that resolves to the ${target}`,
       () =>
         Effect.gen(function* () {
           const fs = yield* FileSystem.FileSystem;
@@ -222,60 +186,32 @@ describe("ReviewService", () => {
             prefix: "t3-review-workspace-",
           });
           const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
-          const outsideRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-outside-" });
-          const filesystemRoot = path.parse(outsideRoot).root;
-          const recordedPath = useSymlink ? path.join(baseDir, "root-link") : filesystemRoot;
-          if (useSymlink) yield* fs.symlink(filesystemRoot, recordedPath);
+          const home = expandHomePath("~");
+          const outsideRoot =
+            target === "home directory"
+              ? yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-outside-", directory: home })
+              : yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-outside-" });
+          const link = path.join(baseDir, "link");
+          yield* fs.symlink(
+            target === "home directory" ? home : path.parse(outsideRoot).root,
+            link,
+          );
           const detectCalls: Array<{ readonly cwd: string }> = [];
+
           const error = yield* Effect.gen(function* () {
             const review = yield* ReviewService.ReviewService;
             return yield* review.getDiffPreview({ cwd: outsideRoot }).pipe(Effect.flip);
           }).pipe(
             Effect.provide(
-              makeLayer({
-                workspaceRoot,
-                baseDir,
-                detectCalls,
-                threadWorktreePaths: [recordedPath],
-              }),
+              makeLayer({ workspaceRoot, baseDir, detectCalls, worktreeBaseDirectory: link }),
             ),
           );
+
           assert.equal(error._tag, "VcsRepositoryDetectionError");
           assert.deepStrictEqual(detectCalls, []);
         }).pipe(Effect.provide(NodeServices.layer)),
     );
   }
-
-  it.effect("resolves the matching recorded worktree before unrelated archived paths", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
-      const worktreeCwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-custom-" });
-      const realPathCalls: Array<string> = [];
-      const countedFs = {
-        ...fs,
-        realPath: (target: string) => {
-          realPathCalls.push(target);
-          return fs.realPath(target);
-        },
-      };
-      const threadWorktreePaths = [
-        ...Array.from({ length: 100 }, (_, index) => `${worktreeCwd}-unrelated-${index}`),
-        worktreeCwd,
-      ];
-      yield* Effect.gen(function* () {
-        const review = yield* ReviewService.ReviewService;
-        yield* review.getDiffPreview({ cwd: worktreeCwd });
-      }).pipe(
-        Effect.provide(
-          makeLayer({ workspaceRoot, baseDir, threadWorktreePaths, fileSystem: countedFs }),
-        ),
-      );
-      assert.equal(realPathCalls.length, 4);
-      assert.isFalse(realPathCalls.some((target) => target.includes("-unrelated-")));
-    }).pipe(Effect.provide(NodeServices.layer)),
-  );
 
   it.effect("preserves unexpected path-resolution failures", () =>
     Effect.gen(function* () {

@@ -53,7 +53,6 @@ const makeProjectionSnapshotQueryLayer = (importedWorkspaceRoots: ReadonlyArray<
     getEventReplayStats: () => Effect.die("unused"),
     getActiveProjectByWorkspaceRoot: () => Effect.die("unused"),
     getProjectShellById: () => Effect.die("unused"),
-    listThreadWorktreePaths: () => Effect.succeed([]),
     getImportedAgentSessionSources: () => Effect.succeed([]),
     getFirstActiveThreadIdByProjectId: () => Effect.die("unused"),
     getThreadCheckpointContext: () => Effect.die("unused"),
@@ -1127,7 +1126,9 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
       }),
     );
 
-    for (const rootKind of ["filesystem root", "symlink", "missing"] as const) {
+    // The setting itself refuses the filesystem root, so only symlinked and
+    // missing directories can reach the scanner.
+    for (const rootKind of ["symlink", "missing"] as const) {
       it.effect.skipIf(rootKind === "symlink" && !symlinksSupported)(
         `resolves a ${rootKind} worktree directory for scanning and importing`,
         () =>
@@ -1139,10 +1140,10 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             const parent = yield* makeTempDir("t3code-custom-root-");
             const workspace = path.join(parent, "repo", "branch", "subdirectory");
             yield* fs.makeDirectory(workspace, { recursive: true });
-            const worktreeBaseDirectory =
-              rootKind === "filesystem root"
-                ? path.parse(parent).root
-                : path.join(yield* makeTempDir("t3code-root-setting-"), "checkouts");
+            const worktreeBaseDirectory = path.join(
+              yield* makeTempDir("t3code-root-setting-"),
+              "checkouts",
+            );
             if (rootKind === "symlink") yield* fs.symlink(parent, worktreeBaseDirectory);
             const nowMs = Date.parse("2026-08-24T12:00:00.000Z");
             yield* TestClock.setTime(nowMs);
