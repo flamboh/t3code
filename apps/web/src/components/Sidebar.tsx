@@ -1348,10 +1348,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     [onThreadActivate, openPrLink, openPullRequestsInRightPanel, pr, props.isActive, threadRef],
   );
 
-  // All sidebar rows share one surface model. Live threads used to look
-  // like elevated cards while settled threads were plain rows, leaving neither
-  // a useful hierarchy nor a reliable hover cue. Status now lives in the row
-  // content; surface is reserved for interaction (hover, multi-select, route).
+  // Row backgrounds show interaction state; an inset ring keeps pending
+  // input visible without changing the row size or clipping at scroll edges.
   const rowSurfaceClassName = cn(
     "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left outline-none select-none",
     props.isActive
@@ -1363,7 +1361,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
           : shouldRecede
             ? "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
             : "bg-transparent text-sidebar-foreground hover:bg-sidebar-row-hover",
+    status === "input" && "inset-ring-2 inset-ring-indigo-500 dark:inset-ring-indigo-400",
     isInFlight &&
+      status !== "input" &&
       !props.isActive &&
       !isSelected &&
       "opacity-70 transition-opacity hover:opacity-100",
