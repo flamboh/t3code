@@ -21,7 +21,7 @@ export function resolveAssistantCitationCommentDismissal({
   savedComment: string | undefined;
 }): AssistantCitationCommentDismissal {
   if (reason === "escape-key" || draft === null) return { kind: "close" };
-  if (draft.trim() === (savedComment ?? "")) return { kind: "close" };
+  if (draft.trim() === (savedComment ?? "").trim()) return { kind: "close" };
   if (draft.length > ASSISTANT_CITATION_MAX_COMMENT_LENGTH) return { kind: "keep-open" };
   return { kind: "commit", comment: draft };
 }

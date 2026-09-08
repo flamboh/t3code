@@ -39,6 +39,13 @@ describe("resolveAssistantCitationCommentDismissal", () => {
         savedComment: "kept",
       }),
     ).toEqual({ kind: "close" });
+    expect(
+      resolveAssistantCitationCommentDismissal({
+        reason: "outside-press",
+        draft: "kept",
+        savedComment: " kept ",
+      }),
+    ).toEqual({ kind: "close" });
   });
 
   it("clears a comment when the draft was emptied", () => {
