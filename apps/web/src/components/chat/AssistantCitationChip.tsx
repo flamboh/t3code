@@ -22,6 +22,7 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { AssistantCitationCommentEditor } from "./AssistantCitationCommentEditor";
+import { resolveAssistantCitationCommentDismissal } from "./assistantCitationCommentDismissal";
 import { observeAssistantCitationCommentSource } from "./AssistantCitationSource";
 import { composerFloatingLayerProps } from "./composerEventScope";
 
@@ -48,10 +49,28 @@ export function AssistantCitationChip({
 }) {
   const navigate = useNavigate();
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
+  // Unsaved comment text, held outside the editor so a dismissal can commit it
+  // after Base UI has already decided to close the popover.
+  const draftCommentRef = useRef<string | null>(null);
   const commentOpen = commentEditor?.open ?? false;
   const sourceAnchor = commentEditor?.sourceAnchor;
+  useEffect(() => {
+    if (!commentOpen) draftCommentRef.current = null;
+  }, [commentOpen]);
+  // Saves the draft if it can be saved. Returns false when the popover must stay open.
+  const settleDraftOnClose = (reason: string): boolean => {
+    const dismissal = resolveAssistantCitationCommentDismissal({
+      reason,
+      draft: draftCommentRef.current,
+      savedComment: citation.comment,
+    });
+    if (dismissal.kind === "commit") commentEditor?.onSave(dismissal.comment);
+    return dismissal.kind !== "keep-open";
+  };
   const onSourceUnavailable = useEffectEvent(() => {
-    if (sourceAnchor) commentEditor?.onOpenChange(false);
+    if (!sourceAnchor) return;
+    settleDraftOnClose("none");
+    commentEditor?.onOpenChange(false);
   });
   useEffect(() => {
     if (!commentOpen) return;
@@ -129,7 +148,16 @@ export function AssistantCitationChip({
         </Tooltip>
       )}
       {commentEditor ? (
-        <Popover open={commentEditor.open} onOpenChange={commentEditor.onOpenChange}>
+        <Popover
+          open={commentEditor.open}
+          onOpenChange={(open, eventDetails) => {
+            if (!open && !settleDraftOnClose(eventDetails.reason)) {
+              eventDetails.cancel();
+              return;
+            }
+            commentEditor.onOpenChange(open);
+          }}
+        >
           <PopoverTrigger
             aria-label={citation.comment ? "Edit citation comment" : "Add comment to citation"}
             className={CITATION_ACTION_BUTTON_CLASS_NAME}
@@ -155,6 +183,9 @@ export function AssistantCitationChip({
                 key={serializeAssistantCitation(citation)}
                 citation={citation}
                 inputRef={commentInputRef}
+                onDraftChange={(comment) => {
+                  draftCommentRef.current = comment;
+                }}
                 onSubmit={(comment) => {
                   if (!commentEditor.onSave(comment)) return false;
                   commentEditor.onOpenChange(false);
