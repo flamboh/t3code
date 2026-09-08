@@ -5,7 +5,7 @@ import {
   SettingsIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { memo, useCallback } from "react";
+import { memo, useCallback, useId, useState } from "react";
 import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
@@ -29,10 +29,12 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "../ui/sidebar";
+import { Popover, PopoverCreateHandle, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
+import { SidebarPullRequestsPreview } from "./SidebarUtilityPreviews";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -106,27 +108,102 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
   );
 }
 
+/**
+ * A footer icon button. With a `preview`, hovering opens a glance at the page
+ * behind it instead of the plain label; the preview only mounts while open,
+ * so its data subscriptions never run for an idle footer.
+ */
 function SidebarUtilityItem({
   icon,
   label,
   onClick,
+  preview,
 }: {
   icon: ReactNode;
   label: string;
   onClick: () => void;
+  preview?: ReactNode;
 }) {
+  if (!preview) {
+    return (
+      <SidebarMenuItem className="shrink-0">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <SidebarMenuButton aria-label={label} onClick={onClick} size="icon">
+                {icon}
+              </SidebarMenuButton>
+            }
+          />
+          <TooltipPopup side="top">{label}</TooltipPopup>
+        </Tooltip>
+      </SidebarMenuItem>
+    );
+  }
+  return (
+    <SidebarUtilityPreviewItem icon={icon} label={label} onClick={onClick}>
+      {preview}
+    </SidebarUtilityPreviewItem>
+  );
+}
+
+function SidebarUtilityPreviewItem({
+  icon,
+  label,
+  onClick,
+  children,
+}: {
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  const [handle] = useState(() => PopoverCreateHandle());
+  const triggerId = useId();
   return (
     <SidebarMenuItem className="shrink-0">
-      <Tooltip>
-        <TooltipTrigger
+      <Popover
+        handle={handle}
+        onOpenChange={(_open, details) => {
+          // The button navigates on press; a press must not toggle the preview.
+          if (details.reason === "trigger-press") details.cancel();
+        }}
+      >
+        <PopoverTrigger
+          // A press never opens the preview, so do not announce one.
+          aria-controls={undefined}
+          aria-expanded={undefined}
+          aria-haspopup={undefined}
+          closeDelay={150}
+          handle={handle}
+          id={triggerId}
+          openOnHover
           render={
-            <SidebarMenuButton aria-label={label} onClick={onClick} size="icon">
+            <SidebarMenuButton
+              aria-label={label}
+              onBlur={() => handle.close()}
+              onClick={onClick}
+              // Hover-only popovers skip keyboard users; open on focus-visible like the tooltip did.
+              onFocus={(event) => {
+                if (event.currentTarget.matches(":focus-visible")) handle.open(triggerId);
+              }}
+              size="icon"
+            >
               {icon}
             </SidebarMenuButton>
           }
         />
-        <TooltipPopup side="top">{label}</TooltipPopup>
-      </Tooltip>
+        <PopoverPopup
+          align="center"
+          aria-label={label}
+          className="max-w-none shadow-xl shadow-black/25"
+          initialFocus={false}
+          side="top"
+          tooltipStyle
+        >
+          {children}
+        </PopoverPopup>
+      </Popover>
     </SidebarMenuItem>
   );
 }
@@ -207,6 +284,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
               icon={<GitPullRequestIcon />}
               label="Pull Requests"
               onClick={handlePullRequestsClick}
+              preview={<SidebarPullRequestsPreview />}
             />
           ) : null}
           <SidebarUtilityItem
