@@ -42,7 +42,7 @@ export function EnvironmentDirectorySettings({
             value={settings.addProjectBaseDirectory}
             onCommit={(addProjectBaseDirectory) => updateSettings({ addProjectBaseDirectory })}
             disabled={disabled}
-            placeholder="~/"
+            placeholder="Path, e.g. ~/repos"
             spellCheck={false}
             aria-label="Repositories directory"
           />
@@ -62,7 +62,7 @@ export function EnvironmentDirectorySettings({
             value={settings.worktreeBaseDirectory}
             onCommit={(worktreeBaseDirectory) => updateSettings({ worktreeBaseDirectory })}
             disabled={disabled || !supportsWorktreeDirectory}
-            placeholder="T3 home worktrees directory"
+            placeholder="Path, e.g. ~/worktrees"
             spellCheck={false}
             aria-label="Worktrees directory"
           />
