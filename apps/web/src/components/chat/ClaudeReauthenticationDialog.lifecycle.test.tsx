@@ -156,6 +156,44 @@ function renderDialog(open: boolean, actions: ClaudeReauthenticationActions) {
 }
 
 describe("ClaudeReauthenticationDialog lifecycle", () => {
+  it.each(["resumed", "failed", "skipped", null] as const)(
+    "closes only when the completed sign-in resumes the task: %s",
+    async (continuation) => {
+      const harness = makeHarness();
+      const onOpenChange = vi.fn();
+      await act(async () => {
+        renderer = create(
+          <ClaudeReauthenticationDialog
+            open
+            request={request}
+            actions={harness.actions}
+            onOpenChange={onOpenChange}
+          />,
+        );
+      });
+      await flushMicrotasks();
+      harness.begins[0]!.resolve(attempt("finished"));
+      await flushMicrotasks();
+      harness.statuses[0]!.resolve({
+        ...succeededStatus,
+        continuation,
+        continuationError: continuation === "failed" ? "Retry rejected." : null,
+      });
+      await flushMicrotasks();
+
+      if (continuation === "resumed") {
+        expect(onOpenChange).toHaveBeenCalledExactlyOnceWith(false);
+      } else {
+        expect(onOpenChange).not.toHaveBeenCalled();
+      }
+      if (continuation === "failed") {
+        expect(JSON.stringify(renderer?.toJSON())).toContain("Retry rejected.");
+      }
+      expect(harness.cancellations).toHaveLength(0);
+      expect(harness.begins).toHaveLength(1);
+    },
+  );
+
   it("keeps the app open when a noopener sign-in popup returns null", async () => {
     const openWindow = vi.fn(() => null);
     const navigate = vi.fn();
@@ -177,7 +215,7 @@ describe("ClaudeReauthenticationDialog lifecycle", () => {
     await flushMicrotasks();
     const signInButton = renderer!.root
       .findAllByType("button")
-      .find((button) => button.children.includes("Open Claude sign-in"));
+      .find((button) => button.children.includes("Open sign-in page"));
     expect(signInButton).toBeDefined();
     await act(async () => {
       signInButton!.props.onClick();
@@ -230,7 +268,9 @@ describe("ClaudeReauthenticationDialog lifecycle", () => {
 
     harness.statuses[0]!.resolve(succeededStatus);
     await flushMicrotasks();
-    expect(JSON.stringify(renderer?.toJSON())).toContain("Claude is authenticated.");
+    expect(JSON.stringify(renderer?.toJSON())).toContain(
+      "T3 could not confirm whether the task resumed. Send your message again if needed.",
+    );
   });
 
   it("also serializes a completed attempt's cancellation before reopening", async () => {

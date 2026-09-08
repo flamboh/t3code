@@ -319,6 +319,12 @@ export function ClaudeReauthenticationDialog({
     [],
   );
 
+  const close = useCallback(() => {
+    openRef.current = false;
+    void invalidateAttempt();
+    onOpenChange(false);
+  }, [invalidateAttempt, onOpenChange]);
+
   const finishSuccess = useCallback(
     (
       generation: number,
@@ -335,8 +341,9 @@ export function ClaudeReauthenticationDialog({
         continuation: status.continuation,
         continuationError: status.continuationError,
       });
+      if (status.continuation === "resumed") close();
     },
-    [isCurrentAttempt, stopPolling, updateState],
+    [close, isCurrentAttempt, stopPolling, updateState],
   );
 
   const startPolling = useCallback(
@@ -483,12 +490,6 @@ export function ClaudeReauthenticationDialog({
     };
   }, [invalidateAttempt, open, startAttempt]);
 
-  const close = useCallback(() => {
-    openRef.current = false;
-    void invalidateAttempt();
-    onOpenChange(false);
-  }, [invalidateAttempt, onOpenChange]);
-
   const retry = useCallback(async () => {
     if (stateRef.current.phase !== "failure") return;
     const cancellation = invalidateAttempt();
@@ -586,18 +587,15 @@ export function ClaudeReauthenticationDialog({
     >
       <DialogPopup className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Reauthenticate Claude</DialogTitle>
-          <DialogDescription>
-            Sign in to Claude on the machine running this environment. T3 will report separately
-            whether the failed task resumed.
-          </DialogDescription>
+          <DialogTitle>Sign in to Claude</DialogTitle>
+          <DialogDescription>Sign in to retry this task.</DialogDescription>
         </DialogHeader>
 
         <DialogPanel className="space-y-4">
           {isStarting && attempt === null ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
               <Spinner className="size-4" />
-              Starting Claude sign-in…
+              Starting sign-in…
             </div>
           ) : null}
 
@@ -609,13 +607,12 @@ export function ClaudeReauthenticationDialog({
                   role="status"
                 >
                   <Spinner className="size-4" />
-                  Waiting for Claude sign-in URL…
+                  Waiting for sign-in link…
                 </div>
               ) : (
                 <>
-                  <div className="rounded-xl border border-border/70 bg-muted/24 p-3">
-                    <p className="text-xs font-medium text-foreground">Claude sign-in URL</p>
-                    <p className="mt-1 max-h-16 overflow-auto break-all font-mono text-[11px] text-muted-foreground select-all">
+                  <div className="min-w-0 rounded-xl border border-border/70 bg-muted/24 px-3 py-2">
+                    <p className="overflow-x-auto whitespace-nowrap font-mono text-[11px] text-muted-foreground select-all">
                       {attempt.authorizationUrl}
                     </p>
                   </div>
@@ -626,13 +623,10 @@ export function ClaudeReauthenticationDialog({
                     onClick={() => void handleOpenAuthorizationUrl()}
                     disabled={isSubmitting}
                   >
-                    Open Claude sign-in
+                    Open sign-in page
                   </Button>
                 </>
               )}
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                Complete sign-in in your browser. If Claude shows a code instead, paste it below.
-              </p>
             </div>
           ) : null}
 
@@ -647,7 +641,7 @@ export function ClaudeReauthenticationDialog({
                 <Input
                   id="claude-reauthentication-code"
                   autoComplete="one-time-code"
-                  placeholder="Paste the Claude authorization code"
+                  placeholder="Authorization code"
                   value={code}
                   onChange={(event) => {
                     setCode(event.target.value);
@@ -664,22 +658,16 @@ export function ClaudeReauthenticationDialog({
                   role="status"
                 >
                   <Spinner className="size-3.5" />
-                  Finishing Claude sign-in…
+                  Signing in…
                 </div>
               ) : null}
             </form>
           ) : null}
 
-          {state.phase === "success" ? (
-            <Alert
-              variant="success"
-              data-reauthentication-outcome={state.continuation ?? "unknown"}
-            >
-              <AlertDescription>
-                <p className="font-medium text-foreground">Claude is authenticated.</p>
-                <p>{taskContinuationMessage(state.continuation, state.continuationError)}</p>
-              </AlertDescription>
-            </Alert>
+          {state.phase === "success" && state.continuation !== "resumed" ? (
+            <p className="text-sm text-muted-foreground" role="status">
+              {taskContinuationMessage(state.continuation, state.continuationError)}
+            </p>
           ) : null}
 
           {state.phase === "failure" ? (

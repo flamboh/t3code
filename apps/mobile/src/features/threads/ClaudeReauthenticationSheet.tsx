@@ -202,6 +202,13 @@ export function ClaudeReauthenticationSheet(props: ClaudeReauthenticationSheetPr
     [],
   );
 
+  const onRequestClose = props.onRequestClose;
+  const close = useCallback(() => {
+    visibleRef.current = false;
+    void invalidateAttempt();
+    onRequestClose();
+  }, [invalidateAttempt, onRequestClose]);
+
   const finishSuccess = useCallback(
     (
       generation: number,
@@ -217,8 +224,9 @@ export function ClaudeReauthenticationSheet(props: ClaudeReauthenticationSheetPr
         continuation: status.continuation,
         continuationError: status.continuationError,
       });
+      if (status.continuation === "resumed") close();
     },
-    [isCurrentAttempt, stopPolling, updateState],
+    [close, isCurrentAttempt, stopPolling, updateState],
   );
 
   const openAuthorizationUrl = useCallback(
@@ -405,13 +413,6 @@ export function ClaudeReauthenticationSheet(props: ClaudeReauthenticationSheetPr
     };
   }, [invalidateAttempt, props.visible, startAttempt]);
 
-  const onRequestClose = props.onRequestClose;
-  const close = useCallback(() => {
-    visibleRef.current = false;
-    void invalidateAttempt();
-    onRequestClose();
-  }, [invalidateAttempt, onRequestClose]);
-
   const submitCode = useCallback(() => {
     if (!isActiveState(state) || state.phase === "submitting") return;
     const attemptId = state.attempt.attemptId;
@@ -500,17 +501,14 @@ export function ClaudeReauthenticationSheet(props: ClaudeReauthenticationSheetPr
             >
               <Text className="text-xl font-t3-bold">Sign in to Claude</Text>
               <Text className="text-sm leading-snug text-foreground-muted">
-                Claude will open a sign-in page. Finish in your browser, then return here if it asks
-                you to paste a code.
+                Sign in to retry this task.
               </Text>
 
               {phase === "starting" ? (
                 <View className="flex-row items-center gap-3 rounded-2xl bg-subtle px-4 py-3">
                   <ActivityIndicator colorClassName="accent-icon" size="small" />
                   <Text className="flex-1 text-sm text-foreground-muted">
-                    {attemptId === null
-                      ? "Starting Claude sign-in…"
-                      : "Waiting for Claude sign-in…"}
+                    {attemptId === null ? "Starting sign-in…" : "Waiting for sign-in…"}
                   </Text>
                 </View>
               ) : null}
@@ -533,7 +531,7 @@ export function ClaudeReauthenticationSheet(props: ClaudeReauthenticationSheetPr
                     }}
                   >
                     <Text className="text-sm font-t3-bold text-primary-foreground">
-                      Open Claude sign-in
+                      Open sign-in page
                     </Text>
                   </Pressable>
                   <View className="gap-2">
@@ -544,7 +542,7 @@ export function ClaudeReauthenticationSheet(props: ClaudeReauthenticationSheetPr
                       editable={phase === "waiting"}
                       onChangeText={setCode}
                       onSubmitEditing={submitCode}
-                      placeholder="Paste the code from Claude"
+                      placeholder="Authorization code"
                       returnKeyType="done"
                       value={code}
                     />
@@ -562,9 +560,7 @@ export function ClaudeReauthenticationSheet(props: ClaudeReauthenticationSheetPr
                   {isSubmitting ? (
                     <View className="flex-row items-center gap-2">
                       <ActivityIndicator colorClassName="accent-icon" size="small" />
-                      <Text className="text-xs text-foreground-muted">
-                        Completing Claude sign-in…
-                      </Text>
+                      <Text className="text-xs text-foreground-muted">Signing in…</Text>
                     </View>
                   ) : null}
                 </>
@@ -574,17 +570,10 @@ export function ClaudeReauthenticationSheet(props: ClaudeReauthenticationSheetPr
                 <ErrorBanner message={state.message} />
               ) : null}
 
-              {phase === "success" ? (
-                <View className="gap-2">
-                  <View className="rounded-2xl border border-adaptive-emerald-300-a70-400-a28 bg-adaptive-emerald-100-a80-500-a12 px-4 py-3">
-                    <Text className="text-sm font-t3-medium text-adaptive-emerald-700-300">
-                      Claude is signed in.
-                    </Text>
-                  </View>
-                  <Text className="px-1 text-sm text-foreground-muted">
-                    {taskContinuationMessage(state.continuation, state.continuationError)}
-                  </Text>
-                </View>
+              {phase === "success" && state.continuation !== "resumed" ? (
+                <Text className="text-sm text-foreground-muted">
+                  {taskContinuationMessage(state.continuation, state.continuationError)}
+                </Text>
               ) : null}
 
               <View className="flex-row justify-end gap-2 pt-1">
