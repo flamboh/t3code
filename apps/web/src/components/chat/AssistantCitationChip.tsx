@@ -49,16 +49,12 @@ export function AssistantCitationChip({
 }) {
   const navigate = useNavigate();
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
-  // Unsaved comment text, held outside the editor so a dismissal can commit it
-  // after Base UI has already decided to close the popover.
   const draftCommentRef = useRef<string | null>(null);
   const commentOpen = commentEditor?.open ?? false;
   const sourceAnchor = commentEditor?.sourceAnchor;
   useEffect(() => {
     if (!commentOpen) draftCommentRef.current = null;
   }, [commentOpen]);
-  // Saves the draft if it can be saved. Returns false when the popover must stay
-  // open, either because the draft is too long or the composer refused the save.
   const settleDraftOnClose = (reason: string): boolean => {
     const dismissal = resolveAssistantCitationCommentDismissal({
       reason,
@@ -68,8 +64,6 @@ export function AssistantCitationChip({
     if (dismissal.kind === "commit") return commentEditor?.onSave(dismissal.comment) ?? true;
     return dismissal.kind !== "keep-open";
   };
-  // The popup is positioned against the source range, so it cannot stay open
-  // once that range is gone. Save what can be saved and close regardless.
   const onSourceUnavailable = useEffectEvent(() => {
     if (!sourceAnchor) return;
     settleDraftOnClose("none");

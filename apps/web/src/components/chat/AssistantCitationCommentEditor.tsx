@@ -16,7 +16,6 @@ export function AssistantCitationCommentEditor({
   onSubmit: (comment: string) => boolean;
   onSubmitAndSend?: (comment: string) => boolean;
   onCancel: () => void;
-  /** Reports every keystroke so the owner can commit the draft when the popover is dismissed. */
   onDraftChange?: (comment: string) => void;
 }) {
   const [comment, setComment] = useState(citation.comment ?? "");

@@ -5,12 +5,6 @@ export type AssistantCitationCommentDismissal =
   | { kind: "close" }
   | { kind: "keep-open" };
 
-/**
- * Decides what happens to unsaved comment text when the citation popover closes
- * without Save or Cancel: clicking away, focus leaving, or toggling the pencil.
- * Typed text is committed rather than dropped. Escape stays an explicit discard,
- * and a draft over the length limit keeps the popover open so the error is visible.
- */
 export function resolveAssistantCitationCommentDismissal({
   reason,
   draft,
