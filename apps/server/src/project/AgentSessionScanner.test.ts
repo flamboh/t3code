@@ -14,6 +14,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
@@ -1028,6 +1029,102 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
 
           expect(result.candidates).toEqual([]);
         }),
+    );
+
+    it.effect("continues when the configured worktrees realpath is denied", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const nowMs = Date.parse("2026-08-24T12:00:00.000Z");
+        yield* TestClock.setTime(nowMs);
+        const claudeHomePath = yield* makeTempDir("t3code-claude-home-");
+        const codexHomePath = yield* makeTempDir("t3code-codex-home-");
+        const configBaseDir = yield* makeTempDir("t3code-scanner-base-");
+        const configuredWorktreesDir = yield* makeTempDir("t3code-configured-worktrees-");
+        const managedWorkspace = path.join(configuredWorktreesDir, "managed");
+        const regularWorkspace = yield* makeTempDir("t3code-workspace-");
+        yield* fileSystem.makeDirectory(managedWorkspace, { recursive: true });
+
+        const codexTranscript = (cwd: string, sessionId: string) =>
+          [
+            encodeTranscriptRecord({
+              type: "session_meta",
+              payload: { id: sessionId, cwd },
+            }),
+            encodeTranscriptRecord({
+              type: "event_msg",
+              payload: { type: "user_message", message: "Import this session" },
+            }),
+          ].join("\n");
+        for (const [cwd, sessionId] of [
+          [managedWorkspace, "managed-session"],
+          [regularWorkspace, "regular-session"],
+        ] as const) {
+          yield* writeTranscript({
+            filePath: path.join(
+              codexHomePath,
+              "sessions",
+              "2026",
+              "08",
+              "24",
+              `rollout-${sessionId}.jsonl`,
+            ),
+            contents: codexTranscript(cwd, sessionId),
+            mtimeMs: nowMs,
+          });
+        }
+
+        const simulatedFileSystem = FileSystem.FileSystem.of({
+          ...fileSystem,
+          realPath: (target: string) =>
+            target === configuredWorktreesDir
+              ? Effect.fail(
+                  PlatformError.systemError({
+                    _tag: "PermissionDenied",
+                    module: "FileSystem",
+                    method: "realPath",
+                    pathOrDescriptor: target,
+                    description: "Test PermissionDenied realPath failure.",
+                  }),
+                )
+              : fileSystem.realPath(target),
+        });
+
+        const result = yield* Effect.gen(function* () {
+          const scanner = yield* AgentSessionScanner.AgentSessionScanner;
+          const scan = yield* scanner.scan;
+          const managedRecent = yield* scanner.recentThreads(managedWorkspace).pipe(
+            Stream.runCollect,
+            Effect.map((outcomes) => Array.from(outcomes)),
+          );
+          const regularRecent = yield* scanner.recentThreads(regularWorkspace).pipe(
+            Stream.runCollect,
+            Effect.map((outcomes) => Array.from(outcomes)),
+          );
+          return { scan, managedRecent, regularRecent };
+        }).pipe(
+          Effect.provide(
+            makeScannerTestLayer({
+              claudeHomePath,
+              codexHomePath,
+              configBaseDir,
+              worktreeBaseDirectory: configuredWorktreesDir,
+            }),
+          ),
+          Effect.provideService(FileSystem.FileSystem, simulatedFileSystem),
+        );
+
+        expect(result.scan.candidates.map((candidate) => candidate.path)).toEqual([
+          regularWorkspace,
+        ]);
+        expect(result.managedRecent).toEqual([]);
+        expect(result.regularRecent).toMatchObject([
+          {
+            _tag: "Importable",
+            thread: { providerSessionId: "regular-session" },
+          },
+        ]);
+      }),
     );
 
     for (const rootKind of ["filesystem root", "symlink", "missing"] as const) {
