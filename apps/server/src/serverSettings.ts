@@ -128,7 +128,7 @@ export const isWithinDirectory = (directory: string, ancestor: string, path: Pat
  * would expose every repository on the machine to a review-scoped client.
  * Symlinks are not followed here; the guard repeats the check on real paths.
  */
-export const worktreeBaseDirectoryIssue = (value: string, path: Path.Path): string | null => {
+const worktreeBaseDirectoryIssue = (value: string, path: Path.Path): string | null => {
   if (value === "") return null;
   if (value.includes("\0") || !path.isAbsolute(expandHomePathWith(value, path))) {
     return "Worktree directory must be an absolute path or start with ~/.";
