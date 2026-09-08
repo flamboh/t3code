@@ -42,8 +42,8 @@ thread error. The sign-in dialog opens Claude in the browser on the device you
 are using, including for remote environments and mobile clients. If Claude
 provides a code, paste it into the dialog. The login process still runs on the
 environment machine, so the refreshed credential is saved in the right place.
-After authentication, T3 Code reports separately whether the failed task was
-continued; signing in does not guarantee that continuation succeeded.
+After sign-in, the dialog closes when the task resumes. If it cannot resume,
+the dialog explains what to do next.
 
 ## Compact long conversations
 
