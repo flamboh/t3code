@@ -428,13 +428,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["new worktrees latest matching remote branch local"],
   },
   {
-    id: "add-project-starts-in",
-    title: "Add project starts in",
-    to: "/settings/general",
-    scope: "environment-defaults",
-    searchTerms: ["base directory folder browser path home"],
-  },
-  {
     id: "unpin-confirmation",
     title: "Unpin confirmation",
     to: "/settings/general",
@@ -797,11 +790,10 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "environment-directories",
-    targetId: "connections-environment",
     title: "Default directories",
     to: "/settings/connections",
     searchTerms: [
-      "per server environment defaults repositories repos clone add project worktrees directory folder path",
+      "per server environment defaults repositories repos clone add project starts in base directory folder browser path home worktrees",
     ],
   },
   {

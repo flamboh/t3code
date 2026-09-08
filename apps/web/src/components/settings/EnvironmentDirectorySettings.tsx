@@ -5,36 +5,50 @@ import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hook
 import type { EnvironmentPresentation } from "../../state/environments";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { DraftInput } from "../ui/draft-input";
-import { SettingsRow } from "./settingsLayout";
+import { SettingResetButton, SettingsRow } from "./settingsLayout";
 
-export function EnvironmentDirectorySettings({
+/**
+ * Directory defaults for one environment. Inputs hold only what is stored on
+ * that server; its own default shows as the placeholder, so an empty field
+ * reads as "use the default" and the reset arrow marks an override.
+ */
+export function EnvironmentDirectoryRows({
   environment,
-  collapsible = false,
 }: {
   environment: EnvironmentPresentation;
-  collapsible?: boolean;
 }) {
   const settings = useEnvironmentSettings(environment.environmentId);
   const updateSettings = useUpdateEnvironmentSettings(environment.environmentId);
   const operateAccess = useEnvironmentOperateAccess(environment.environmentId);
-  const disabled = environment.connection.phase !== "connected" || operateAccess !== "granted";
+  const disabledReason =
+    environment.connection.phase !== "connected"
+      ? "Connect to edit directories."
+      : operateAccess === "pending"
+        ? "Checking access…"
+        : operateAccess !== "granted"
+          ? "Your session cannot edit settings."
+          : null;
+  const disabled = disabledReason !== null;
   const supportsWorktreeDirectory =
     environment.serverConfig?.environment.capabilities.worktreeBaseDirectory === true;
+  // Older servers don't report defaults; Add Project opens at "~/" there.
+  const defaults = environment.serverConfig?.environment.defaultDirectories;
 
-  const fields = (
+  return (
     <>
-      {disabled ? (
-        <p className="px-3 py-2 text-xs text-muted-foreground sm:px-4">
-          {environment.connection.phase !== "connected"
-            ? "Connect to edit directories."
-            : operateAccess === "pending"
-              ? "Checking access…"
-              : "Your session cannot edit settings."}
-        </p>
-      ) : null}
       <SettingsRow
         title="Repositories directory"
-        description="Add Project and Clone Repository start here. Defaults to your home folder."
+        description="Add Project and Clone Repository start here."
+        status={disabledReason}
+        aria-disabled={disabled || undefined}
+        resetAction={
+          !disabled && settings.addProjectBaseDirectory !== "" ? (
+            <SettingResetButton
+              label="repositories directory"
+              onClick={() => updateSettings({ addProjectBaseDirectory: "" })}
+            />
+          ) : null
+        }
         control={
           <DraftInput
             size="sm"
@@ -42,7 +56,7 @@ export function EnvironmentDirectorySettings({
             value={settings.addProjectBaseDirectory}
             onCommit={(addProjectBaseDirectory) => updateSettings({ addProjectBaseDirectory })}
             disabled={disabled}
-            placeholder="Path, e.g. ~/repos"
+            placeholder={defaults?.repositories ?? "~"}
             spellCheck={false}
             aria-label="Repositories directory"
           />
@@ -52,8 +66,17 @@ export function EnvironmentDirectorySettings({
         title="Worktrees directory"
         description={
           supportsWorktreeDirectory
-            ? "New worktrees only. Leave empty for T3's default directory."
+            ? "New worktrees only. Existing worktrees stay where they are."
             : "Update this server to set a worktrees directory."
+        }
+        aria-disabled={disabled || !supportsWorktreeDirectory || undefined}
+        resetAction={
+          !disabled && supportsWorktreeDirectory && settings.worktreeBaseDirectory !== "" ? (
+            <SettingResetButton
+              label="worktrees directory"
+              onClick={() => updateSettings({ worktreeBaseDirectory: "" })}
+            />
+          ) : null
         }
         control={
           <DraftInput
@@ -62,7 +85,7 @@ export function EnvironmentDirectorySettings({
             value={settings.worktreeBaseDirectory}
             onCommit={(worktreeBaseDirectory) => updateSettings({ worktreeBaseDirectory })}
             disabled={disabled || !supportsWorktreeDirectory}
-            placeholder="Path, e.g. ~/worktrees"
+            placeholder={defaults?.worktrees ?? "T3 Code default"}
             spellCheck={false}
             aria-label="Worktrees directory"
           />
@@ -70,50 +93,30 @@ export function EnvironmentDirectorySettings({
       />
     </>
   );
+}
 
-  const description = "Shared by all clients on this server.";
-  if (collapsible) {
-    const summary =
-      environment.connection.phase !== "connected"
-        ? "Connect to view and edit"
-        : [
-            settings.addProjectBaseDirectory && `Repositories: ${settings.addProjectBaseDirectory}`,
-            supportsWorktreeDirectory &&
-              settings.worktreeBaseDirectory &&
-              `Worktrees: ${settings.worktreeBaseDirectory}`,
-          ]
-            .filter(Boolean)
-            .join(" · ") || "Using server defaults";
-
-    return (
-      <Collapsible className="mt-3 border-t border-border/50">
-        <CollapsibleTrigger
-          className="group flex w-full min-w-0 items-center gap-2 py-3 text-left"
-          aria-label={`Default directories for ${environment.label}`}
-        >
-          <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground group-data-panel-open:rotate-90" />
-          <span className="shrink-0 text-xs font-medium">Default directories</span>
-          <span className="min-w-0 truncate text-xs text-muted-foreground">{summary}</span>
-        </CollapsibleTrigger>
-        <CollapsiblePanel>
-          <p className="pb-2 text-xs text-muted-foreground">{description}</p>
-          <div className="-mx-3 divide-y divide-border/50 sm:-mx-4 [&>[data-slot=settings-row]]:rounded-none">
-            {fields}
-          </div>
-        </CollapsiblePanel>
-      </Collapsible>
-    );
-  }
-
+/** The same rows folded into a remote environment's card. */
+export function EnvironmentDirectoryDisclosure({
+  environment,
+}: {
+  environment: EnvironmentPresentation;
+}) {
   return (
-    <div>
-      <div className="px-3 pt-3 pb-1 sm:px-4">
-        <h3 className="text-sm font-medium">Default directories</h3>
-        <p className="mt-1 text-xs text-muted-foreground">{description}</p>
-      </div>
-      <div className="divide-y divide-border/50 [&>[data-slot=settings-row]]:rounded-none">
-        {fields}
-      </div>
-    </div>
+    <Collapsible className="mt-3">
+      <CollapsibleTrigger
+        className="group flex min-h-8 w-full min-w-0 items-center gap-2 text-left"
+        aria-label={`Default directories for ${environment.label}`}
+      >
+        <span className="shrink-0 text-xs text-foreground/70 transition-colors group-hover:text-foreground">
+          Default directories
+        </span>
+        <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 group-data-panel-open:rotate-90" />
+      </CollapsibleTrigger>
+      <CollapsiblePanel>
+        <div className="rounded-xl border border-border/60 bg-card/40 shadow-xs/5 [&>*+*]:border-t [&>*+*]:border-border/50 [&>[data-slot=settings-row]]:rounded-none">
+          <EnvironmentDirectoryRows environment={environment} />
+        </div>
+      </CollapsiblePanel>
+    </Collapsible>
   );
 }

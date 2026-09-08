@@ -2928,45 +2928,6 @@ export function GeneralSettingsPanel() {
             />
           }
         />
-        <SettingsRow
-          serverScoped
-          settingKeys={["addProjectBaseDirectory"]}
-          {...searchableSetting("add-project-starts-in")}
-          description={
-            <>
-              Leave empty to use "~/" when the Add Project browser opens. Configure directories for
-              each server in{" "}
-              <Link to="/settings/connections" className="underline">
-                Connections
-              </Link>
-              .
-            </>
-          }
-          resetAction={
-            settings.addProjectBaseDirectory !==
-            DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory ? (
-              <SettingResetButton
-                label="add project base directory"
-                onClick={() =>
-                  updateSettings({
-                    addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <DraftInput
-              size="sm"
-              className="w-full sm:w-72"
-              value={mixedAddProjectBaseDirectory ? "" : settings.addProjectBaseDirectory}
-              onCommit={(next) => updateSettings({ addProjectBaseDirectory: next })}
-              placeholder={mixedAddProjectBaseDirectory ? "Mixed" : "~/"}
-              spellCheck={false}
-              aria-label="Add project base directory"
-            />
-          }
-        />
       </SettingsSection>
 
       <SettingsSection id="confirmations" title="Confirmations">

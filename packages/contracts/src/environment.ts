@@ -188,6 +188,15 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
 });
 export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabilities.Type;
 
+/** Where this server puts things when the matching directory setting is
+    empty, so clients can show the effective path instead of a blank field. */
+export const ExecutionEnvironmentDefaultDirectories = Schema.Struct({
+  repositories: Schema.String,
+  worktrees: Schema.String,
+});
+export type ExecutionEnvironmentDefaultDirectories =
+  typeof ExecutionEnvironmentDefaultDirectories.Type;
+
 export const ExecutionEnvironmentDescriptor = Schema.Struct({
   environmentId: EnvironmentId,
   label: TrimmedNonEmptyString,
@@ -196,6 +205,8 @@ export const ExecutionEnvironmentDescriptor = Schema.Struct({
   /** Absent on hosts from before explicit orchestration protocol negotiation. */
   orchestrationProtocolVersion: Schema.optionalKey(Schema.Int),
   capabilities: ExecutionEnvironmentCapabilities,
+  /** Absent on older servers; clients fall back to their own placeholders. */
+  defaultDirectories: Schema.optionalKey(ExecutionEnvironmentDefaultDirectories),
 });
 export type ExecutionEnvironmentDescriptor = typeof ExecutionEnvironmentDescriptor.Type;
 
