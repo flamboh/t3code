@@ -57,16 +57,19 @@ export function AssistantCitationChip({
   useEffect(() => {
     if (!commentOpen) draftCommentRef.current = null;
   }, [commentOpen]);
-  // Saves the draft if it can be saved. Returns false when the popover must stay open.
+  // Saves the draft if it can be saved. Returns false when the popover must stay
+  // open, either because the draft is too long or the composer refused the save.
   const settleDraftOnClose = (reason: string): boolean => {
     const dismissal = resolveAssistantCitationCommentDismissal({
       reason,
       draft: draftCommentRef.current,
       savedComment: citation.comment,
     });
-    if (dismissal.kind === "commit") commentEditor?.onSave(dismissal.comment);
+    if (dismissal.kind === "commit") return commentEditor?.onSave(dismissal.comment) ?? true;
     return dismissal.kind !== "keep-open";
   };
+  // The popup is positioned against the source range, so it cannot stay open
+  // once that range is gone. Save what can be saved and close regardless.
   const onSourceUnavailable = useEffectEvent(() => {
     if (!sourceAnchor) return;
     settleDraftOnClose("none");
