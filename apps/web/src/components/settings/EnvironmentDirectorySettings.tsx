@@ -26,15 +26,15 @@ export function EnvironmentDirectorySettings({
       {disabled ? (
         <p className="px-3 py-2 text-xs text-muted-foreground sm:px-4">
           {environment.connection.phase !== "connected"
-            ? "Connect to this environment to change its directories."
+            ? "Connect to edit directories."
             : operateAccess === "pending"
-              ? "Checking access to this environment."
-              : "Your session on this environment cannot change its settings."}
+              ? "Checking access…"
+              : "Your session cannot edit settings."}
         </p>
       ) : null}
       <SettingsRow
         title="Repositories directory"
-        description='Where Add Project and Clone Repository start browsing on this server. Leave empty to use "~/".'
+        description="Add Project and Clone Repository start here. Defaults to your home folder."
         control={
           <DraftInput
             size="sm"
@@ -52,8 +52,8 @@ export function EnvironmentDirectorySettings({
         title="Worktrees directory"
         description={
           supportsWorktreeDirectory
-            ? "Use an absolute path or ~/ on this server. Applies to new worktrees; existing worktrees stay in place. Leave empty for the T3 home worktrees directory."
-            : "Update this server to configure where new worktrees are created."
+            ? "New worktrees only. Leave empty for T3's default directory."
+            : "Update this server to set a worktrees directory."
         }
         control={
           <DraftInput
@@ -71,7 +71,7 @@ export function EnvironmentDirectorySettings({
     </>
   );
 
-  const description = "Saved on this server and shared by every client connected to it.";
+  const description = "Shared by all clients on this server.";
   if (collapsible) {
     const summary =
       environment.connection.phase !== "connected"
