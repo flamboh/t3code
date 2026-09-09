@@ -35,6 +35,7 @@ import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPr
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
+import { SidebarUsagePreview } from "./SidebarUsagePreview";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -298,6 +299,8 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             icon={<ChartNoAxesColumnIcon />}
             label="Usage"
             onClick={handleUsageClick}
+            // A drawer tap goes straight to the page; the glance is for the docked sidebar.
+            preview={isMobile ? undefined : <SidebarUsagePreview />}
           />
         </>
       )}
