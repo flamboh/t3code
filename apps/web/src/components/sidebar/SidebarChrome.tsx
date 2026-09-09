@@ -33,6 +33,7 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
+import { SidebarPullRequestsPreview } from "./SidebarPullRequestsPreview";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 
@@ -292,6 +293,8 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
               icon={<PullRequestGlyph.pullRequest />}
               label="Pull Requests"
               onClick={handlePullRequestsClick}
+              // A drawer tap goes straight to the page; the glance is for the docked sidebar.
+              preview={isMobile ? undefined : <SidebarPullRequestsPreview />}
             />
           ) : null}
           <SidebarUtilityItem
