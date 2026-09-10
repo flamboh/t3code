@@ -3,7 +3,7 @@ import {
   resolveThreadPullRequestChains,
   visibleThreadPullRequests,
 } from "@t3tools/shared/threadPullRequests";
-import { LayersIcon, LinkIcon, MoreHorizontalIcon, PlusIcon } from "lucide-react";
+import { LinkIcon, MoreHorizontalIcon, PlusIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
@@ -139,11 +139,7 @@ function LinkRow({
                   <span className="inline-flex shrink-0 items-center gap-0.5 text-foreground/70" />
                 }
               >
-                {stack.kind === "native" ? (
-                  <LayersIcon aria-hidden className="size-3" />
-                ) : (
-                  <PullRequestGlyph.pullRequest aria-hidden className="size-3" />
-                )}
+                <PullRequestGlyph.stack aria-hidden className="size-3" />
                 {stack.size}
               </TooltipTrigger>
               <TooltipPopup>
