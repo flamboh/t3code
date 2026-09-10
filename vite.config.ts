@@ -116,6 +116,27 @@ export default defineConfig({
               message:
                 "Use StyledDiffCodeView so web diff surfaces share styling and virtualized geometry.",
             },
+            {
+              name: "lucide-react",
+              importNames: [
+                "GitMerge",
+                "GitMergeIcon",
+                "GitPullRequest",
+                "GitPullRequestIcon",
+                "GitPullRequestArrow",
+                "GitPullRequestArrowIcon",
+                "GitPullRequestClosed",
+                "GitPullRequestClosedIcon",
+                "GitPullRequestDraft",
+                "GitPullRequestDraftIcon",
+                "GitPullRequestCreate",
+                "GitPullRequestCreateIcon",
+                "GitPullRequestCreateArrow",
+                "GitPullRequestCreateArrowIcon",
+              ],
+              message:
+                "Pick a glyph by meaning from PullRequestGlyph in apps/web/src/components/pullRequest/pullRequestIcons.tsx so every surface draws the same pull request the same way.",
+            },
           ],
         },
       ],
@@ -130,6 +151,12 @@ export default defineConfig({
         // The one place that reads the host platform to seed the injected references.
         files: ["packages/shared/src/hostProcess.ts"],
         rules: { "t3code/no-global-process-runtime": "off" },
+      },
+      {
+        // The one module allowed to name lucide's pull-request glyphs; everything else picks
+        // from its vocabulary.
+        files: ["apps/web/src/components/pullRequest/pullRequestIcons.tsx"],
+        rules: { "eslint/no-restricted-imports": "off" },
       },
       {
         files: ["apps/mobile/src/**"],

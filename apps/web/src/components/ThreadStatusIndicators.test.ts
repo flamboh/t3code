@@ -1,11 +1,5 @@
 import { ProjectId, type PullRequestSummary, type VcsStatusResult } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
-import {
-  GitMergeIcon,
-  GitPullRequestClosedIcon,
-  GitPullRequestDraftIcon,
-  GitPullRequestIcon,
-} from "lucide-react";
 
 import {
   ChangeRequestStatusIcon,
@@ -13,13 +7,14 @@ import {
   settledPrHoverColorClass,
 } from "./ThreadStatusIndicators";
 import { newestPullRequestSummary } from "../state/pullRequests";
+import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 
 describe("ChangeRequestStatusIcon", () => {
   it.each([
-    ["open", "open", false, GitPullRequestIcon],
-    ["draft", "open", true, GitPullRequestDraftIcon],
-    ["closed", "closed", false, GitPullRequestClosedIcon],
-    ["merged", "merged", false, GitMergeIcon],
+    ["open", "open", false, PullRequestGlyph.pullRequest],
+    ["draft", "open", true, PullRequestGlyph.draft],
+    ["closed", "closed", false, PullRequestGlyph.closed],
+    ["merged", "merged", false, PullRequestGlyph.merged],
   ] as const)("uses the %s pull request glyph", (_label, state, isDraft, expectedIcon) => {
     expect(ChangeRequestStatusIcon({ state, isDraft }).type).toBe(expectedIcon);
   });

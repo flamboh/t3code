@@ -10,7 +10,6 @@ import {
   ArrowDownUpIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  GitPullRequestClosedIcon,
   HammerIcon,
   PencilIcon,
   RotateCcwIcon,
@@ -62,6 +61,7 @@ import { PullRequestReactionBar } from "./PullRequestReactions";
 import { PullRequestConversationGhost } from "./PullRequestGhosts";
 import { pullRequestLabelColor } from "./pullRequestList.logic";
 import { sectionCollapseAnchorScrollTop } from "./pullRequestSummaryScroll.logic";
+import { PullRequestGlyph } from "./pullRequestIcons";
 
 /** One reviewer, however a host happens to have cased their login this time. */
 function reviewerKey(login: string): string {
@@ -383,7 +383,7 @@ function CommentComposer({
             onClick={() => void submit(followUpAction)}
           >
             {followUpAction === "close" ? (
-              <GitPullRequestClosedIcon className="size-3.5" />
+              <PullRequestGlyph.closed className="size-3.5" />
             ) : (
               <RotateCcwIcon className="size-3.5" />
             )}

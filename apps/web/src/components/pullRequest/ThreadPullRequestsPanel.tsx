@@ -3,13 +3,7 @@ import {
   resolveThreadPullRequestChains,
   visibleThreadPullRequests,
 } from "@t3tools/shared/threadPullRequests";
-import {
-  GitPullRequestArrow,
-  LayersIcon,
-  LinkIcon,
-  MoreHorizontalIcon,
-  PlusIcon,
-} from "lucide-react";
+import { LayersIcon, LinkIcon, MoreHorizontalIcon, PlusIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
@@ -33,6 +27,7 @@ import {
   PullRequestStateGlyph,
   pullRequestChecksStatePresentation,
 } from "./pullRequestPresentation";
+import { PullRequestGlyph } from "./pullRequestIcons";
 
 const SOURCE_LABELS: Record<ThreadPullRequestLink["source"], string> = {
   manual: "Linked by you",
@@ -84,7 +79,7 @@ function LinkRow({
     >
       {depth > 0 ? <span aria-hidden className="-ml-2 h-6 w-px shrink-0 bg-border/70" /> : null}
       {snapshot === null ? (
-        <GitPullRequestArrow
+        <PullRequestGlyph.pullRequest
           aria-label="Waiting for host state"
           className="size-4 shrink-0 text-muted-foreground"
         />
@@ -147,7 +142,7 @@ function LinkRow({
                 {stack.kind === "native" ? (
                   <LayersIcon aria-hidden className="size-3" />
                 ) : (
-                  <GitPullRequestArrow aria-hidden className="size-3" />
+                  <PullRequestGlyph.pullRequest aria-hidden className="size-3" />
                 )}
                 {stack.size}
               </TooltipTrigger>

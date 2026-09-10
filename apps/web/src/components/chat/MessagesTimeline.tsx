@@ -1,4 +1,3 @@
-import { GitPullRequestIcon } from "lucide-react";
 import {
   getQuestionAnswerPreview,
   getQuestionAnswerText,
@@ -197,6 +196,7 @@ import {
   parseReviewCommentMessageSegments,
   type ReviewCommentContext,
 } from "../../reviewCommentContext";
+import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 
 // ---------------------------------------------------------------------------
 // Context — shared state consumed by every row component via Context.
@@ -3040,7 +3040,7 @@ function ToolActivityImageIcon(props: {
 function WorkEntryIcon({ name, className }: { name: WorkEntryIconName; className: string }) {
   switch (name) {
     case "pull-request":
-      return <GitPullRequestIcon className={className} aria-hidden />;
+      return <PullRequestGlyph.pullRequest className={className} aria-hidden />;
     case "bot":
       return <BotIcon className={className} aria-hidden />;
     case "brain":

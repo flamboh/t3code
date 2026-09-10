@@ -25,10 +25,6 @@ import {
   FolderGit2Icon,
   GitBranchIcon,
   GitCommitHorizontalIcon,
-  GitMergeIcon,
-  GitPullRequestClosedIcon,
-  GitPullRequestDraftIcon,
-  GitPullRequestIcon,
   HammerIcon,
   LayersIcon,
   MessageCircleQuestionIcon,
@@ -161,6 +157,7 @@ import {
   resolvePullRequestState,
   summarizePullRequestChecks,
 } from "./pullRequestPresentation";
+import { PullRequestGlyph } from "./pullRequestIcons";
 
 type DetailTab = "summary" | "timeline" | "code";
 
@@ -440,7 +437,7 @@ function PullRequestBaseFreshnessWarning({
                 disabled={pending}
                 onClick={() => onUpdate(method)}
               >
-                <GitMergeIcon aria-hidden className="size-3" />
+                <PullRequestGlyph.merged aria-hidden className="size-3" />
                 {method === "rebase" ? "Update with rebase" : "Update branch"}
               </Button>
             ))}
@@ -1716,7 +1713,7 @@ export function PullRequestDetailPanel({
                         role="img"
                         aria-label={armedAutoMergeLabel}
                       >
-                        <GitMergeIcon aria-hidden className="size-3.5" />
+                        <PullRequestGlyph.merged aria-hidden className="size-3.5" />
                         <span className="@max-[30rem]/pr-header:hidden">{armedAutoMergeLabel}</span>
                       </Badge>
                     }
@@ -1765,7 +1762,7 @@ export function PullRequestDetailPanel({
                           onClick={() => void perform("ready")}
                           aria-label="Ready for review"
                         >
-                          <GitPullRequestIcon aria-hidden className="size-3.5" />
+                          <PullRequestGlyph.pullRequest aria-hidden className="size-3.5" />
                           <span className="@max-[30rem]/pr-header:hidden">Ready for review</span>
                         </Button>
                       </span>
@@ -1791,7 +1788,7 @@ export function PullRequestDetailPanel({
                               : pendingAutoMergeLabel
                           }
                         >
-                          <GitMergeIcon aria-hidden className="size-3.5" />
+                          <PullRequestGlyph.merged aria-hidden className="size-3.5" />
                           <span className="@max-[30rem]/pr-header:hidden">
                             {pendingAction === "enable-auto-merge"
                               ? "Enabling..."
@@ -1815,7 +1812,7 @@ export function PullRequestDetailPanel({
                         role="img"
                         aria-label={armedAutoMergeLabel}
                       >
-                        <GitMergeIcon aria-hidden className="size-3.5" />
+                        <PullRequestGlyph.merged aria-hidden className="size-3.5" />
                         <span className="@max-[30rem]/pr-header:hidden">{armedAutoMergeLabel}</span>
                       </Badge>
                     }
@@ -1839,7 +1836,7 @@ export function PullRequestDetailPanel({
                             pendingAction === "merge" ? "Merging..." : selectedMergeMethodLabel
                           }
                         >
-                          <GitMergeIcon aria-hidden className="size-3.5" />
+                          <PullRequestGlyph.merged aria-hidden className="size-3.5" />
                           <span className="@max-[30rem]/pr-header:hidden">
                             {pendingAction === "merge" ? "Merging..." : selectedMergeMethodLabel}
                           </span>
@@ -1944,9 +1941,9 @@ export function PullRequestDetailPanel({
                           onClick={() => void perform(detail.isDraft ? "ready" : "draft")}
                         >
                           {detail.isDraft ? (
-                            <GitPullRequestIcon className="size-3.5" />
+                            <PullRequestGlyph.pullRequest className="size-3.5" />
                           ) : (
-                            <GitPullRequestDraftIcon className="size-3.5" />
+                            <PullRequestGlyph.draft className="size-3.5" />
                           )}
                           {detail.isDraft ? "Ready for review" : "Convert to draft"}
                         </MenuItem>
@@ -1956,7 +1953,7 @@ export function PullRequestDetailPanel({
                           disabled={actionPending}
                           onClick={() => setConfirmation({ open: true, action: "merge" })}
                         >
-                          <GitMergeIcon className="size-3.5" />
+                          <PullRequestGlyph.merged className="size-3.5" />
                           Merge now
                         </MenuItem>
                       ) : null}
@@ -1968,7 +1965,7 @@ export function PullRequestDetailPanel({
                           disabled={actionPending}
                           onClick={() => void perform("disable-auto-merge")}
                         >
-                          <GitMergeIcon className="size-3.5" />
+                          <PullRequestGlyph.merged className="size-3.5" />
                           Disable auto-merge
                         </MenuItem>
                       ) : showsAutoMerge ? (
@@ -1978,7 +1975,7 @@ export function PullRequestDetailPanel({
                             setConfirmation({ open: true, action: "enable-auto-merge" })
                           }
                         >
-                          <GitMergeIcon className="size-3.5" />
+                          <PullRequestGlyph.merged className="size-3.5" />
                           Enable auto-merge
                         </MenuItem>
                       ) : null}
@@ -2013,7 +2010,7 @@ export function PullRequestDetailPanel({
                                 {/* The radio item lays its children out as one block, so the
                                     icon and the label need their own row to share a line. */}
                                 <span className="flex min-w-0 items-center gap-2">
-                                  <GitMergeIcon className="size-3.5" />
+                                  <PullRequestGlyph.merged className="size-3.5" />
                                   <span>{PULL_REQUEST_MERGE_METHOD_LABELS[method]}</span>
                                 </span>
                               </MenuRadioItem>
@@ -2046,7 +2043,7 @@ export function PullRequestDetailPanel({
                         disabled={actionPending}
                         onClick={() => setConfirmation({ open: true, action: "close" })}
                       >
-                        <GitPullRequestClosedIcon className="size-3.5" />
+                        <PullRequestGlyph.closed className="size-3.5" />
                         Close pull request
                       </MenuItem>
                     </>
@@ -2054,7 +2051,7 @@ export function PullRequestDetailPanel({
                     <>
                       <MenuSeparator />
                       <MenuItem disabled={actionPending} onClick={() => void perform("reopen")}>
-                        <GitPullRequestIcon className="size-3.5" />
+                        <PullRequestGlyph.pullRequest className="size-3.5" />
                         Reopen pull request
                       </MenuItem>
                     </>

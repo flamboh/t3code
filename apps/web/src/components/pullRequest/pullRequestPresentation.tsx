@@ -12,11 +12,6 @@ import {
   CircleDashedIcon,
   CircleDotIcon,
   CircleXIcon,
-  GitMergeIcon,
-  GitPullRequestClosedIcon,
-  GitPullRequestDraftIcon,
-  GitPullRequestIcon,
-  TriangleAlertIcon,
   UserCheckIcon,
 } from "lucide-react";
 import { Children, isValidElement, type ReactNode } from "react";
@@ -26,11 +21,16 @@ import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { PullRequestReviewOutcome } from "./pullRequestDetail.logic";
+import {
+  PULL_REQUEST_STATE_TONE,
+  PullRequestGlyph,
+  type PullRequestGlyphIcon,
+} from "./pullRequestIcons";
 
 interface StatePresentation {
   readonly label: string;
   readonly toneClassName: string;
-  readonly Icon: typeof GitPullRequestIcon;
+  readonly Icon: PullRequestGlyphIcon;
 }
 
 export function PullRequestApprovalGlyph() {
@@ -49,9 +49,9 @@ export function PullRequestApprovalGlyph() {
 }
 
 /**
- * How a pull request's state reads on this page. Open, closed, merged, and draft use the same
- * ink as the thread badge in `ThreadStatusIndicators`, so one pull request cannot look like two
- * different things in two places.
+ * How a pull request's state reads anywhere it appears: the thread badge, the right-panel tab,
+ * the list, and the detail header all resolve through here so one pull request cannot look like
+ * two different things in two places.
  *
  * Draft outranks conflicts: a draft is not heading for a merge yet, so conflicts only surface
  * once it is real work.
@@ -65,22 +65,22 @@ export function resolvePullRequestState(input: {
   if (input.state === "merged") {
     return {
       label: "Merged",
-      toneClassName: "text-violet-600 dark:text-violet-300/90",
-      Icon: GitMergeIcon,
+      toneClassName: PULL_REQUEST_STATE_TONE.merged,
+      Icon: PullRequestGlyph.merged,
     };
   }
   if (input.state === "closed") {
     return {
       label: "Closed",
-      toneClassName: "text-red-600 dark:text-red-300/90",
-      Icon: GitPullRequestClosedIcon,
+      toneClassName: PULL_REQUEST_STATE_TONE.closed,
+      Icon: PullRequestGlyph.closed,
     };
   }
   if (input.isDraft) {
     return {
       label: "Draft",
-      toneClassName: "text-zinc-500 dark:text-zinc-400/80",
-      Icon: GitPullRequestDraftIcon,
+      toneClassName: PULL_REQUEST_STATE_TONE.draft,
+      Icon: PullRequestGlyph.draft,
     };
   }
   if (input.mergeability === "conflicting") {
@@ -89,13 +89,13 @@ export function resolvePullRequestState(input: {
       // their eye, so name the branch it collides with wherever the caller knows it.
       label: input.baseBranch ? `Conflicts with ${input.baseBranch}` : "Has conflicts",
       toneClassName: "text-destructive",
-      Icon: TriangleAlertIcon,
+      Icon: PullRequestGlyph.conflicting,
     };
   }
   return {
     label: "Open",
-    toneClassName: "text-emerald-600 dark:text-emerald-300/90",
-    Icon: GitPullRequestIcon,
+    toneClassName: PULL_REQUEST_STATE_TONE.open,
+    Icon: PullRequestGlyph.pullRequest,
   };
 }
 
