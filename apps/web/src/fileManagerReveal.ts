@@ -1,5 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentPresentation } from "@t3tools/client-runtime/connection";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ServerConfig } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
 import * as Option from "effect/Option";
@@ -17,6 +21,7 @@ import {
 import { environmentPresentations } from "./state/presentation";
 import { shellEnvironment } from "./state/shell";
 import { useAtomCommand } from "./state/use-atom-command";
+import { stackedThreadToast, toastManager } from "./components/ui/toast";
 
 export type FileManagerActionResult = Awaited<ReturnType<typeof shellEnvironment.openInEditor.run>>;
 
@@ -33,6 +38,33 @@ interface FileManagerOpenAction {
 export interface FileManagerAction {
   readonly open: FileManagerOpenAction;
   readonly reveal: FileManagerRevealAction | null;
+}
+
+export async function openFileManagerPath(
+  action: FileManagerAction,
+  targetPath: string,
+  failureTitle: string,
+): Promise<void> {
+  try {
+    const result = await action.open.run(targetPath);
+    if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
+    const error = squashAtomCommandFailure(result);
+    toastManager.add(
+      stackedThreadToast({
+        type: "error",
+        title: failureTitle,
+        description: error instanceof Error ? error.message : "An error occurred.",
+      }),
+    );
+  } catch (cause) {
+    toastManager.add(
+      stackedThreadToast({
+        type: "error",
+        title: failureTitle,
+        description: cause instanceof Error ? cause.message : "An error occurred.",
+      }),
+    );
+  }
 }
 
 function isAbsoluteFilePath(path: string): boolean {

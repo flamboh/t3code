@@ -121,7 +121,7 @@ import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
-import { useFileManagerAction } from "../fileManagerReveal";
+import { openFileManagerPath, useFileManagerAction } from "../fileManagerReveal";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
@@ -4129,26 +4129,11 @@ export default function Sidebar() {
             return;
           case "open-in-file-manager": {
             if (!threadWorkspacePath || !fileManagerAction) return;
-            try {
-              const result = await fileManagerAction.open.run(threadWorkspacePath);
-              if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
-              const error = squashAtomCommandFailure(result);
-              toastManager.add(
-                stackedThreadToast({
-                  type: "error",
-                  title: `Failed to open ${thread.worktreePath ? "worktree" : "project"}`,
-                  description: error instanceof Error ? error.message : "An error occurred.",
-                }),
-              );
-            } catch (cause) {
-              toastManager.add(
-                stackedThreadToast({
-                  type: "error",
-                  title: `Failed to open ${thread.worktreePath ? "worktree" : "project"}`,
-                  description: cause instanceof Error ? cause.message : "An error occurred.",
-                }),
-              );
-            }
+            await openFileManagerPath(
+              fileManagerAction,
+              threadWorkspacePath,
+              `Failed to open ${thread.worktreePath ? "worktree" : "project"}`,
+            );
             return;
           }
           case "copy-branch":

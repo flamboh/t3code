@@ -40,7 +40,7 @@ import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
 import { useThreadActions } from "./useThreadActions";
-import { useFileManagerActionForEnvironment } from "../fileManagerReveal";
+import { openFileManagerPath, useFileManagerActionForEnvironment } from "../fileManagerReveal";
 
 function failureToast(title: string, error: unknown) {
   toastManager.add(
@@ -281,16 +281,11 @@ export function useThreadActionMenu(input: {
           }
           case "open-in-file-manager": {
             if (!threadWorkspacePath || !fileManagerAction) return;
-            try {
-              const result = await fileManagerAction.open.run(threadWorkspacePath);
-              if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
-              failureToast(
-                `Failed to open ${thread.worktreePath ? "worktree" : "project"}`,
-                squashAtomCommandFailure(result),
-              );
-            } catch (cause) {
-              failureToast(`Failed to open ${thread.worktreePath ? "worktree" : "project"}`, cause);
-            }
+            await openFileManagerPath(
+              fileManagerAction,
+              threadWorkspacePath,
+              `Failed to open ${thread.worktreePath ? "worktree" : "project"}`,
+            );
             return;
           }
           case "copy-branch":

@@ -118,7 +118,7 @@ import { ensureLocalApi, readLocalApi } from "../localApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useDesktopUpdateState } from "../state/desktopUpdate";
-import { useFileManagerAction } from "../fileManagerReveal";
+import { openFileManagerPath, useFileManagerAction } from "../fileManagerReveal";
 
 import { useThreadActions } from "../hooks/useThreadActions";
 import { projectEnvironment } from "../state/projects";
@@ -2344,26 +2344,11 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       }
       if (clicked === "open-in-file-manager") {
         if (!threadWorkspacePath || !fileManagerAction) return;
-        try {
-          const result = await fileManagerAction.open.run(threadWorkspacePath);
-          if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
-          const error = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: `Failed to open ${thread.worktreePath ? "worktree" : "project"}`,
-              description: error instanceof Error ? error.message : "An error occurred.",
-            }),
-          );
-        } catch (cause) {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: `Failed to open ${thread.worktreePath ? "worktree" : "project"}`,
-              description: cause instanceof Error ? cause.message : "An error occurred.",
-            }),
-          );
-        }
+        await openFileManagerPath(
+          fileManagerAction,
+          threadWorkspacePath,
+          `Failed to open ${thread.worktreePath ? "worktree" : "project"}`,
+        );
         return;
       }
       if (clicked !== "delete") return;
