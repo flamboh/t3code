@@ -4,6 +4,7 @@ import {
   GitPullRequestClosedIcon,
   GitPullRequestDraftIcon,
   LayersIcon,
+  Link2Icon,
   TriangleAlertIcon,
 } from "lucide-react";
 
@@ -21,6 +22,8 @@ export const PullRequestGlyph = {
   merged: GitMergeIcon,
   conflicting: TriangleAlertIcon,
   stack: LayersIcon,
+  /** The linked-pull-requests surface: the same chain the sidebar uses to link a PR to a thread. */
+  linked: Link2Icon,
 } as const;
 
 export type PullRequestGlyphIcon = (typeof PullRequestGlyph)[keyof typeof PullRequestGlyph];

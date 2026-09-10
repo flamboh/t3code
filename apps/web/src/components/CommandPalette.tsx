@@ -1708,7 +1708,7 @@ function OpenCommandPaletteDialog(props: {
         value: "action:open-thread-pull-requests",
         searchTerms: ["pull requests", "linked", "stack", "prs"],
         title: "Show linked pull requests",
-        icon: <PullRequestGlyph.stack className={ITEM_ICON_CLASS} />,
+        icon: <PullRequestGlyph.linked className={ITEM_ICON_CLASS} />,
         run: async () => {
           useRightPanelStore.getState().open(threadRef, "pull-requests");
         },
