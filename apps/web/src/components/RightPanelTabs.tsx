@@ -381,7 +381,7 @@ function RightPanelEmptyState(props: {
     },
     {
       label: "Linked pull requests",
-      icon: PullRequestGlyph.linked,
+      icon: PullRequestGlyph.link,
       shortcut: "L",
       available: props.pullRequestsAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequests,
@@ -711,7 +711,7 @@ function SurfaceIcon({
         />
       );
     case "pull-requests":
-      return <PullRequestGlyph.linked className="size-3 shrink-0" />;
+      return <PullRequestGlyph.link className="size-3 shrink-0" />;
     case "agents":
       return <Bot className="size-3 shrink-0" />;
     case "device":
@@ -902,7 +902,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     },
     {
       label: "Linked pull requests",
-      icon: PullRequestGlyph.linked,
+      icon: PullRequestGlyph.link,
       shortcut: "L",
       available: props.pullRequestsAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.pullRequests,

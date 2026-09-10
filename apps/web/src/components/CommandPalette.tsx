@@ -1697,7 +1697,7 @@ function OpenCommandPaletteDialog(props: {
       value: "action:link-pull-request",
       searchTerms: ["link", "pull request", "pr", "attach", "stack"],
       title: "Link pull request to thread",
-      icon: <PullRequestGlyph.pullRequest className={ITEM_ICON_CLASS} />,
+      icon: <PullRequestGlyph.link className={ITEM_ICON_CLASS} />,
       run: async () => {
         openLinkPullRequestDialog(threadRef);
       },
@@ -1708,7 +1708,7 @@ function OpenCommandPaletteDialog(props: {
         value: "action:open-thread-pull-requests",
         searchTerms: ["pull requests", "linked", "stack", "prs"],
         title: "Show linked pull requests",
-        icon: <PullRequestGlyph.linked className={ITEM_ICON_CLASS} />,
+        icon: <PullRequestGlyph.link className={ITEM_ICON_CLASS} />,
         run: async () => {
           useRightPanelStore.getState().open(threadRef, "pull-requests");
         },

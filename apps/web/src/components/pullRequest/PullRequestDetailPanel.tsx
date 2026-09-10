@@ -26,7 +26,6 @@ import {
   GitBranchIcon,
   GitCommitHorizontalIcon,
   HammerIcon,
-  LayersIcon,
   MessageCircleQuestionIcon,
   MessageSquareIcon,
   LinkIcon,
@@ -2120,7 +2119,7 @@ export function PullRequestDetailPanel({
                         render={
                           <span className="inline-flex min-w-0 max-w-[40%] shrink-0 items-center gap-1">
                             {isStackedPullRequest ? (
-                              <LayersIcon
+                              <PullRequestGlyph.stack
                                 aria-label="Stacked pull request"
                                 className="size-3 shrink-0"
                               />
@@ -2304,7 +2303,7 @@ export function PullRequestDetailPanel({
                         render={
                           <span className="inline-flex min-w-0 max-w-[40%] shrink-0 items-center gap-1">
                             {isStackedPullRequest ? (
-                              <LayersIcon
+                              <PullRequestGlyph.stack
                                 aria-label="Stacked pull request"
                                 className="size-3 shrink-0"
                               />

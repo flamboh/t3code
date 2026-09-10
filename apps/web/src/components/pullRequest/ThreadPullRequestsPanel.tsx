@@ -3,7 +3,7 @@ import {
   resolveThreadPullRequestChains,
   visibleThreadPullRequests,
 } from "@t3tools/shared/threadPullRequests";
-import { LinkIcon, MoreHorizontalIcon, PlusIcon } from "lucide-react";
+import { ArrowUpRightIcon, LinkIcon, MoreHorizontalIcon, PlusIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
@@ -181,9 +181,16 @@ function LinkRow({
           }
         />
         <MenuPopup align="end" side="bottom">
-          <MenuItem onClick={() => void writeTextToClipboard(link.url, "link")}>Copy link</MenuItem>
-          <MenuItem onClick={(event) => openPrLink(event, link.url, threadRef)}>Open</MenuItem>
+          <MenuItem onClick={() => void writeTextToClipboard(link.url, "link")}>
+            <LinkIcon className="size-3.5" />
+            Copy link
+          </MenuItem>
+          <MenuItem onClick={(event) => openPrLink(event, link.url, threadRef)}>
+            <ArrowUpRightIcon className="size-3.5" />
+            Open
+          </MenuItem>
           <MenuItem onClick={() => onUnlink(link)}>
+            <PullRequestGlyph.unlink className="size-3.5" />
             {link.source === "stack" ? "Dismiss from thread" : "Unlink from thread"}
           </MenuItem>
         </MenuPopup>
@@ -241,7 +248,7 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
   if (links.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-        <LinkIcon aria-hidden className="size-6 text-muted-foreground/60" />
+        <PullRequestGlyph.link aria-hidden className="size-6 text-muted-foreground/60" />
         <p className="text-sm font-medium">No linked pull requests</p>
         <p className="max-w-60 text-xs text-muted-foreground">
           Pull requests the agent opens from this thread land here. Link one yourself from a URL or

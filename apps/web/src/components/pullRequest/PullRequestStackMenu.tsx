@@ -6,7 +6,7 @@ import type {
   PullRequestMergeMethod,
 } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { LayersIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
+import { RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
 import { useState } from "react";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { pullRequestEnvironment } from "~/state/pullRequests";
@@ -134,7 +134,8 @@ export function PullRequestStackMenu({
                   />
                 }
               >
-                <LayersIcon aria-hidden className="size-3.5" /> {position}/{stack.layers.length}
+                <PullRequestGlyph.stack aria-hidden className="size-3.5" /> {position}/
+                {stack.layers.length}
                 {onRetry ? <TriangleAlertIcon aria-hidden className="size-3 text-warning" /> : null}
               </MenuTrigger>
             }
