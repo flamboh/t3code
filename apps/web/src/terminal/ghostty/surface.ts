@@ -260,6 +260,8 @@ function isSameTerminalLink(
     right.range.end.x === left.range.end.x &&
     right.range.end.y === left.range.end.y
   );
+}
+
 function mapTerminalLinkRange(
   link: TerminalLinkWithRange,
   mapPoint: (point: GhosttyCellRange["start"]) => GhosttyCellRange["start"] | null,

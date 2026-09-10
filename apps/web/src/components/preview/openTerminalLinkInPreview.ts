@@ -35,7 +35,7 @@ interface OpenTerminalLinkInPreviewInput<E> {
   readonly openPreview: OpenPreviewMutation<E>;
   readonly fallbackToBrowser: () => void;
   /** Cmd/Ctrl-click bypasses the preference and opens in the system browser. */
-  readonly forceBrowser?: boolean;
+  readonly forceBrowser: boolean;
 }
 
 export function canOpenTerminalLinkInPreview(url: string, threadRef: ScopedThreadRef): boolean {
