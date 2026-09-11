@@ -12,7 +12,6 @@ import {
   ChevronRightIcon,
   HammerIcon,
   PencilIcon,
-  RotateCcwIcon,
   SendIcon,
   TagIcon,
   UsersIcon,
@@ -385,7 +384,7 @@ function CommentComposer({
             {followUpAction === "close" ? (
               <PullRequestGlyph.closed className="size-3.5" />
             ) : (
-              <RotateCcwIcon className="size-3.5" />
+              <PullRequestGlyph.reopen className="size-3.5" />
             )}
             {submitting === followUpAction
               ? followUpAction === "close"

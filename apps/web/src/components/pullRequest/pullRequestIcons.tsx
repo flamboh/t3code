@@ -8,9 +8,11 @@ import {
   Unlink2Icon,
   TriangleAlertIcon,
 } from "lucide-react";
+import type { PullRequestState } from "@t3tools/contracts";
 
 export const PullRequestGlyph = {
   pullRequest: GitPullRequestArrowIcon,
+  reopen: GitPullRequestArrowIcon,
   draft: GitPullRequestDraftIcon,
   closed: GitPullRequestClosedIcon,
   merged: GitMergeIcon,
@@ -22,9 +24,31 @@ export const PullRequestGlyph = {
 
 export type PullRequestGlyphIcon = (typeof PullRequestGlyph)[keyof typeof PullRequestGlyph];
 
-export const PULL_REQUEST_STATE_TONE = {
-  open: "text-emerald-600 dark:text-emerald-300/90",
-  draft: "text-zinc-500 dark:text-zinc-400/80",
-  closed: "text-red-600 dark:text-red-300/90",
-  merged: "text-violet-600 dark:text-violet-300/90",
-} as const;
+export interface PullRequestStatePresentation {
+  readonly label: string;
+  readonly toneClassName: string;
+  readonly Icon: PullRequestGlyphIcon;
+}
+
+export const PULL_REQUEST_STATE_PRESENTATION = {
+  open: {
+    label: "Open",
+    toneClassName: "text-emerald-600 dark:text-emerald-300/90",
+    Icon: PullRequestGlyph.pullRequest,
+  },
+  draft: {
+    label: "Draft",
+    toneClassName: "text-zinc-500 dark:text-zinc-400/80",
+    Icon: PullRequestGlyph.draft,
+  },
+  closed: {
+    label: "Closed",
+    toneClassName: "text-red-600 dark:text-red-300/90",
+    Icon: PullRequestGlyph.closed,
+  },
+  merged: {
+    label: "Merged",
+    toneClassName: "text-violet-600 dark:text-violet-300/90",
+    Icon: PullRequestGlyph.merged,
+  },
+} as const satisfies Record<PullRequestState | "draft", PullRequestStatePresentation>;

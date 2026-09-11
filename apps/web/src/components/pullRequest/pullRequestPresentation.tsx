@@ -22,16 +22,11 @@ import { Badge } from "../ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { PullRequestReviewOutcome } from "./pullRequestDetail.logic";
 import {
-  PULL_REQUEST_STATE_TONE,
+  PULL_REQUEST_STATE_PRESENTATION,
   PullRequestGlyph,
+  type PullRequestStatePresentation,
   type PullRequestGlyphIcon,
 } from "./pullRequestIcons";
-
-interface StatePresentation {
-  readonly label: string;
-  readonly toneClassName: string;
-  readonly Icon: PullRequestGlyphIcon;
-}
 
 export function PullRequestApprovalGlyph() {
   return (
@@ -53,53 +48,65 @@ export function PullRequestApprovalGlyph() {
  * the list, and the detail header all resolve through here so one pull request cannot look like
  * two different things in two places.
  *
- * Draft outranks conflicts: a draft is not heading for a merge yet, so conflicts only surface
- * once it is real work.
+ * Closed and merged take precedence over a stale draft flag.
  */
 export function resolvePullRequestState(input: {
   readonly state: PullRequestState;
   readonly isDraft: boolean;
+}): PullRequestStatePresentation {
+  const key = input.state === "open" && input.isDraft ? "draft" : input.state;
+  return PULL_REQUEST_STATE_PRESENTATION[key];
+}
+
+export interface PullRequestConflictPresentation {
+  readonly label: string;
+  readonly toneClassName: string;
+  readonly Icon: PullRequestGlyphIcon;
+}
+
+export function resolvePullRequestConflict(input: {
+  readonly state: PullRequestState;
+  readonly isDraft: boolean;
   readonly mergeability?: PullRequestMergeability;
   readonly baseBranch?: string;
-}): StatePresentation {
-  if (input.state === "merged") {
-    return {
-      label: "Merged",
-      toneClassName: PULL_REQUEST_STATE_TONE.merged,
-      Icon: PullRequestGlyph.merged,
-    };
-  }
-  if (input.state === "closed") {
-    return {
-      label: "Closed",
-      toneClassName: PULL_REQUEST_STATE_TONE.closed,
-      Icon: PullRequestGlyph.closed,
-    };
-  }
-  if (input.isDraft) {
-    return {
-      label: "Draft",
-      toneClassName: PULL_REQUEST_STATE_TONE.draft,
-      Icon: PullRequestGlyph.draft,
-    };
-  }
-  if (input.mergeability === "conflicting") {
-    return {
-      // "Has conflicts" leaves out the one thing a reader wants when the warning triangle catches
-      // their eye, so name the branch it collides with wherever the caller knows it.
-      label: input.baseBranch ? `Conflicts with ${input.baseBranch}` : "Has conflicts",
-      toneClassName: "text-destructive",
-      Icon: PullRequestGlyph.conflicting,
-    };
+}): PullRequestConflictPresentation | null {
+  if (input.state !== "open" || input.isDraft || input.mergeability !== "conflicting") {
+    return null;
   }
   return {
-    label: "Open",
-    toneClassName: PULL_REQUEST_STATE_TONE.open,
-    Icon: PullRequestGlyph.pullRequest,
+    label: input.baseBranch ? `Conflicts with ${input.baseBranch}` : "Has conflicts",
+    toneClassName: "text-destructive",
+    Icon: PullRequestGlyph.conflicting,
   };
 }
 
 export function PullRequestStateGlyph({
+  state,
+  isDraft,
+  className,
+}: {
+  state: PullRequestState;
+  isDraft: boolean;
+  className?: string;
+}) {
+  const presentation = resolvePullRequestState({ state, isDraft });
+  return (
+    <Tooltip>
+      {/* The list row is itself a button, so the trigger stays a span: an interactive one would
+          nest a control inside that button and steal the row's click target. */}
+      <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
+        <presentation.Icon
+          role="img"
+          aria-label={presentation.label}
+          className={cn("size-4 shrink-0", presentation.toneClassName, className)}
+        />
+      </TooltipTrigger>
+      <TooltipPopup>{presentation.label}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+export function PullRequestConflictGlyph({
   state,
   isDraft,
   mergeability,
@@ -112,16 +119,15 @@ export function PullRequestStateGlyph({
   baseBranch?: string;
   className?: string;
 }) {
-  const presentation = resolvePullRequestState({
+  const presentation = resolvePullRequestConflict({
     state,
     isDraft,
-    ...(mergeability ? { mergeability } : {}),
-    ...(baseBranch ? { baseBranch } : {}),
+    ...(mergeability === undefined ? {} : { mergeability }),
+    ...(baseBranch === undefined ? {} : { baseBranch }),
   });
+  if (presentation === null) return null;
   return (
     <Tooltip>
-      {/* The list row is itself a button, so the trigger stays a span: an interactive one would
-          nest a control inside that button and steal the row's click target. */}
       <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
         <presentation.Icon
           role="img"

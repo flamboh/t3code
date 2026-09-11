@@ -22,6 +22,7 @@ import { openLinkPullRequestDialog } from "./LinkPullRequestDialog";
 import { pullRequestListLines, type PullRequestListLine } from "./pullRequestListLines";
 import {
   PullRequestActorAvatar,
+  PullRequestConflictGlyph,
   PullRequestDiffStat,
   PullRequestApprovalGlyph,
   PullRequestStateGlyph,
@@ -84,7 +85,15 @@ function LinkRow({
           className="size-4 shrink-0 text-muted-foreground"
         />
       ) : (
-        <PullRequestStateGlyph state={snapshot.state} isDraft={snapshot.isDraft} />
+        <span className="flex shrink-0 items-center gap-1">
+          <PullRequestStateGlyph state={snapshot.state} isDraft={snapshot.isDraft} />
+          <PullRequestConflictGlyph
+            state={snapshot.state}
+            isDraft={snapshot.isDraft}
+            baseBranch={snapshot.baseBranch}
+            {...(snapshot.mergeability ? { mergeability: snapshot.mergeability } : {})}
+          />
+        </span>
       )}
       <a
         href={link.url}
@@ -119,9 +128,6 @@ function LinkRow({
               ) : (
                 <span className="text-amber-600/90 dark:text-amber-400/80">Changes requested</span>
               )
-            ) : null}
-            {snapshot?.state === "open" && snapshot.mergeability === "conflicting" ? (
-              <span className="text-destructive">Conflicts</span>
             ) : null}
             {snapshot?.checksState ? <ChecksGlyph state={snapshot.checksState} /> : null}
             <PullRequestDiffStat

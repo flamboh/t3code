@@ -1737,7 +1737,7 @@ export function PullRequestDetailPanel({
                             handoff === "conflicts" ? "Preparing..." : "Resolve conflicts"
                           }
                         >
-                          <TriangleAlertIcon aria-hidden className="size-3.5" />
+                          <PullRequestGlyph.conflicting aria-hidden className="size-3.5" />
                           <span className="@max-[30rem]/pr-header:hidden">
                             {handoff === "conflicts" ? "Preparing..." : "Resolve conflicts"}
                           </span>
@@ -2050,7 +2050,7 @@ export function PullRequestDetailPanel({
                     <>
                       <MenuSeparator />
                       <MenuItem disabled={actionPending} onClick={() => void perform("reopen")}>
-                        <PullRequestGlyph.pullRequest className="size-3.5" />
+                        <PullRequestGlyph.reopen className="size-3.5" />
                         Reopen pull request
                       </MenuItem>
                     </>
