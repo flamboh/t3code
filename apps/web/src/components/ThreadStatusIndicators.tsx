@@ -163,11 +163,10 @@ export function resolveThreadPullRequestBadgePresentation({
 
   const tooltip = status?.tooltip ?? `PR #${number}, status pending`;
   if (badge?.kind === "pull-request" && badge.others > 0) {
-    // Unrelated links keep the plain glyph but wear the aggregate tone, so a count of merged
-    // PRs reads as merged even though no single state glyph fits it.
+    // Unrelated links fold into one state, so a count of merged PRs reads as merged.
     const aggregate = PULL_REQUEST_STATE_PRESENTATION[badge.state];
     return {
-      Icon: PullRequestGlyph.pullRequest,
+      Icon: aggregate.Icon,
       toneClassName: aggregate.toneClassName,
       label: `${tooltip}, and ${badge.others} more linked; overall ${aggregate.label.toLowerCase()}`,
       text: `+${badge.others + 1}`,

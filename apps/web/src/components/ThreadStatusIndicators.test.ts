@@ -207,29 +207,36 @@ describe("resolveThreadPullRequestBadgePresentation", () => {
     },
   );
 
-  it("colors the count of unrelated linked pull requests by their aggregate state", () => {
-    const fixture = status().pr;
-    if (!fixture) throw new Error("Expected pull request fixture");
-    const mergedStatus = prStatusIndicator(
-      { ...fixture, state: "merged", isDraft: false },
-      undefined,
-    );
-    if (!mergedStatus) throw new Error("Expected pull request status");
+  it.each([
+    ["open", PullRequestGlyph.pullRequest, "text-emerald-600 dark:text-emerald-300/90"],
+    ["draft", PullRequestGlyph.draft, "text-zinc-500 dark:text-zinc-400/80"],
+    ["merged", PullRequestGlyph.merged, "text-violet-600 dark:text-violet-300/90"],
+  ] as const)(
+    "draws the count of unrelated linked pull requests with their %s aggregate state",
+    (state, expectedIcon, expectedToneClassName) => {
+      const fixture = status().pr;
+      if (!fixture) throw new Error("Expected pull request fixture");
+      const closedStatus = prStatusIndicator(
+        { ...fixture, state: "closed", isDraft: false },
+        undefined,
+      );
+      if (!closedStatus) throw new Error("Expected pull request status");
 
-    expect(
-      resolveThreadPullRequestBadgePresentation({
-        badge: { kind: "pull-request", others: 2, state: "open" },
-        number: fixture.number,
-        url: fixture.url,
-        status: mergedStatus,
-      }),
-    ).toEqual({
-      Icon: PullRequestGlyph.pullRequest,
-      toneClassName: "text-emerald-600 dark:text-emerald-300/90",
-      label: "PR #42 - Merged: PR branch, and 2 more linked; overall open",
-      text: "+3",
-    });
-  });
+      expect(
+        resolveThreadPullRequestBadgePresentation({
+          badge: { kind: "pull-request", others: 2, state },
+          number: fixture.number,
+          url: fixture.url,
+          status: closedStatus,
+        }),
+      ).toEqual({
+        Icon: expectedIcon,
+        toneClassName: expectedToneClassName,
+        label: `PR #42 - Closed: PR branch, and 2 more linked; overall ${state}`,
+        text: "+3",
+      });
+    },
+  );
 
   it("omits the control when neither a stack nor a linked identity can be shown", () => {
     expect(resolveThreadPullRequestBadgePresentation({ badge: null, status: null })).toBeNull();
