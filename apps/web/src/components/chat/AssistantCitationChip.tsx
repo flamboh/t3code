@@ -2,7 +2,13 @@ import type { AssistantCitation } from "@t3tools/contracts";
 import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { PencilIcon, QuoteIcon, XIcon } from "lucide-react";
-import { useEffect, useEffectEvent, useRef, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import {
   findAssistantCitationSourceAnchor,
   type AssistantCitationSourceAnchor,
@@ -50,8 +56,11 @@ export function AssistantCitationChip({
   const navigate = useNavigate();
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
   const draftCommentRef = useRef<string | null>(null);
+  const [unavailableSourceAnchor, setUnavailableSourceAnchor] =
+    useState<AssistantCitationSourceAnchor | null>(null);
   const commentOpen = commentEditor?.open ?? false;
   const sourceAnchor = commentEditor?.sourceAnchor;
+  const activeSourceAnchor = sourceAnchor === unavailableSourceAnchor ? undefined : sourceAnchor;
   useEffect(() => {
     if (!commentOpen) draftCommentRef.current = null;
   }, [commentOpen]);
@@ -66,11 +75,15 @@ export function AssistantCitationChip({
   };
   const onSourceUnavailable = useEffectEvent(() => {
     if (!sourceAnchor) return;
-    settleDraftOnClose("none");
-    commentEditor?.onOpenChange(false);
+    if (settleDraftOnClose("none")) {
+      commentEditor?.onOpenChange(false);
+    } else {
+      // Keep the draft mounted, positioned at the composer trigger instead of a detached range.
+      setUnavailableSourceAnchor(sourceAnchor);
+    }
   });
   useEffect(() => {
-    if (!commentOpen) return;
+    if (!commentOpen || sourceAnchor === unavailableSourceAnchor) return;
     const anchor = sourceAnchor ?? findAssistantCitationSourceAnchor(document, citation);
     if (!anchor) return;
     return observeAssistantCitationCommentSource({
@@ -78,15 +91,15 @@ export function AssistantCitationChip({
       citation,
       onUnavailable: onSourceUnavailable,
     });
-  }, [citation, commentOpen, sourceAnchor]);
+  }, [citation, commentOpen, sourceAnchor, unavailableSourceAnchor]);
   // A multi-line selection's bounding box spans the full message width; anchor
   // the bubble to the selection's last line, where the pointer released.
-  const popupAnchor = sourceAnchor
+  const popupAnchor = activeSourceAnchor
     ? {
-        contextElement: sourceAnchor.source,
+        contextElement: activeSourceAnchor.source,
         getBoundingClientRect: () => {
-          const rects = sourceAnchor.range.getClientRects();
-          return rects.item(rects.length - 1) ?? sourceAnchor.range.getBoundingClientRect();
+          const rects = activeSourceAnchor.range.getClientRects();
+          return rects.item(rects.length - 1) ?? activeSourceAnchor.range.getBoundingClientRect();
         },
       }
     : undefined;
@@ -164,7 +177,7 @@ export function AssistantCitationChip({
           {commentEditor.open ? (
             <PopoverPopup
               {...composerFloatingLayerProps}
-              side={sourceAnchor ? "bottom" : "top"}
+              side={activeSourceAnchor ? "bottom" : "top"}
               align="end"
               anchor={popupAnchor}
               initialFocus={() => {
