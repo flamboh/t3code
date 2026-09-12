@@ -97,6 +97,7 @@ export const make = Effect.gen(function* () {
       // paths and deny when home can't be resolved.
       (configuredRoot !== null &&
         homeRoot !== null &&
+        !ServerSettings.isFilesystemRoot(configuredRoot, path) &&
         !isWithinRoot(homeRoot, configuredRoot) &&
         isWithinRoot(candidate, configuredRoot))
     ) {

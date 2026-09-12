@@ -131,6 +131,12 @@ export const isWithinDirectory = (directory: string, ancestor: string, path: Pat
   );
 };
 
+/** Whether `directory` resolves to a filesystem root for this path implementation. */
+export const isFilesystemRoot = (directory: string, path: Path.Path) => {
+  const resolved = path.resolve(directory);
+  return resolved === path.parse(resolved).root;
+};
+
 /**
  * Why a worktree directory can't be used, or null when it can. The review
  * guard authorizes everything under this directory, so the home directory and
@@ -144,6 +150,9 @@ const worktreeBaseDirectoryIssue = (value: string, path: Path.Path): string | nu
     return "Worktree directory must be an absolute path or start with ~/.";
   }
   const resolved = path.resolve(expandHomePathWith(value, path));
+  if (isFilesystemRoot(resolved, path)) {
+    return "Worktree directory cannot be a filesystem root.";
+  }
   if (isWithinDirectory(path.resolve(expandHomePathWith("~", path)), resolved, path)) {
     return "Worktree directory cannot be your home directory or a directory containing it.";
   }
@@ -381,8 +390,10 @@ const makeTest = (overrides: DeepPartial<ServerSettings> = {}) =>
     } satisfies ServerSettingsService["Service"];
   });
 
-export const layerTest = (overrides: DeepPartial<ServerSettings> = {}) =>
-  Layer.effect(ServerSettingsService, makeTest(overrides)).pipe(Layer.provide(NodePath.layer));
+export const layerTest = (
+  overrides: DeepPartial<ServerSettings> = {},
+  pathLayer: Layer.Layer<Path.Path> = NodePath.layer,
+) => Layer.effect(ServerSettingsService, makeTest(overrides)).pipe(Layer.provide(pathLayer));
 
 // Migrate saved token delivery without accepting it in settings writes or
 // letting one retired value reset the rest of the environment's settings.
