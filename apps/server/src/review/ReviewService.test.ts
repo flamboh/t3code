@@ -1,4 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodePath from "@effect/platform-node/NodePath";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -144,6 +145,62 @@ describe("ReviewService", () => {
 
       assert.strictEqual(result.cwd, worktreeCwd);
       assert.deepStrictEqual(detectCalls, [{ cwd: worktreeCwd }]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("rejects a configured worktree root on a different Windows volume", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
+      const configuredWorktreesDir = "/tmp/t3-review-configured-worktrees";
+      const winPath = yield* Path.Path.pipe(Effect.provide(NodePath.layerWin32));
+      const configuredRootRequest = winPath.resolve(configuredWorktreesDir);
+      let configuredRoot = "D:\\";
+      const simulatedFileSystem = FileSystem.FileSystem.of({
+        ...fs,
+        realPath: (target: string) =>
+          Effect.succeed(target === configuredRootRequest ? configuredRoot : target),
+      });
+      const config = yield* Effect.service(ServerConfig).pipe(
+        Effect.provide(ServerConfig.layerTest(workspaceRoot, baseDir)),
+      );
+      const detectCalls: Array<{ readonly cwd: string }> = [];
+      const reviewLayer = ReviewService.layer.pipe(
+        Layer.provide(
+          Layer.orDie(ServerSettings.layerTest({ worktreeBaseDirectory: configuredWorktreesDir })),
+        ),
+        Layer.provide(
+          Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
+            get: () => Effect.die("unexpected VCS registry get"),
+            resolve: () => Effect.die("unexpected VCS registry resolve"),
+            detect: (request) =>
+              Effect.sync(() => {
+                detectCalls.push({ cwd: request.cwd });
+                return null;
+              }),
+          }),
+        ),
+        Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+        Layer.provide(Layer.succeed(ServerConfig, config)),
+        Layer.provide(Layer.succeed(FileSystem.FileSystem, simulatedFileSystem)),
+        Layer.provide(NodePath.layerWin32),
+      );
+
+      const rejected = yield* Effect.gen(function* () {
+        const review = yield* ReviewService.ReviewService;
+        return yield* review.getDiffPreview({ cwd: "D:\\repo" }).pipe(Effect.flip);
+      }).pipe(Effect.provide(reviewLayer));
+      assert.equal(rejected._tag, "VcsRepositoryDetectionError");
+      assert.deepStrictEqual(detectCalls, []);
+
+      configuredRoot = "D:\\worktrees";
+      const result = yield* Effect.gen(function* () {
+        const review = yield* ReviewService.ReviewService;
+        return yield* review.getDiffPreview({ cwd: "D:\\worktrees\\repo" });
+      }).pipe(Effect.provide(reviewLayer));
+      assert.equal(result.cwd, "D:\\worktrees\\repo");
+      assert.deepStrictEqual(detectCalls, [{ cwd: "D:\\worktrees\\repo" }]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 

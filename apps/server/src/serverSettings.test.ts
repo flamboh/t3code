@@ -1,4 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodePath from "@effect/platform-node/NodePath";
 import {
   DEFAULT_SERVER_SETTINGS,
   ModelSelection,
@@ -1463,6 +1464,24 @@ it.effect("isWithinDirectory treats only a full .. segment as leaving the ancest
     assert.isFalse(ServerSettingsModule.isWithinDirectory("/other", "/workspace", path));
     assert.isFalse(ServerSettingsModule.isWithinDirectory("/workspac", "/workspace", path));
   }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("rejects every Windows filesystem root while accepting worktree directories", () =>
+  Effect.gen(function* () {
+    const settings = yield* ServerSettingsModule.ServerSettingsService;
+
+    for (const root of ["C:\\", "D:\\", "\\\\server\\share\\"]) {
+      const failure = yield* settings
+        .updateSettings({ worktreeBaseDirectory: root })
+        .pipe(Effect.flip);
+      assert.equal(failure.operation, "normalize", root);
+    }
+
+    for (const directory of ["C:\\Users\\Oliver\\worktrees", "D:\\worktrees"]) {
+      const updated = yield* settings.updateSettings({ worktreeBaseDirectory: directory });
+      assert.equal(updated.worktreeBaseDirectory, directory);
+    }
+  }).pipe(Effect.provide(ServerSettingsModule.layerTest({}, NodePath.layerWin32))),
 );
 
 it.effect("persists and resets the worktree directory and rejects relative paths", () =>
