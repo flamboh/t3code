@@ -69,6 +69,7 @@ export function EnvironmentDirectoryRows({
             ? "New worktrees only. Existing worktrees stay where they are."
             : "Update this server to set a worktrees directory."
         }
+        status={disabledReason}
         aria-disabled={disabled || !supportsWorktreeDirectory || undefined}
         resetAction={
           !disabled && supportsWorktreeDirectory && settings.worktreeBaseDirectory !== "" ? (

@@ -654,6 +654,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "environment-directories",
     title: "Default directories",
     to: "/settings/connections",
+    environmentOnly: true,
     searchTerms: [
       "per server environment defaults repositories repos clone add project starts in base directory folder browser path home worktrees",
     ],
