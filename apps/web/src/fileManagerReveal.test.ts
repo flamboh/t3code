@@ -1,9 +1,22 @@
 import { PrimaryConnectionTarget } from "@t3tools/client-runtime/connection";
 import { EnvironmentId } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { AsyncResult } from "effect/unstable/reactivity";
+import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { fileManagerActionForPresentation, resolveLiteralFilePath } from "./fileManagerReveal";
+const toastManager = vi.hoisted(() => ({ add: vi.fn() }));
+
+vi.mock("./components/ui/toast", () => ({
+  stackedThreadToast: (options: unknown) => options,
+  toastManager,
+}));
+
+import {
+  fileManagerActionForPresentation,
+  resolveLiteralFilePath,
+  runFileManagerPath,
+} from "./fileManagerReveal";
 
 const localEnvironmentId = EnvironmentId.make("local-environment");
 const remoteEnvironmentId = EnvironmentId.make("remote-environment");
@@ -76,6 +89,69 @@ describe("resolveLiteralFilePath", () => {
     ],
   ] as const)("resolves %s", (_case, path, workspaceRoot, expected) => {
     expect(resolveLiteralFilePath(path, workspaceRoot)).toBe(expected);
+  });
+});
+
+describe("runFileManagerPath", () => {
+  beforeEach(() => {
+    toastManager.add.mockClear();
+  });
+
+  it("ignores successful and interrupted commands", async () => {
+    const reportFailure = vi.fn();
+    const successRun = vi.fn(async () => AsyncResult.success(undefined));
+    const interruptedRun = vi.fn(async () => AsyncResult.failure(Cause.interrupt()));
+
+    await runFileManagerPath(
+      successRun,
+      "/project/file.txt",
+      "Unable to reveal file",
+      reportFailure,
+    );
+    await runFileManagerPath(
+      interruptedRun,
+      "/project/file.txt",
+      "Unable to reveal file",
+      reportFailure,
+    );
+
+    expect(successRun).toHaveBeenCalledWith("/project/file.txt");
+    expect(interruptedRun).toHaveBeenCalledWith("/project/file.txt");
+    expect(reportFailure).not.toHaveBeenCalled();
+    expect(toastManager.add).not.toHaveBeenCalled();
+  });
+
+  it("reports and displays a failed command result", async () => {
+    const error = new Error("Reveal failed");
+    const result = AsyncResult.failure(Cause.fail(error));
+    const run = vi.fn(async () => result);
+    const reportFailure = vi.fn();
+
+    await runFileManagerPath(run, "/project/file.txt", "Unable to reveal file", reportFailure);
+
+    expect(reportFailure).toHaveBeenCalledWith(result.cause);
+    expect(toastManager.add).toHaveBeenCalledWith({
+      type: "error",
+      title: "Unable to reveal file",
+      description: "Reveal failed",
+    });
+  });
+
+  it("reports and displays a thrown command failure", async () => {
+    const error = new Error("Shell unavailable");
+    const run = vi.fn(async () => {
+      throw error;
+    });
+    const reportFailure = vi.fn();
+
+    await runFileManagerPath(run, "/project/file.txt", "Unable to reveal file", reportFailure);
+
+    expect(reportFailure).toHaveBeenCalledWith(error);
+    expect(toastManager.add).toHaveBeenCalledWith({
+      type: "error",
+      title: "Unable to reveal file",
+      description: "Shell unavailable",
+    });
   });
 });
 

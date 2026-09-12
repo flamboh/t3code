@@ -3,10 +3,6 @@ import type {
   ContextMenuItem as TreeContextMenuItem,
   ContextMenuOpenContext as TreeContextMenuOpenContext,
 } from "@pierre/trees";
-import {
-  isAtomCommandInterrupted,
-  squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ProjectEntry } from "@t3tools/contracts";
 import { FileTree, useFileTree, useFileTreeSearch, useFileTreeSelector } from "@pierre/trees/react";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
@@ -15,7 +11,7 @@ import { useEffect, useMemo, useRef } from "react";
 
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupInput } from "~/components/ui/input-group";
-import { stackedThreadToast, toastManager } from "~/components/ui/toast";
+import { toastManager } from "~/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useComposerHandleContext } from "~/composerHandleContext";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
@@ -24,7 +20,11 @@ import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh
 import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
 import { PIERRE_TREE_UNSAFE_CSS, pierreTreeStyle } from "~/pierre-tree-theme";
-import { resolveLiteralFilePath, useFileManagerActionForEnvironment } from "~/fileManagerReveal";
+import {
+  resolveLiteralFilePath,
+  runFileManagerPath,
+  useFileManagerActionForEnvironment,
+} from "~/fileManagerReveal";
 
 import { createFileTreeDragMentionController } from "./fileTreeDragMention";
 import { areAllDirectoriesExpanded, setAllDirectoriesExpanded } from "./fileTreeExpansion";
@@ -208,26 +208,7 @@ export default function FileBrowserPanel({
       if (clicked === "reveal-in-file-manager" && revealAction !== null) {
         const targetPath = fileBrowserEntryTargetPath(cwd, relativePath);
         const failureTitle = `Unable to reveal ${item.kind === "directory" ? "folder" : "file"}`;
-        try {
-          const result = await revealAction.run(targetPath);
-          if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
-          const error = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: failureTitle,
-              description: error instanceof Error ? error.message : "An error occurred.",
-            }),
-          );
-        } catch (cause) {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: failureTitle,
-              description: cause instanceof Error ? cause.message : "An error occurred.",
-            }),
-          );
-        }
+        await runFileManagerPath(revealAction.run, targetPath, failureTitle);
       }
     } finally {
       context.close();

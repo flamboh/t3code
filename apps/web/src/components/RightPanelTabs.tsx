@@ -12,10 +12,6 @@ import type {
   ProjectId,
   PullRequestState,
 } from "@t3tools/contracts";
-import {
-  isAtomCommandInterrupted,
-  squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import {
   Bot,
@@ -70,8 +66,11 @@ import { faviconUrlForOrigin } from "~/lib/favicon";
 import { useTheme } from "~/hooks/useTheme";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
-import { resolveLiteralFilePath, useFileManagerActionForEnvironment } from "~/fileManagerReveal";
-import { stackedThreadToast, toastManager } from "~/components/ui/toast";
+import {
+  resolveLiteralFilePath,
+  runFileManagerPath,
+  useFileManagerActionForEnvironment,
+} from "~/fileManagerReveal";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 
 import { PreviewPanelShell, type PreviewPanelMode } from "./preview/PreviewPanelShell";
@@ -1036,26 +1035,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             revealAction !== null
           ) {
             const targetPath = resolveLiteralFilePath(surface.relativePath, props.workspaceRoot);
-            try {
-              const result = await revealAction.run(targetPath);
-              if (result._tag === "Success" || isAtomCommandInterrupted(result)) break;
-              const error = squashAtomCommandFailure(result);
-              toastManager.add(
-                stackedThreadToast({
-                  type: "error",
-                  title: "Unable to reveal file",
-                  description: error instanceof Error ? error.message : "An error occurred.",
-                }),
-              );
-            } catch (cause) {
-              toastManager.add(
-                stackedThreadToast({
-                  type: "error",
-                  title: "Unable to reveal file",
-                  description: cause instanceof Error ? cause.message : "An error occurred.",
-                }),
-              );
-            }
+            await runFileManagerPath(revealAction.run, targetPath, "Unable to reveal file");
           }
           break;
         case "toggle-mute": {

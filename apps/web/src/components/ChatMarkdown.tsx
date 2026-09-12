@@ -125,7 +125,7 @@ import { HighlightedCodeLines } from "./chat/HighlightedCodeLines";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { useTheme } from "../hooks/useTheme";
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
-import { useFileManagerActionForEnvironment } from "../fileManagerReveal";
+import { runFileManagerPath, useFileManagerActionForEnvironment } from "../fileManagerReveal";
 import {
   chatMarkdownClipboardPayload,
   serializeTableElementToCsv,
@@ -1912,38 +1912,16 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
     if (!onReveal) {
       return;
     }
-    void (async () => {
-      try {
-        const result = await onReveal();
-        if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
-          return;
-        }
-        reportMarkdownActionFailure(
-          { operation: "reveal-file-in-file-manager", target: targetPath },
-          result.cause,
-        );
-        const error = squashAtomCommandFailure(result);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Unable to reveal file",
-            description: error instanceof Error ? error.message : "An error occurred.",
-          }),
-        );
-      } catch (cause) {
+    void runFileManagerPath(
+      () => onReveal(),
+      targetPath,
+      "Unable to reveal file",
+      (cause) =>
         reportMarkdownActionFailure(
           { operation: "reveal-file-in-file-manager", target: targetPath },
           cause,
-        );
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Unable to reveal file",
-            description: cause instanceof Error ? cause.message : "An error occurred.",
-          }),
-        );
-      }
-    })();
+        ),
+    );
   }, [onReveal, targetPath]);
 
   const handleCopy = useCallback(

@@ -3,6 +3,7 @@ import type { EnvironmentPresentation } from "@t3tools/client-runtime/connection
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
+  type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ServerConfig } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
@@ -35,19 +36,23 @@ interface FileManagerOpenAction {
   readonly run: (targetPath: string) => Promise<FileManagerActionResult>;
 }
 
+type FileManagerPathRun = (targetPath: string) => Promise<AtomCommandResult<unknown, unknown>>;
+
 export interface FileManagerAction {
   readonly open: FileManagerOpenAction;
   readonly reveal: FileManagerRevealAction | null;
 }
 
-export async function openFileManagerPath(
-  action: FileManagerAction,
+export async function runFileManagerPath(
+  run: FileManagerPathRun,
   targetPath: string,
   failureTitle: string,
+  onFailure?: (cause: unknown) => void,
 ): Promise<void> {
   try {
-    const result = await action.open.run(targetPath);
+    const result = await run(targetPath);
     if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
+    onFailure?.(result.cause);
     const error = squashAtomCommandFailure(result);
     toastManager.add(
       stackedThreadToast({
@@ -57,6 +62,7 @@ export async function openFileManagerPath(
       }),
     );
   } catch (cause) {
+    onFailure?.(cause);
     toastManager.add(
       stackedThreadToast({
         type: "error",
@@ -65,6 +71,14 @@ export async function openFileManagerPath(
       }),
     );
   }
+}
+
+export function openFileManagerPath(
+  action: FileManagerAction,
+  targetPath: string,
+  failureTitle: string,
+): Promise<void> {
+  return runFileManagerPath(action.open.run, targetPath, failureTitle);
 }
 
 function isAbsoluteFilePath(path: string): boolean {
