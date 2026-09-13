@@ -180,7 +180,7 @@ function presentation(
           wsBaseUrl: "ws://127.0.0.1",
         });
   return {
-    entry: { target, profile: Option.none() },
+    entry: { target, profile: Option.none(), enabled: true },
     serverConfig: {
       availableEditors: input.availableEditors ?? ["file-manager"],
       environment: { platform: { os: input.os ?? "darwin" } },
