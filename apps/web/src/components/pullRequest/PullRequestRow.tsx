@@ -118,13 +118,17 @@ function PullRequestRowImpl({
           not a row is blocked. The background fill cuts it out of the glyph beneath. */}
       <span className="relative inline-flex shrink-0">
         <PullRequestStateGlyph state={entry.state} isDraft={entry.isDraft} />
-        <PullRequestConflictGlyph
-          state={entry.state}
-          isDraft={entry.isDraft}
-          mergeability={entry.mergeability}
-          baseBranch={entry.baseBranch}
-          className="absolute -right-1 -bottom-1 size-3 fill-background [stroke-width:2.5]"
-        />
+        {/* The wrapper takes the offset, not the icon, so the tooltip trigger inside keeps the
+            badge's size and anchors the popup to it. */}
+        <span className="absolute -right-1 -bottom-1 inline-flex">
+          <PullRequestConflictGlyph
+            state={entry.state}
+            isDraft={entry.isDraft}
+            mergeability={entry.mergeability}
+            baseBranch={entry.baseBranch}
+            className="size-3 fill-background [stroke-width:2.5]"
+          />
+        </span>
       </span>
       <span className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5">
         <span className="col-start-1 row-start-1 block truncate text-sm font-medium text-foreground">
