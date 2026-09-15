@@ -113,13 +113,17 @@ function PullRequestRowImpl({
         selected ? "bg-accent" : "hover:bg-accent/60",
       )}
     >
-      <span className="flex shrink-0 items-center gap-1">
+      {/* The conflict warning rides the corner of the lifecycle glyph, over the arrow's
+          merge circle, so the leading slot stays one icon wide and titles line up whether or
+          not a row is blocked. The background fill cuts it out of the glyph beneath. */}
+      <span className="relative inline-flex shrink-0">
         <PullRequestStateGlyph state={entry.state} isDraft={entry.isDraft} />
         <PullRequestConflictGlyph
           state={entry.state}
           isDraft={entry.isDraft}
           mergeability={entry.mergeability}
           baseBranch={entry.baseBranch}
+          className="absolute -right-1 -bottom-1 size-3 fill-background [stroke-width:2.5]"
         />
       </span>
       <span className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5">
