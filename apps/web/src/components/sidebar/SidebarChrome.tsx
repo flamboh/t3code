@@ -1,6 +1,6 @@
 import { ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { memo, useCallback, useLayoutEffect, useRef } from "react";
+import { createContext, memo, use, useCallback, useLayoutEffect, useRef } from "react";
 import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
@@ -30,11 +30,15 @@ import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 
+// Sheet headers render through a portal, so they cannot inherit SidebarProvider's layout inset.
+export const SidebarWindowControlsContext = createContext(false);
+
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
 }: {
   isElectron: boolean;
 }) {
+  const reserveWindowControls = use(SidebarWindowControlsContext);
   const stageLabel = useEnvironmentStageLabel();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
   const backdropVariant = resolveSidebarStageBackdropVariant(
@@ -49,8 +53,9 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   return (
     <SidebarHeader
       className={cn(
-        "@container/sidebar-header relative h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center px-3 py-0 md:px-0",
+        "@container/sidebar-header relative h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center px-3 py-0 md:pl-0",
         isElectron && "drag-region",
+        reserveWindowControls && "max-md:pl-[var(--desktop-window-controls-inset,90px)]",
       )}
     >
       {backdropVariant ? <SidebarStageBackdrop variant={backdropVariant} /> : null}
@@ -66,7 +71,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
       <div className="flex h-7 min-w-0 flex-1 flex-wrap content-start items-center gap-x-2 gap-y-0 overflow-hidden">
         <SidebarBrand onBackdrop={backdropVariant !== null} />
         {pillLabel ? (
-          <div className="ml-1 hidden h-7 shrink-0 items-center @[15rem]/sidebar-header:flex md:flex">
+          <div className="ml-1 flex h-7 shrink-0 items-center">
             <Badge
               className="relative z-10 rounded-full px-1.5 text-muted-foreground"
               data-environment-identification="pill"
@@ -119,13 +124,19 @@ export function SidebarChromeIntrinsicWidthProbe({
 }
 
 function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
+  const { isMobile, setOpenMobile } = useSidebar();
+  const closeMobileSidebar = useCallback(() => {
+    if (isMobile) setOpenMobile(false);
+  }, [isMobile, setOpenMobile]);
+
   return (
     <Link
       aria-label="Go to threads"
       className={cn(
-        "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 focus-visible:ring-inset md:flex [flex-basis:max-content]",
+        "relative z-10 flex h-7 w-fit min-w-0 shrink items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 focus-visible:ring-inset md:ml-[var(--workspace-titlebar-content-left)] [flex-basis:max-content]",
         onBackdrop ? "text-white" : "text-foreground",
       )}
+      onClick={closeMobileSidebar}
       to="/"
     >
       <span className="flex h-7 min-w-0 flex-wrap content-start gap-1 overflow-hidden text-sm font-medium tracking-tight">
