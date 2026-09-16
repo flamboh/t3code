@@ -55,6 +55,7 @@ import {
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
 } from "../../components/desktopUpdate.logic";
+import { BUILD_PILL_PREVIEW_LABELS, useBuildPillPreview } from "../../buildPillPreview";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import {
@@ -1328,6 +1329,11 @@ export function AppearanceSettingsPanel() {
             }
           />
         ) : null}
+        {import.meta.env.DEV && showEnvironmentIdentification ? (
+          <DevBuildPillPreviewRow
+            pillModeSelected={settings.environmentIdentificationMode === "pill"}
+          />
+        ) : null}
         <SettingsRow
           {...searchableSetting("diff-color-scheme")}
           description="Choose colors for additions and deletions, including change counts."
@@ -1432,6 +1438,54 @@ export function AppearanceSettingsPanel() {
 
       <TypographySection />
     </SettingsPageContainer>
+  );
+}
+
+function DevBuildPillPreviewRow({ pillModeSelected }: { pillModeSelected: boolean }) {
+  const [buildPillPreview, setBuildPillPreview] = useBuildPillPreview();
+
+  return (
+    <SettingsRow
+      title="Build pill preview"
+      description={
+        pillModeSelected
+          ? "Preview the Dev or Nightly version pill in the sidebar."
+          : "Only affects the version pill; choose Version pill above to show it."
+      }
+      resetAction={
+        buildPillPreview !== "automatic" ? (
+          <SettingResetButton
+            label="build pill preview"
+            onClick={() => setBuildPillPreview("automatic")}
+          />
+        ) : null
+      }
+      control={
+        <Select
+          value={buildPillPreview}
+          onValueChange={(value) => {
+            if (value === "automatic" || value === "dev" || value === "nightly") {
+              setBuildPillPreview(value);
+            }
+          }}
+        >
+          <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Build pill preview">
+            <SelectValue>{BUILD_PILL_PREVIEW_LABELS[buildPillPreview]}</SelectValue>
+          </SelectTrigger>
+          <SelectPopup align="end" alignItemWithTrigger={false}>
+            <SelectItem hideIndicator value="automatic">
+              Automatic
+            </SelectItem>
+            <SelectItem hideIndicator value="dev">
+              Dev
+            </SelectItem>
+            <SelectItem hideIndicator value="nightly">
+              Nightly
+            </SelectItem>
+          </SelectPopup>
+        </Select>
+      }
+    />
   );
 }
 
