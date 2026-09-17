@@ -8,7 +8,7 @@ import {
 import type { EnvironmentId, ServerConfig } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
 import * as Option from "effect/Option";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 
 import { resolveRemoteOpenState } from "./remoteOpen";
 import {
@@ -71,6 +71,14 @@ export async function runFileManagerPath(
       }),
     );
   }
+}
+
+export function openFileManagerPath(
+  action: FileManagerAction,
+  targetPath: string,
+  failureTitle: string,
+): Promise<void> {
+  return runFileManagerPath(action.open.run, targetPath, failureTitle);
 }
 
 function isAbsoluteFilePath(path: string): boolean {
@@ -283,5 +291,27 @@ export function useFileManagerActionForEnvironment(
         ? null
         : createFileManagerAction(environmentId, openManagerName, revealManagerName, openInEditor),
     [environmentId, openInEditor, openManagerName, revealManagerName],
+  );
+}
+
+export function useFileManagerAction(): (environmentId: EnvironmentId) => FileManagerAction | null {
+  const presentations = useAtomValue(environmentPresentations.presentationsAtom);
+  const openInEditor = useAtomCommand(shellEnvironment.openInEditor, {
+    reportFailure: false,
+  });
+  const actionsByEnvironment = useMemo(() => {
+    const actions = new Map<EnvironmentId, FileManagerAction | null>();
+    for (const [environmentId, presentation] of presentations ?? []) {
+      actions.set(
+        environmentId,
+        fileManagerActionForPresentation(environmentId, presentation, openInEditor),
+      );
+    }
+    return actions;
+  }, [openInEditor, presentations]);
+
+  return useCallback(
+    (environmentId: EnvironmentId) => actionsByEnvironment.get(environmentId) ?? null,
+    [actionsByEnvironment],
   );
 }
