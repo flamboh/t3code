@@ -14,14 +14,12 @@ export function revealInFileExplorerLabel(platform: string): string {
   return "Reveal in Files";
 }
 
-/** Environment-backed open names use the server's reported OS. */
 export function fileManagerOpenNameForOs(os: ExecutionEnvironmentPlatformOs): FileManagerOpenName {
   if (os === "darwin") return "Finder";
   if (os === "windows") return "File Explorer";
   return "File Manager";
 }
 
-/** Environment-backed names use the server's reported OS rather than the navigator platform. */
 export function fileManagerRevealNameForOs(
   os: ExecutionEnvironmentPlatformOs,
 ): FileManagerRevealName {
@@ -30,7 +28,6 @@ export function fileManagerRevealNameForOs(
   return "Files";
 }
 
-/** Server-selected file-manager name, including Windows File Explorer reached from WSL. */
 export function fileManagerRevealNameForKind(kind: FileManagerRevealKind): FileManagerRevealName {
   if (kind === "finder") return "Finder";
   if (kind === "file-explorer") return "File Explorer";

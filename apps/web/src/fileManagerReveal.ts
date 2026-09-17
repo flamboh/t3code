@@ -92,14 +92,12 @@ function windowsVolumeRootForWorkspaceRoot(workspaceRoot: string): string | null
   if (drive !== null) return drive[1] ?? null;
 
   if (!normalizedRoot.startsWith("\\\\")) return null;
-  // `\\?\UNC\server\share` is the extended-length form; its volume root keeps the prefix.
   const extendedUnc = /^\\\\\?\\UNC\\([^\\]+)\\([^\\]+)/i.exec(normalizedRoot);
   if (extendedUnc !== null) return `\\\\?\\UNC\\${extendedUnc[1]}\\${extendedUnc[2]}`;
   const [server, share] = normalizedRoot.slice(2).split("\\");
   return server && share ? `\\\\${server}\\${share}` : null;
 }
 
-/** Resolves a literal file-tree path without interpreting terminal-link syntax. */
 export function resolveLiteralFilePath(path: string, workspaceRoot: string): string {
   const windowsVolumeRoot = windowsVolumeRootForWorkspaceRoot(workspaceRoot);
   if (
