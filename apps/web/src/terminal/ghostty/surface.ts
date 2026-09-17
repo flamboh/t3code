@@ -257,7 +257,6 @@ export function createTerminalLinkPinController(onChange?: () => void) {
       return pinned;
     },
     pin(link: TerminalLinkWithRange | null, pending: Promise<void> | void): void {
-      // A right-click away from any link supersedes a pin whose menu is still open.
       if (link === null) {
         request++;
         if (pinned !== null) {
@@ -1861,8 +1860,6 @@ export class GhosttyTerminalSurface {
       return;
     }
     this.snapshot = this.core.snapshot();
-    // A pinned link is a viewport range: once new output or scrolling moves
-    // other text under it, the highlight would land on the wrong cells.
     const pinned = this.linkPinController.pinned;
     if (pinned !== null && !isSameTerminalLink(pinned, this.linkAtCell(pinned.range.start))) {
       this.linkPinController.clear();

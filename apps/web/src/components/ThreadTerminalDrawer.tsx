@@ -270,7 +270,6 @@ export type TerminalContextMenuAction =
 
 export function terminalLinkChatText(text: string, cwd: string): string {
   if (isTerminalUrl(text)) return text;
-  // Trim trailing separators, but keep the one that makes `C:\` a volume root.
   const path = splitFilePathPosition(text).path.replace(/(?<!^[A-Za-z]:)[\\/]+$/, "") || "/";
   const target = resolvePathLinkTarget(path, cwd);
   return target.endsWith("/") ? target : serializeComposerFileLink(target);
@@ -304,7 +303,6 @@ export function terminalContextMenuItems(options: {
   link?: {
     text: string;
     canOpenPreview?: boolean;
-    /** Whether a chat composer can take the link; defaults to `canAddToChat`. */
     canAddToChat?: boolean;
     editorLabel?: string;
     revealLabel?: string;

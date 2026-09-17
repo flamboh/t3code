@@ -105,7 +105,6 @@ function isWindowsPathStyle(value: string): boolean {
   return isWindowsAbsolutePath(value) || /[A-Za-z]:\\/.test(value);
 }
 
-/** `C:` for a drive path, `\\\\server\\share` for a UNC path, else nothing. */
 function windowsVolumeRoot(cwd: string): string | null {
   const normalized = cwd.replaceAll("/", "\\");
   const drive = /^([A-Za-z]:)(?:\\|$)/.exec(normalized);
@@ -221,8 +220,6 @@ export function resolvePathLinkTarget(rawPath: string, cwd: string): string {
       resolvedPath = joinPath(home, path.slice(2), separator);
     }
   } else if (isWindowsPathStyle(cwd) && /^[\\/](?![\\/])/.test(path)) {
-    // A root-relative `/foo` in a Windows shell belongs to the cwd's volume,
-    // otherwise it lands on whatever drive the file manager or editor is on.
     const volumeRoot = windowsVolumeRoot(cwd);
     if (volumeRoot) resolvedPath = joinPath(volumeRoot, path.replace(/^[\\/]+/, ""), "\\");
   } else if (!isAbsolutePath(path)) {
