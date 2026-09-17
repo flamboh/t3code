@@ -24,11 +24,7 @@ import {
 import LegacyThreadSidebar from "./LegacySidebar";
 import ThreadSidebar from "./Sidebar";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
-import {
-  SidebarChromeHeader,
-  SidebarChromeIntrinsicWidthProbe,
-  SidebarWindowControlsContext,
-} from "./sidebar/SidebarChrome";
+import { SidebarChromeHeader, SidebarChromeIntrinsicWidthProbe } from "./sidebar/SidebarChrome";
 import {
   resolveSidebarStageFocusRingOffsetClass,
   useSidebarStageBackdropVariant,
@@ -167,7 +163,10 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   // and a clamped drag ends with an unchanged width, which skips the re-render
   // that would otherwise refresh a render-time snapshot.
   const viewportWidth = useSyncExternalStore(subscribeToViewportWidth, readViewportWidth);
-  const sidebarMaximumWidth = resolveThreadSidebarMaximumWidth(viewportWidth, sidebarMinimumWidth);
+  const sidebarMaximumWidth = Math.max(
+    sidebarMinimumWidth,
+    resolveThreadSidebarMaximumWidth(viewportWidth),
+  );
   const renderedSidebarWidth = Math.min(
     sidebarMaximumWidth,
     Math.max(sidebarMinimumWidth, sidebarWidth),
@@ -178,7 +177,9 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error("Could not clear persisted thread sidebar width.", error);
     }
-    setSidebarWidth(resolveInitialThreadSidebarWidth(null, viewportWidth, sidebarMinimumWidth));
+    setSidebarWidth(
+      Math.max(sidebarMinimumWidth, resolveInitialThreadSidebarWidth(null, viewportWidth)),
+    );
   };
   const [isWindowFullscreen, setIsWindowFullscreen] = useState(() => {
     const getWindowFullscreenState = window.desktopBridge?.getWindowFullscreenState;
@@ -243,35 +244,39 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           <SidebarChromeIntrinsicWidthProbe onWidthChange={updateSidebarMinimumWidth} />
         ) : null}
         <ProjectProjectionRetention />
-        <SidebarWindowControlsContext value={isMacosDesktop && !isWindowFullscreen}>
-          <Sidebar
-            side="left"
-            collapsible="offcanvas"
-            data-app-sidebar=""
-            className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
-            resizable={{
-              maxWidth: sidebarMaximumWidth,
-              minWidth: sidebarMinimumWidth,
-              shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
-                nextWidth <= currentWidth ||
-                wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
-              storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
-              onResize: setSidebarWidth,
-            }}
-          >
-            {isOnSettings ? (
-              <>
-                <SidebarChromeHeader isElectron={isElectron} />
-                <SettingsSidebarNav pathname={pathname} />
-              </>
-            ) : legacySidebarEnabled ? (
-              <LegacyThreadSidebar />
-            ) : (
-              <ThreadSidebar />
-            )}
-            <SidebarRail onDoubleClick={resetSidebarWidth} />
-          </Sidebar>
-        </SidebarWindowControlsContext>
+        {/* The drawer is portaled, so its header inset must be set on the popup. */}
+        <Sidebar
+          side="left"
+          collapsible="offcanvas"
+          data-app-sidebar=""
+          className={cn(
+            "border-r border-sidebar-border bg-sidebar text-sidebar-foreground",
+            isMacosDesktop &&
+              !isWindowFullscreen &&
+              "[--sidebar-drawer-controls-inset:var(--desktop-window-controls-inset,90px)]",
+          )}
+          resizable={{
+            maxWidth: sidebarMaximumWidth,
+            minWidth: sidebarMinimumWidth,
+            shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
+              nextWidth <= currentWidth ||
+              wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
+            storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
+            onResize: setSidebarWidth,
+          }}
+        >
+          {isOnSettings ? (
+            <>
+              <SidebarChromeHeader isElectron={isElectron} />
+              <SettingsSidebarNav pathname={pathname} />
+            </>
+          ) : legacySidebarEnabled ? (
+            <LegacyThreadSidebar />
+          ) : (
+            <ThreadSidebar />
+          )}
+          <SidebarRail onDoubleClick={resetSidebarWidth} />
+        </Sidebar>
         {children}
         <SidebarControl />
       </SidebarProvider>
