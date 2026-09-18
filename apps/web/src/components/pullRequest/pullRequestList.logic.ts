@@ -1034,11 +1034,6 @@ export function rankPullRequestsByMergeReadiness<Entry extends PullRequestListEn
   });
 }
 
-/**
- * Rows in tier order, newest activity first inside each tier. Recent work is what the reader has
- * in their head, so the row they just pushed outranks a month-old one in the same trouble; the
- * Oldest sort is there for the forgotten ones. Rows with no readable timestamp trail their tier.
- */
 function rankByTierThenRecency<Entry extends PullRequestListEntry>(
   entries: ReadonlyArray<Entry>,
   tier: (entry: Entry) => number,
@@ -1056,15 +1051,6 @@ function rankByTierThenRecency<Entry extends PullRequestListEntry>(
   });
 }
 
-/**
- * The contributor's queue over their own work, most certainly theirs to unblock first: a conflict
- * only they can resolve, then a reviewer's request for changes, then a red check (which may yet
- * be flaky), then their drafts, then what is waiting on someone else, then what is approved and
- * green. That last tier is nobody's blocker — and whether the reader may merge it is not
- * something a row knows — so a reader hunting for it wants "Merge readiness" instead. A host that
- * reports no verdict or check rollup lands in the waiting tier rather than a fixing one. Finished
- * work follows everything open.
- */
 export function rankPullRequestsBlockedOnAuthor<Entry extends PullRequestListEntry>(
   entries: ReadonlyArray<Entry>,
 ): ReadonlyArray<Entry> {
@@ -1079,21 +1065,13 @@ export function rankPullRequestsBlockedOnAuthor<Entry extends PullRequestListEnt
   });
 }
 
-/**
- * The reviewer's queue over reviews asked of them: every open request, newest activity first,
- * then finished work.
- */
 export function rankPullRequestsBlockedOnReviewer<Entry extends PullRequestListEntry>(
   entries: ReadonlyArray<Entry>,
 ): ReadonlyArray<Entry> {
   return rankByTierThenRecency(entries, (entry) => (entry.state === "open" ? 0 : 1));
 }
 
-/**
- * Keeps authored work first while applying the selected ordering inside every involvement group.
- * "Blocked on me" ranks each group by the reader's role in it, and reads that role off
- * `involvement` when the page has collapsed to a single unlabeled group.
- */
+/** Keeps authored work first while applying the selected ordering inside every involvement group. */
 export function sortPullRequestGroups<Entry extends PullRequestListEntry>(
   groups: ReadonlyArray<PullRequestGroup<Entry>>,
   sort: PullRequestListSort,
@@ -1111,8 +1089,6 @@ export function sortPullRequestGroups<Entry extends PullRequestListEntry>(
   }
   if (sort === "blocked") {
     if (searchText.trim().length > 0) return groups;
-    // The reader's role in a group: its own key, or the involvement filter for the lone
-    // unlabeled group the page shows when one involvement is selected.
     const role = (key: PullRequestGroupKey) =>
       key === "others" ? involvement : key === "authored" ? "authored" : "reviewing";
     return groups.map((group) => {
