@@ -1111,15 +1111,18 @@ export function sortPullRequestGroups<Entry extends PullRequestListEntry>(
   }
   if (sort === "blocked") {
     if (searchText.trim().length > 0) return groups;
+    // The reader's role in a group: its own key, or the involvement filter for the lone
+    // unlabeled group the page shows when one involvement is selected.
+    const role = (key: PullRequestGroupKey) =>
+      key === "others" ? involvement : key === "authored" ? "authored" : "reviewing";
     return groups.map((group) => {
+      const groupRole = role(group.key);
+      if (groupRole === "all") return group;
       const rank =
-        group.key === "authored" || (group.key === "others" && involvement === "authored")
+        groupRole === "authored"
           ? rankPullRequestsBlockedOnAuthor
-          : group.key === "reviewRequested" ||
-              (group.key === "others" && involvement === "reviewing")
-            ? rankPullRequestsBlockedOnReviewer
-            : undefined;
-      return rank === undefined ? group : { ...group, entries: rank(group.entries) };
+          : rankPullRequestsBlockedOnReviewer;
+      return { ...group, entries: rank(group.entries) };
     });
   }
   if (sort === "updated") return groups;

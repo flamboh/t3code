@@ -21,7 +21,6 @@ import {
   ChevronDownIcon,
   ClockIcon,
   EyeIcon,
-  UserLockIcon,
   LayersIcon,
   ListChecksIcon,
   PenLineIcon,
@@ -29,6 +28,7 @@ import {
   Maximize2Icon,
   Minimize2Icon,
   SearchIcon,
+  UserLockIcon,
 } from "lucide-react";
 import {
   useCallback,
