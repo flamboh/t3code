@@ -1034,12 +1034,72 @@ export function rankPullRequestsByMergeReadiness<Entry extends PullRequestListEn
   });
 }
 
-/** Keeps authored work first while applying the selected ordering inside every involvement group. */
+/**
+ * Rows in tier order, newest activity first inside each tier. Recent work is what the reader has
+ * in their head, so the row they just pushed outranks a month-old one in the same trouble; the
+ * Oldest sort is there for the forgotten ones. Rows with no readable timestamp trail their tier.
+ */
+function rankByTierThenRecency<Entry extends PullRequestListEntry>(
+  entries: ReadonlyArray<Entry>,
+  tier: (entry: Entry) => number,
+): ReadonlyArray<Entry> {
+  const timestamp = (entry: Entry) => toSortableTimestamp(entry.updatedAt);
+  return entries.toSorted((left, right) => {
+    const byTier = tier(left) - tier(right);
+    if (byTier !== 0) return byTier;
+    const leftUpdated = timestamp(left);
+    const rightUpdated = timestamp(right);
+    const measured = Number(leftUpdated === null) - Number(rightUpdated === null);
+    if (measured !== 0) return measured;
+    if (leftUpdated === null || rightUpdated === null) return 0;
+    return rightUpdated - leftUpdated;
+  });
+}
+
+/**
+ * The contributor's queue over their own work, most certainly theirs to unblock first: a conflict
+ * only they can resolve, then a reviewer's request for changes, then a red check (which may yet
+ * be flaky), then their drafts, then what is waiting on someone else, then what is approved and
+ * green. That last tier is nobody's blocker — and whether the reader may merge it is not
+ * something a row knows — so a reader hunting for it wants "Merge readiness" instead. A host that
+ * reports no verdict or check rollup lands in the waiting tier rather than a fixing one. Finished
+ * work follows everything open.
+ */
+export function rankPullRequestsBlockedOnAuthor<Entry extends PullRequestListEntry>(
+  entries: ReadonlyArray<Entry>,
+): ReadonlyArray<Entry> {
+  return rankByTierThenRecency(entries, (entry) => {
+    if (entry.state !== "open") return 6;
+    if (entry.mergeability === "conflicting") return 0;
+    if (entry.reviewDecision === "changes-requested") return 1;
+    if (entry.checksState === "failing") return 2;
+    if (entry.isDraft) return 3;
+    if (entry.checksState === "passing" && entry.reviewDecision === "approved") return 5;
+    return 4;
+  });
+}
+
+/**
+ * The reviewer's queue over reviews asked of them: every open request, newest activity first,
+ * then finished work.
+ */
+export function rankPullRequestsBlockedOnReviewer<Entry extends PullRequestListEntry>(
+  entries: ReadonlyArray<Entry>,
+): ReadonlyArray<Entry> {
+  return rankByTierThenRecency(entries, (entry) => (entry.state === "open" ? 0 : 1));
+}
+
+/**
+ * Keeps authored work first while applying the selected ordering inside every involvement group.
+ * "Blocked on me" ranks each group by the reader's role in it, and reads that role off
+ * `involvement` when the page has collapsed to a single unlabeled group.
+ */
 export function sortPullRequestGroups<Entry extends PullRequestListEntry>(
   groups: ReadonlyArray<PullRequestGroup<Entry>>,
   sort: PullRequestListSort,
   searchText: string,
   hasMeasuredSize: (entry: Entry) => boolean = (entry) => entry.additions + entry.deletions > 0,
+  involvement: PullRequestInvolvement = "all",
 ): ReadonlyArray<PullRequestGroup<Entry>> {
   const sortWithinGroups = (rank: (entries: ReadonlyArray<Entry>) => ReadonlyArray<Entry>) =>
     groups.map((group) => ({ ...group, entries: rank(group.entries) }));
@@ -1048,6 +1108,19 @@ export function sortPullRequestGroups<Entry extends PullRequestListEntry>(
     return searchText.trim().length === 0
       ? sortWithinGroups((entries) => rankPullRequestsByMergeReadiness(entries, hasMeasuredSize))
       : groups;
+  }
+  if (sort === "blocked") {
+    if (searchText.trim().length > 0) return groups;
+    return groups.map((group) => {
+      const rank =
+        group.key === "authored" || (group.key === "others" && involvement === "authored")
+          ? rankPullRequestsBlockedOnAuthor
+          : group.key === "reviewRequested" ||
+              (group.key === "others" && involvement === "reviewing")
+            ? rankPullRequestsBlockedOnReviewer
+            : undefined;
+      return rank === undefined ? group : { ...group, entries: rank(group.entries) };
+    });
   }
   if (sort === "updated") return groups;
 
