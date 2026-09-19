@@ -149,8 +149,8 @@ import {
   PULL_REQUEST_MERGE_METHOD_LABELS,
   readableFailure,
   readPullRequestDetailSnapshot,
-  resolvePullRequestReferenceHost,
   resolveDisplayedPullRequestDetail,
+  resolvePullRequestPanelReferences,
   resolvePullRequestPrimaryControl,
   allowsSinglePullRequestMerge,
   resolveBaseFreshness,
@@ -532,24 +532,22 @@ export function PullRequestDetailPanel({
   )?.repositoryIdentity;
   const supportsThreadPullRequests =
     environmentConfigs.get(environmentId)?.environment.capabilities.threadPullRequests === true;
-  const reference = useMemo(
+  const { reference, cacheReference } = useMemo(
     () =>
-      supportsThreadPullRequests
-        ? resolvePullRequestReferenceHost(requestedReference, repositoryIdentity)
-        : {
-            projectId: requestedReference.projectId,
-            repository: requestedReference.repository,
-            number: requestedReference.number,
-          },
+      resolvePullRequestPanelReferences(
+        requestedReference,
+        repositoryIdentity,
+        supportsThreadPullRequests,
+      ),
     [requestedReference, repositoryIdentity, supportsThreadPullRequests],
   );
-  const pullRequestKey = `${reference.projectId}:${reference.host ?? ""}:${reference.repository}#${reference.number}`;
+  const pullRequestKey = `${cacheReference.projectId}:${cacheReference.host ?? ""}:${cacheReference.repository}#${cacheReference.number}`;
   const matchingListEntry =
-    listEntry?.projectId === reference.projectId &&
-    listEntry.repository.toLowerCase() === reference.repository.toLowerCase() &&
-    (reference.host === undefined ||
-      listEntry.host.toLowerCase() === reference.host.toLowerCase()) &&
-    listEntry.number === reference.number
+    listEntry?.projectId === cacheReference.projectId &&
+    listEntry.repository.toLowerCase() === cacheReference.repository.toLowerCase() &&
+    (cacheReference.host === undefined ||
+      listEntry.host.toLowerCase() === cacheReference.host.toLowerCase()) &&
+    listEntry.number === cacheReference.number
       ? listEntry
       : null;
   const [threadPickerOpen, setThreadPickerOpen] = useState(false);
@@ -648,7 +646,7 @@ export function PullRequestDetailPanel({
     readPullRequestDetailSnapshot(
       typeof window === "undefined" ? undefined : window.localStorage,
       environmentId,
-      reference,
+      cacheReference,
     ),
   );
   useEffect(() => {
@@ -656,16 +654,22 @@ export function PullRequestDetailPanel({
       readPullRequestDetailSnapshot(
         typeof window === "undefined" ? undefined : window.localStorage,
         environmentId,
-        reference,
+        cacheReference,
       ),
     );
-  }, [environmentId, pullRequestKey, reference.projectId, reference.repository, reference.number]);
+  }, [
+    environmentId,
+    pullRequestKey,
+    cacheReference.projectId,
+    cacheReference.repository,
+    cacheReference.number,
+  ]);
   useEffect(() => {
     if (detailQuery.data === null) return;
     writePullRequestDetailSnapshot(
       typeof window === "undefined" ? undefined : window.localStorage,
       environmentId,
-      reference,
+      cacheReference,
       detailQuery.data,
     );
     setCachedDetail(detailQuery.data);
@@ -673,14 +677,14 @@ export function PullRequestDetailPanel({
     detailQuery.data,
     environmentId,
     pullRequestKey,
-    reference.projectId,
-    reference.repository,
-    reference.number,
+    cacheReference.projectId,
+    cacheReference.repository,
+    cacheReference.number,
   ]);
   const resolvedCoreDetail = resolveDisplayedPullRequestDetail({
     live: detailQuery.data,
     cached: cachedDetail,
-    reference,
+    reference: cacheReference,
   });
   const listSummary = useMemo(
     () => (matchingListEntry === null ? null : pullRequestListEntryToSummary(matchingListEntry)),
@@ -688,7 +692,7 @@ export function PullRequestDetailPanel({
   );
   const observedSummary = useSharedPullRequestSummary(
     environmentId,
-    reference,
+    cacheReference,
     detailQuery.data,
     detailQuery.dataUpdatedAt,
   );

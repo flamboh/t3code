@@ -80,7 +80,14 @@ export function PullRequestDetailGhost({
   seed?: PullRequestListEntry | null;
   summary?: PullRequestSummary | null;
 }) {
-  const seed = summary ? { ...entry, ...summary } : entry;
+  const seed = summary
+    ? {
+        ...entry,
+        ...summary,
+        isDraft: summary.isDraft ?? entry?.isDraft,
+        mergeability: summary.mergeability ?? entry?.mergeability,
+      }
+    : entry;
   const statePresentation = seed
     ? resolvePullRequestState({
         state: seed.state,
@@ -90,13 +97,12 @@ export function PullRequestDetailGhost({
   const checksPresentation = seed?.checksState
     ? pullRequestChecksStatePresentation(seed.checksState)
     : null;
-  const conflictSource = summary ?? seed;
-  const conflictPresentation = conflictSource
+  const conflictPresentation = seed
     ? resolvePullRequestConflict({
-        state: conflictSource.state,
-        isDraft: conflictSource.isDraft ?? false,
-        mergeability: conflictSource.mergeability ?? "unknown",
-        baseBranch: conflictSource.baseBranch,
+        state: seed.state,
+        isDraft: seed.isDraft ?? false,
+        mergeability: seed.mergeability ?? "unknown",
+        baseBranch: seed.baseBranch,
       })
     : null;
 

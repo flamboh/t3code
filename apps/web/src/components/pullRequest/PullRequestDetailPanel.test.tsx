@@ -5,6 +5,7 @@ import {
   type ScopedThreadRef,
   type PullRequestDetailView,
   type PullRequestSummary,
+  type PullRequestListEntry,
   type ThreadPullRequestLink,
 } from "@t3tools/contracts";
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
@@ -343,10 +344,11 @@ describe.each([
 });
 
 describe("PR list status in the sidebar detail", () => {
-  const panel = () => (
+  const panel = (listEntry: PullRequestListEntry | null = null) => (
     <PullRequestDetailPanel
       environmentId={threadRef.environmentId}
       reference={detail}
+      listEntry={listEntry}
       shortcutsEnabled={false}
       getShortcutContext={() => ({
         terminalFocus: false,
@@ -370,6 +372,18 @@ describe("PR list status in the sidebar detail", () => {
     ).toHaveLength(1);
     expect(renderer.root.findAll((node) => node.children.includes(detail.title))).toHaveLength(1);
     expect(renderer.root.findAllByType("button")).toHaveLength(0);
+  });
+
+  it("keeps the list conflict when the shared summary omits mergeability", async () => {
+    loadedDetail = null;
+    observedSummary = { ...detail, mergeability: undefined, isDraft: undefined };
+    const row = { ...detail, host: "github.com", viewerReviewRequested: false };
+    await act(async () => {
+      renderer = create(panel(row));
+    });
+    expect(
+      renderer.root.findAll((node) => node.children.includes("Conflicts with main")),
+    ).toHaveLength(1);
   });
 
   it("uses the list conflict while an older detail snapshot is displayed", async () => {

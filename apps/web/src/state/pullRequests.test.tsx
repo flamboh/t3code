@@ -4,12 +4,15 @@ import {
   type PullRequestListEntry,
   type PullRequestListInput,
   type PullRequestListResult,
+  type PullRequestRef,
   type PullRequestSummary,
 } from "@t3tools/contracts";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { act, useLayoutEffect } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+
+import { resolvePullRequestPanelReferences } from "../components/pullRequest/pullRequestDetail.logic";
 
 import { appAtomRegistry, AppAtomRegistryProvider } from "../rpc/atomRegistry";
 import {
@@ -124,7 +127,7 @@ function SidebarProbe({
   observedAt,
 }: {
   environmentId: EnvironmentId;
-  reference: ReturnType<typeof reference>;
+  reference: PullRequestRef;
   current?: PullRequestSummary | null;
   observedAt?: number | null;
 }) {
@@ -169,6 +172,39 @@ describe("pull request summary cache", () => {
 
     expect(observed?.title).toBe(row.title);
     expect(observed?.mergeability).toBe("conflicting");
+  });
+
+  it("reuses host-scoped list summaries when a legacy server needs hostless requests", async () => {
+    const environmentId = EnvironmentId.make(`cache-${sequence++}`);
+    const publicRow = entry({ title: "Public PR" });
+    const enterpriseRow = entry({
+      host: "github.example.test",
+      url: "https://github.example.test/acme/widget/pull/7",
+      title: "Enterprise PR",
+      mergeability: "conflicting",
+    });
+    appAtomRegistry.set(
+      listAtomFor(environmentId),
+      AsyncResult.success(answer(publicRow, enterpriseRow), { timestamp: 200 }),
+    );
+    await mount(<ListProbe environmentIds={[environmentId]} />);
+
+    const legacy = resolvePullRequestPanelReferences(reference(enterpriseRow), null, false);
+    expect(legacy.reference).toEqual({
+      projectId,
+      repository: enterpriseRow.repository,
+      number: enterpriseRow.number,
+    });
+    await mount(<SidebarProbe environmentId={environmentId} reference={legacy.cacheReference} />);
+    expect(observed?.title).toBe("Enterprise PR");
+    expect(observed?.mergeability).toBe("conflicting");
+
+    const publicLegacy = resolvePullRequestPanelReferences(reference(publicRow), null, false);
+    await mount(
+      <SidebarProbe environmentId={environmentId} reference={publicLegacy.cacheReference} />,
+    );
+    expect(observed?.title).toBe("Public PR");
+    expect(observed?.mergeability).toBe("mergeable");
   });
 
   it("keeps environments and hosts isolated, then accepts a newer same-dated update", async () => {
