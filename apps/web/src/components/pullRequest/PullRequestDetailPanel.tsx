@@ -78,8 +78,13 @@ import { useProjects, useServerConfigs } from "~/state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
-import { pullRequestEnvironment } from "~/state/pullRequests";
-import { usePullRequestTurnRefresh, useSharedPullRequestSummary } from "~/state/pullRequests";
+import {
+  pullRequestEnvironment,
+  pullRequestListEntryToSummary,
+  newestPullRequestSummary,
+  usePullRequestTurnRefresh,
+  useSharedPullRequestSummary,
+} from "~/state/pullRequests";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { PullRequestStackMenu } from "./PullRequestStackMenu";
 import { PullRequestThreadLinks } from "./PullRequestThreadLinks";
@@ -542,6 +547,8 @@ export function PullRequestDetailPanel({
   const matchingListEntry =
     listEntry?.projectId === reference.projectId &&
     listEntry.repository.toLowerCase() === reference.repository.toLowerCase() &&
+    (reference.host === undefined ||
+      listEntry.host.toLowerCase() === reference.host.toLowerCase()) &&
     listEntry.number === reference.number
       ? listEntry
       : null;
@@ -675,14 +682,31 @@ export function PullRequestDetailPanel({
     cached: cachedDetail,
     reference,
   });
-  const sharedSummary = useSharedPullRequestSummary(environmentId, reference, resolvedCoreDetail);
+  const listSummary = useMemo(
+    () => (matchingListEntry === null ? null : pullRequestListEntryToSummary(matchingListEntry)),
+    [matchingListEntry],
+  );
+  const observedSummary = useSharedPullRequestSummary(
+    environmentId,
+    reference,
+    detailQuery.data,
+    detailQuery.dataUpdatedAt,
+  );
+  const sharedSummary = useMemo(
+    () => newestPullRequestSummary(resolvedCoreDetail, observedSummary ?? listSummary),
+    [resolvedCoreDetail, observedSummary, listSummary],
+  );
   const coreDetail = useMemo(
     () =>
       resolvedCoreDetail === null || sharedSummary === null || sharedSummary === resolvedCoreDetail
         ? resolvedCoreDetail
         : {
             ...resolvedCoreDetail,
-            ...sharedSummary,
+            title: sharedSummary.title,
+            state: sharedSummary.state,
+            headBranch: sharedSummary.headBranch,
+            baseBranch: sharedSummary.baseBranch,
+            updatedAt: sharedSummary.updatedAt,
             author: sharedSummary.author ?? resolvedCoreDetail.author,
             additions: sharedSummary.additions ?? resolvedCoreDetail.additions,
             deletions: sharedSummary.deletions ?? resolvedCoreDetail.deletions,
@@ -1512,7 +1536,7 @@ export function PullRequestDetailPanel({
   // The list already has the pull request's identity and summary. Keep them on screen
   // and let the richer detail read replace the remaining placeholders in place.
   if (detailQuery.isPending && !detail) {
-    return <PullRequestDetailGhost seed={matchingListEntry} />;
+    return <PullRequestDetailGhost seed={matchingListEntry} summary={sharedSummary} />;
   }
 
   return (
