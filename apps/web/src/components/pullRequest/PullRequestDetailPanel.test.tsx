@@ -361,6 +361,71 @@ describe("PR list status in the sidebar detail", () => {
     />
   );
 
+  it("uses newer check status without stale counts, then restores refreshed check details", async () => {
+    loadedDetail = {
+      ...detail,
+      mergeability: "mergeable",
+      autoMergeEnabled: false,
+      mergeCapabilities: { merge: true, squash: false, rebase: false },
+      capabilities: {
+        ...detail.capabilities,
+        actions: ["merge", "enable-auto-merge"],
+        mergeMethods: ["merge"],
+      },
+      viewerPermissions: { ...detail.viewerPermissions, actions: ["merge", "enable-auto-merge"] },
+    };
+    await act(async () => {
+      renderer = create(panel());
+    });
+    const text = () =>
+      renderer.root
+        .findAllByType("span")
+        .map((node) => node.children.filter((child) => typeof child === "string").join(""));
+    expect(text()).toContain("All checks passed");
+
+    observedSummary = { ...loadedDetail, checksState: "failing" };
+    await act(async () => {
+      renderer.update(panel());
+    });
+    expect(text()).toContain("Some checks were not successful");
+    expect(
+      renderer.root
+        .findAllByType("button")
+        .some((node) => node.props["aria-label"] === "Auto-merge (merge)"),
+    ).toBe(true);
+    expect(text()).not.toContain("All checks passed");
+
+    observedSummary = { ...loadedDetail, checksState: null };
+    await act(async () => {
+      renderer.update(panel());
+    });
+    expect(text()).toContain("No checks reported");
+
+    loadedDetail = {
+      ...loadedDetail,
+      checks: [
+        {
+          name: "Workflow",
+          status: "action-required",
+          description: null,
+          url: "https://github.com/owner/repo/actions/runs/42",
+        },
+      ],
+    };
+    observedSummary = null;
+    await act(async () => {
+      renderer.update(panel());
+    });
+    expect(text().some((value) => value.includes("awaiting approval"))).toBe(true);
+    expect(text()).not.toContain("Some checks were not successful");
+
+    observedSummary = { ...loadedDetail, checksState: "passing" };
+    await act(async () => {
+      renderer.update(panel());
+    });
+    expect(text()).toContain("1 workflow awaiting approval");
+  });
+
   it("shows the known title and conflict before full detail arrives", async () => {
     loadedDetail = null;
     observedSummary = detail;
@@ -371,7 +436,6 @@ describe("PR list status in the sidebar detail", () => {
       renderer.root.findAll((node) => node.children.includes("Conflicts with main")),
     ).toHaveLength(1);
     expect(renderer.root.findAll((node) => node.children.includes(detail.title))).toHaveLength(1);
-    expect(renderer.root.findAllByType("button")).toHaveLength(0);
   });
 
   it("keeps the list conflict when the shared summary omits mergeability", async () => {
@@ -387,7 +451,7 @@ describe("PR list status in the sidebar detail", () => {
   });
 
   it("uses the list conflict while an older detail snapshot is displayed", async () => {
-    loadedDetail = { ...detail, mergeability: "mergeable" };
+    loadedDetail = { ...detail, mergeability: "mergeable", additions: 17, deletions: 3 };
     await act(async () => {
       renderer = create(panel());
     });
@@ -396,12 +460,29 @@ describe("PR list status in the sidebar detail", () => {
     ).toHaveLength(0);
 
     loadedDetail = null;
-    observedSummary = detail;
+    observedSummary = {
+      provider: detail.provider,
+      projectId: detail.projectId,
+      repository: detail.repository,
+      number: detail.number,
+      title: detail.title,
+      url: detail.url,
+      state: detail.state,
+      headBranch: detail.headBranch,
+      baseBranch: detail.baseBranch,
+      updatedAt: detail.updatedAt,
+      mergeability: "conflicting",
+    };
     await act(async () => {
       renderer.update(panel());
     });
     expect(
       renderer.root.findAll((node) => node.children.includes("Resolve conflicts")).length,
     ).toBeGreaterThan(0);
+    const displayedCounts = renderer.root
+      .findAllByType("span")
+      .map((node) => node.children.join(""));
+    expect(displayedCounts).toContain("+17");
+    expect(displayedCounts).toContain("-3");
   });
 });

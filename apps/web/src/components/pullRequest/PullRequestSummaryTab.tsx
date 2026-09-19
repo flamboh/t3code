@@ -461,6 +461,7 @@ export function PullRequestSummaryTab({
   reference,
   detail,
   activityPending,
+  checksStale = false,
   activityError,
   pendingFinding,
   fixFindingLabel = "Fix in a thread",
@@ -473,6 +474,7 @@ export function PullRequestSummaryTab({
   reference: PullRequestRef;
   detail: PullRequestDetailView;
   activityPending: boolean;
+  checksStale?: boolean;
   activityError: string | null;
   /** The hand-off currently preparing, if any, so only the finding it belongs to says so. */
   pendingFinding?: string | null;
@@ -872,7 +874,14 @@ export function PullRequestSummaryTab({
       </Section>
 
       <Section key={`checks:${detail.url}`} title="Checks" defaultOpen={false}>
-        {detail.checks.length === 0 ? (
+        {checksStale ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span>Check details are out of date.</span>
+            <Button size="xs" variant="ghost" onClick={onRefresh}>
+              Refresh
+            </Button>
+          </div>
+        ) : detail.checks.length === 0 ? (
           <p className="text-xs text-muted-foreground">No checks reported.</p>
         ) : (
           detail.checks.map((check, index) => {

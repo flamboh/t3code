@@ -164,8 +164,6 @@ describe("pull request summary cache", () => {
     appAtomRegistry.set(listAtom, AsyncResult.success(answer(row), { timestamp: 100 }));
 
     await mount(<ListProbe environmentIds={[environmentId]} />);
-    await act(() => renderer?.unmount());
-    renderer = undefined;
     await mount(
       <SidebarProbe environmentId={environmentId} reference={reference(row)} observedAt={100} />,
     );
@@ -207,7 +205,7 @@ describe("pull request summary cache", () => {
     expect(observed?.mergeability).toBe("mergeable");
   });
 
-  it("keeps environments and hosts isolated, then accepts a newer same-dated update", async () => {
+  it("keeps environments and hosts isolated", async () => {
     const firstEnvironment = EnvironmentId.make(`cache-${sequence++}`);
     const secondEnvironment = EnvironmentId.make(`cache-${sequence++}`);
     const first = entry({ mergeability: "conflicting" });
@@ -218,8 +216,6 @@ describe("pull request summary cache", () => {
     appAtomRegistry.set(firstAtom, AsyncResult.success(answer(first), { timestamp: 200 }));
     appAtomRegistry.set(secondAtom, AsyncResult.success(answer(second), { timestamp: 200 }));
     await mount(<ListProbe environmentIds={[firstEnvironment, secondEnvironment]} />);
-    await act(() => renderer?.unmount());
-    renderer = undefined;
 
     await mount(
       <SidebarProbe
@@ -229,8 +225,6 @@ describe("pull request summary cache", () => {
       />,
     );
     expect(observed?.mergeability).toBe("conflicting");
-    await act(() => renderer?.unmount());
-    renderer = undefined;
     await mount(
       <SidebarProbe
         environmentId={secondEnvironment}
@@ -239,8 +233,6 @@ describe("pull request summary cache", () => {
       />,
     );
     expect(observed?.title).toBe("Enterprise widget");
-    await act(() => renderer?.unmount());
-    renderer = undefined;
     await mount(
       <SidebarProbe
         environmentId={firstEnvironment}
@@ -249,8 +241,6 @@ describe("pull request summary cache", () => {
       />,
     );
     expect(observed).toBeNull();
-    await act(() => renderer?.unmount());
-    renderer = undefined;
     await mount(
       <SidebarProbe
         environmentId={secondEnvironment}
@@ -259,53 +249,49 @@ describe("pull request summary cache", () => {
       />,
     );
     expect(observed).toBeNull();
+  });
 
-    const updated = entry({ mergeability: "mergeable", updatedAt: first.updatedAt });
+  it("uses observation time for same-dated status changes without replaying stale queries", async () => {
+    const environmentId = EnvironmentId.make(`cache-${sequence++}`);
+    const first = entry({ mergeability: "mergeable", checksState: "passing" });
+    const listAtom = listAtomFor(environmentId);
+    appAtomRegistry.set(listAtom, AsyncResult.success(answer(first), { timestamp: 200 }));
+    await mount(<ListProbe environmentIds={[environmentId]} />);
+
+    const updated = entry({
+      mergeability: "conflicting",
+      checksState: "failing",
+      updatedAt: first.updatedAt,
+    });
     await mount(
       <SidebarProbe
-        environmentId={firstEnvironment}
+        environmentId={environmentId}
         reference={reference(updated)}
         current={pullRequestListEntryToSummary(updated)}
         observedAt={100}
       />,
     );
-    expect(observed?.mergeability).toBe("conflicting");
-    await act(() => renderer?.unmount());
-    renderer = undefined;
-    appAtomRegistry.set(firstAtom, AsyncResult.success(answer(updated), { timestamp: 300 }));
-    await mount(<ListProbe environmentIds={[firstEnvironment]} />);
-    await act(() => renderer?.unmount());
-    renderer = undefined;
-    await mount(
-      <SidebarProbe
-        environmentId={firstEnvironment}
-        reference={reference(updated)}
-        current={pullRequestListEntryToSummary(updated)}
-        observedAt={300}
-      />,
-    );
     expect(observed?.mergeability).toBe("mergeable");
+    expect(observed?.checksState).toBe("passing");
+    appAtomRegistry.set(listAtom, AsyncResult.success(answer(updated), { timestamp: 300 }));
+    await mount(<ListProbe environmentIds={[environmentId]} />);
+    await mount(<SidebarProbe environmentId={environmentId} reference={reference(updated)} />);
+    expect(observed?.mergeability).toBe("conflicting");
+    expect(observed?.checksState).toBe("failing");
 
     await mount(
       <SidebarProbe
-        environmentId={firstEnvironment}
+        environmentId={environmentId}
         reference={reference(first)}
-        current={pullRequestListEntryToSummary(first)}
+        current={{ ...pullRequestListEntryToSummary(first), checksState: null }}
         observedAt={400}
       />,
     );
-    expect(observed?.mergeability).toBe("conflicting");
-    await mount(
-      <SidebarProbe
-        environmentId={firstEnvironment}
-        reference={reference(first)}
-        current={pullRequestListEntryToSummary(updated)}
-        observedAt={500}
-      />,
-    );
     expect(observed?.mergeability).toBe("mergeable");
-    await mount(<ListProbe environmentIds={[firstEnvironment]} />);
-    await mount(<SidebarProbe environmentId={firstEnvironment} reference={reference(first)} />);
+    expect(observed?.checksState).toBeNull();
+    await mount(<ListProbe environmentIds={[environmentId]} />);
+    await mount(<SidebarProbe environmentId={environmentId} reference={reference(first)} />);
     expect(observed?.mergeability).toBe("mergeable");
+    expect(observed?.checksState).toBeNull();
   });
 });

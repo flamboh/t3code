@@ -172,6 +172,7 @@ import {
   PullRequestMetaLine,
   PullRequestReviewOutcomeIcon,
   pullRequestChecksState,
+  pullRequestChecksStatePresentation,
   pullRequestReviewOutcomeToneClassName,
   resolvePullRequestState,
   summarizePullRequestChecks,
@@ -690,10 +691,20 @@ export function PullRequestDetailPanel({
     () => (matchingListEntry === null ? null : pullRequestListEntryToSummary(matchingListEntry)),
     [matchingListEntry],
   );
+  const detailSummary = useMemo(
+    () =>
+      detailQuery.data === null
+        ? null
+        : {
+            ...detailQuery.data,
+            checksState: pullRequestChecksState(detailQuery.data.checks),
+          },
+    [detailQuery.data],
+  );
   const observedSummary = useSharedPullRequestSummary(
     environmentId,
     cacheReference,
-    detailQuery.data,
+    detailSummary,
     detailQuery.dataUpdatedAt,
   );
   const sharedSummary = useMemo(
@@ -1408,7 +1419,7 @@ export function PullRequestDetailPanel({
         baseBranch: detail.baseBranch,
         reviewThreads: detail.reviewThreads,
         comments: detail.comments,
-        checks: detail.checks,
+        checks: checksStale ? [] : detail.checks,
         commentsTruncated: detail.commentsTruncated,
       }),
     );
@@ -1471,7 +1482,17 @@ export function PullRequestDetailPanel({
   const can = (action: PullRequestAction) =>
     detail?.capabilities.actions.includes(action) === true &&
     detail.viewerPermissions.actions.includes(action);
-  const checksState = detail ? pullRequestChecksState(detail.checks) : null;
+  const detailChecksState = detail ? pullRequestChecksState(detail.checks) : null;
+  const latestChecksState =
+    sharedSummary?.checksState === undefined ? detailChecksState : sharedSummary.checksState;
+  // List rollups can omit workflows awaiting approval. Only refreshed detail can clear those.
+  const checksState =
+    latestChecksState !== "failing" &&
+    detail?.checks.some((check) => check.status === "action-required")
+      ? "pending"
+      : latestChecksState;
+  // A newer rollup cannot tell us which runs changed or how many passed.
+  const checksStale = checksState !== detailChecksState;
   // The merge state remains in one stable slot from waiting through completion. Conflicts take
   // the slot while they need a person; the armed badge remains beside them so that state is not lost.
   const primaryAction = detail
@@ -1522,7 +1543,13 @@ export function PullRequestDetailPanel({
   const statePresentation = detail
     ? resolvePullRequestState({ state: detail.state, isDraft: detail.isDraft })
     : null;
-  const checksSummary = detail ? summarizePullRequestChecks(detail.checks) : null;
+  const checksSummary = checksStale
+    ? checksState === null
+      ? "No checks reported"
+      : pullRequestChecksStatePresentation(checksState).label
+    : detail
+      ? summarizePullRequestChecks(detail.checks)
+      : null;
   // Approvals that still stand, and only those. A superseded one is dimmed beside the reviewer
   // who gave it, so counting it here would have the header assert in a number what the row next
   // to it has just qualified.
@@ -2502,7 +2529,7 @@ export function PullRequestDetailPanel({
             </ToggleGroup>
             {tab === "summary" ? (
               <span className="ml-auto inline-flex shrink-0 items-center">
-                {workflowApprovalsRequired > 0 && can("approve-workflows") ? (
+                {workflowApprovalsRequired > 0 && !checksStale && can("approve-workflows") ? (
                   <Tooltip>
                     <TooltipTrigger
                       render={
@@ -2544,6 +2571,7 @@ export function PullRequestDetailPanel({
                     {checksState !== null ? (
                       <PullRequestChecksPopover
                         checks={detail.checks}
+                        stale={checksStale}
                         checksState={checksState}
                         threadRef={threadRef}
                       />
@@ -2677,6 +2705,7 @@ export function PullRequestDetailPanel({
                   reference={reference}
                   detail={detail}
                   activityPending={activityPending}
+                  checksStale={checksStale}
                   activityError={activityError}
                   pendingFinding={handoff}
                   fixFindingLabel={handoffLabels.fixFinding}

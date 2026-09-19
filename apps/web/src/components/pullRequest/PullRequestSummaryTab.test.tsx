@@ -76,7 +76,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function render(value = detail) {
+function render(value = detail, checksStale = false) {
   return (
     <PullRequestSummaryTab
       environmentId={EnvironmentId.make("environment")}
@@ -84,6 +84,7 @@ function render(value = detail) {
       reference={value}
       detail={value}
       activityPending={false}
+      checksStale={checksStale}
       activityError={null}
       onRefresh={() => {}}
     />
@@ -211,4 +212,18 @@ it("opens bot reports in pages without hiding human comments", () => {
   expect(
     renderer.root.findAllByType("p").some((p) => p.children.join("").startsWith("Bot report")),
   ).toBe(false);
+});
+
+it("withholds outdated check runs until their details catch up", () => {
+  act(() => {
+    renderer = create(render(detail, true));
+  });
+  click("Checks");
+  const visibleText = () =>
+    renderer.root.findAllByType("span").map((node) => node.children.join(""));
+  expect(visibleText()).toContain("Check details are out of date.");
+  expect(visibleText()).not.toContain("Unit tests");
+  act(() => renderer.update(render(detail)));
+  expect(visibleText()).toContain("Unit tests");
+  expect(visibleText()).not.toContain("Check details are out of date.");
 });
