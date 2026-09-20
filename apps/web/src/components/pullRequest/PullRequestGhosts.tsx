@@ -132,12 +132,8 @@ export function PullRequestDetailGhost({
             )}
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            {actions ?? (
-              <>
-                <GhostBar className="h-5 w-16 rounded-md" />
-                <GhostBar className="size-5 rounded-md" />
-              </>
-            )}
+            {actions ?? <GhostBar className="h-5 w-16 rounded-md" />}
+            <GhostBar className="size-6 rounded-md" />
           </div>
         </div>
 
