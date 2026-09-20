@@ -2712,6 +2712,7 @@ export function PullRequestDetailPanel({
                   fixCheckLabel={handoffLabels.fixCheck}
                   onFixFinding={startFixFinding}
                   onRefresh={refreshDetail}
+                  onRefreshChecks={refreshFromHost}
                 />
               </div>
             ) : null}

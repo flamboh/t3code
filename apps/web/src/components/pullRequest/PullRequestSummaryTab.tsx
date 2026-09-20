@@ -468,6 +468,7 @@ export function PullRequestSummaryTab({
   fixCheckLabel = "Fix",
   onFixFinding,
   onRefresh,
+  onRefreshChecks = onRefresh,
 }: {
   environmentId: EnvironmentId;
   threadRef: ScopedThreadRef | null;
@@ -482,6 +483,7 @@ export function PullRequestSummaryTab({
   fixCheckLabel?: string;
   onFixFinding?: (finding: PullRequestFinding) => void;
   onRefresh: () => void;
+  onRefreshChecks?: () => void;
 }) {
   // Keyed by the pull request, so opening another one starts at the end of its conversation
   // rather than wherever the last one had been read back to.
@@ -877,7 +879,7 @@ export function PullRequestSummaryTab({
         {checksStale ? (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span>Check details are out of date.</span>
-            <Button size="xs" variant="ghost" onClick={onRefresh}>
+            <Button size="xs" variant="ghost" onClick={onRefreshChecks}>
               Refresh
             </Button>
           </div>
