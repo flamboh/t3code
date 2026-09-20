@@ -51,7 +51,12 @@ export function newestPullRequestSummary(
   if (observed === null) return current;
   if (current.state === "merged" && observed.state !== "merged") return current;
   if (observed.state === "merged" && current.state !== "merged") return observed;
-  return Date.parse(observed.updatedAt) >= Date.parse(current.updatedAt) ? observed : current;
+  const updatedAtDifference = Date.parse(observed.updatedAt) - Date.parse(current.updatedAt);
+  if (updatedAtDifference !== 0) return updatedAtDifference > 0 ? observed : current;
+  // Server read times survive cache hits. An unstamped response cannot supersede a known read.
+  return (observed.observedAt ?? -Infinity) >= (current.observedAt ?? -Infinity)
+    ? observed
+    : current;
 }
 
 /** Reuse list status without treating its deferred line-count placeholders as real stats. */
@@ -68,6 +73,7 @@ export function pullRequestListEntryToSummary(entry: PullRequestListEntry): Pull
     headBranch: entry.headBranch,
     baseBranch: entry.baseBranch,
     updatedAt: entry.updatedAt,
+    ...(entry.observedAt === undefined ? {} : { observedAt: entry.observedAt }),
     author: entry.author,
     ...(entry.reviewDecision === undefined ? {} : { reviewDecision: entry.reviewDecision }),
     ...(entry.checksState === undefined ? {} : { checksState: entry.checksState }),
@@ -92,14 +98,16 @@ function newestObservation(
   if (current === null) return incoming;
   if (incoming === null) return current;
   const selected = newestPullRequestSummary(current.summary, incoming.summary);
-  // A base-branch push can change conflicts without changing the PR timestamp. Use the
-  // query timestamp to break ties, so remounting a cached query is not a new observation.
+  // Older servers lack read timestamps. Only then use query completion time to keep cached
+  // remounts from becoming new observations; never compare client and server clocks.
   const newlyMerged = incoming.summary.state === "merged" && current.summary.state !== "merged";
   if (
     selected !== incoming.summary ||
     (!newlyMerged &&
       Date.parse(current.summary.updatedAt) === Date.parse(incoming.summary.updatedAt) &&
-      current.observedAt >= incoming.observedAt)
+      (current.summary.observedAt !== undefined || incoming.summary.observedAt !== undefined
+        ? current.summary.observedAt === incoming.summary.observedAt
+        : current.observedAt >= incoming.observedAt))
   )
     return current;
   // A sparse summary must not erase known status, or carry old detail stats into a new list read.

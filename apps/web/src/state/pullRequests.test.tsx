@@ -112,7 +112,7 @@ afterEach(async () => {
 
 describe("pull request summary cache", () => {
   it("uses observation time for same-dated status changes without replaying stale queries", async () => {
-    const first = entry({ mergeability: "mergeable", checksState: "passing" });
+    const first = entry({ mergeability: "mergeable", checksState: "passing", observedAt: 200 });
     const listAtom = pullRequestEnvironment.list(target) as Atom.Writable<
       AsyncResult.AsyncResult<PullRequestListResult>
     >;
@@ -123,8 +123,14 @@ describe("pull request summary cache", () => {
       mergeability: "conflicting",
       checksState: "failing",
       updatedAt: first.updatedAt,
+      observedAt: 300,
     });
-    await mount(<SidebarProbe current={pullRequestListEntryToSummary(updated)} observedAt={100} />);
+    await mount(
+      <SidebarProbe
+        current={{ ...pullRequestListEntryToSummary(updated), observedAt: 100 }}
+        observedAt={100}
+      />,
+    );
     expect(observed?.mergeability).toBe("mergeable");
     expect(observed?.checksState).toBe("passing");
     appAtomRegistry.set(listAtom, AsyncResult.success(answer(updated), { timestamp: 300 }));
@@ -133,9 +139,16 @@ describe("pull request summary cache", () => {
     expect(observed?.mergeability).toBe("conflicting");
     expect(observed?.checksState).toBe("failing");
 
+    // An older filtered/server-cached response finishes last but must not roll status back.
+    appAtomRegistry.set(listAtom, AsyncResult.success(answer(first), { timestamp: 500 }));
+    await mount(<ListProbe />);
+    await mount(<SidebarProbe />);
+    expect(observed?.mergeability).toBe("conflicting");
+    expect(observed?.checksState).toBe("failing");
+
     await mount(
       <SidebarProbe
-        current={{ ...pullRequestListEntryToSummary(first), checksState: null }}
+        current={{ ...pullRequestListEntryToSummary(first), checksState: null, observedAt: 400 }}
         observedAt={400}
       />,
     );
