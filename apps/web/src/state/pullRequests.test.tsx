@@ -2,17 +2,13 @@ import {
   EnvironmentId,
   ProjectId,
   type PullRequestListEntry,
-  type PullRequestListInput,
   type PullRequestListResult,
-  type PullRequestRef,
   type PullRequestSummary,
 } from "@t3tools/contracts";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { act, useLayoutEffect } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-
-import { resolvePullRequestPanelReferences } from "../components/pullRequest/pullRequestDetail.logic";
 
 import { appAtomRegistry, AppAtomRegistryProvider } from "../rpc/atomRegistry";
 import {
@@ -22,37 +18,19 @@ import {
   useSharedPullRequestSummary,
 } from "./pullRequests";
 
-type MockListAtom = Atom.Writable<AsyncResult.AsyncResult<PullRequestListResult>>;
-const mockedListAtoms = vi.hoisted(() => new Map<string, MockListAtom>());
-
 vi.mock("@t3tools/client-runtime/state/pull-requests", async (importOriginal) => {
   const original =
     await importOriginal<typeof import("@t3tools/client-runtime/state/pull-requests")>();
-  const { Atom } = await import("effect/unstable/reactivity");
-  const list = (target: { environmentId: EnvironmentId; input: PullRequestListInput }) => {
-    const key = JSON.stringify(target);
-    const existing = mockedListAtoms.get(key);
-    if (existing !== undefined) return existing;
-    const created = Atom.make<AsyncResult.AsyncResult<PullRequestListResult>>(
-      AsyncResult.initial(false),
-    );
-    mockedListAtoms.set(key, created);
-    return created;
-  };
-  const refreshes = () => Atom.make(AsyncResult.initial<number>(false));
-  return {
-    ...original,
-    createPullRequestEnvironmentAtoms: () => ({
-      list,
-      listStats: list,
-      refreshes,
-    }),
-  };
+  const { Atom, AsyncResult } = await import("effect/unstable/reactivity");
+  const list = Atom.make<AsyncResult.AsyncResult<PullRequestListResult>>(
+    AsyncResult.initial(false),
+  );
+  return { ...original, createPullRequestEnvironmentAtoms: () => ({ list: () => list }) };
 });
 
-const listInput: PullRequestListInput = { state: "open" };
+const environmentId = EnvironmentId.make("cache-test");
+const target = { environmentId, input: { state: "open" as const } };
 const projectId = ProjectId.make("pull-request-cache-test");
-let sequence = 0;
 let renderer: ReactTestRenderer | undefined;
 
 function entry(overrides: Partial<PullRequestListEntry> = {}): PullRequestListEntry {
@@ -92,46 +70,22 @@ function answer(...entries: PullRequestListEntry[]): PullRequestListResult {
   };
 }
 
-function target(environmentId: EnvironmentId) {
-  return { environmentId, input: listInput };
-}
-
-function listAtomFor(environmentId: EnvironmentId) {
-  const queryTarget = target(environmentId);
-  pullRequestEnvironment.list(queryTarget);
-  const atom = mockedListAtoms.get(JSON.stringify(queryTarget));
-  if (atom === undefined) throw new Error("List atom was not created");
-  return atom;
-}
-
-function reference(entryValue: PullRequestListEntry) {
-  return {
-    projectId: entryValue.projectId,
-    host: entryValue.host,
-    repository: entryValue.repository,
-    number: entryValue.number,
-  };
-}
-
+const row = entry();
 let observed: PullRequestSummary | null = null;
 
-function ListProbe({ environmentIds }: { environmentIds: ReadonlyArray<EnvironmentId> }) {
-  usePullRequestList(environmentIds.map(target));
+function ListProbe() {
+  usePullRequestList([target]);
   return null;
 }
 
 function SidebarProbe({
-  environmentId,
-  reference: ref,
   current = null,
   observedAt,
 }: {
-  environmentId: EnvironmentId;
-  reference: PullRequestRef;
   current?: PullRequestSummary | null;
   observedAt?: number | null;
 }) {
-  const summary = useSharedPullRequestSummary(environmentId, ref, current, observedAt);
+  const summary = useSharedPullRequestSummary(environmentId, row, current, observedAt);
   useLayoutEffect(() => {
     observed = summary;
   }, [summary]);
@@ -157,140 +111,38 @@ afterEach(async () => {
 });
 
 describe("pull request summary cache", () => {
-  it("keeps a list result available to the sidebar after the list unmounts", async () => {
-    const environmentId = EnvironmentId.make(`cache-${sequence++}`);
-    const row = entry({ mergeability: "conflicting" });
-    const listAtom = listAtomFor(environmentId);
-    appAtomRegistry.set(listAtom, AsyncResult.success(answer(row), { timestamp: 100 }));
-
-    await mount(<ListProbe environmentIds={[environmentId]} />);
-    await mount(
-      <SidebarProbe environmentId={environmentId} reference={reference(row)} observedAt={100} />,
-    );
-
-    expect(observed?.title).toBe(row.title);
-    expect(observed?.mergeability).toBe("conflicting");
-  });
-
-  it("reuses host-scoped list summaries when a legacy server needs hostless requests", async () => {
-    const environmentId = EnvironmentId.make(`cache-${sequence++}`);
-    const publicRow = entry({ title: "Public PR" });
-    const enterpriseRow = entry({
-      host: "github.example.test",
-      url: "https://github.example.test/acme/widget/pull/7",
-      title: "Enterprise PR",
-      mergeability: "conflicting",
-    });
-    appAtomRegistry.set(
-      listAtomFor(environmentId),
-      AsyncResult.success(answer(publicRow, enterpriseRow), { timestamp: 200 }),
-    );
-    await mount(<ListProbe environmentIds={[environmentId]} />);
-
-    const legacy = resolvePullRequestPanelReferences(reference(enterpriseRow), null, false);
-    expect(legacy.reference).toEqual({
-      projectId,
-      repository: enterpriseRow.repository,
-      number: enterpriseRow.number,
-    });
-    await mount(<SidebarProbe environmentId={environmentId} reference={legacy.cacheReference} />);
-    expect(observed?.title).toBe("Enterprise PR");
-    expect(observed?.mergeability).toBe("conflicting");
-
-    const publicLegacy = resolvePullRequestPanelReferences(reference(publicRow), null, false);
-    await mount(
-      <SidebarProbe environmentId={environmentId} reference={publicLegacy.cacheReference} />,
-    );
-    expect(observed?.title).toBe("Public PR");
-    expect(observed?.mergeability).toBe("mergeable");
-  });
-
-  it("keeps environments and hosts isolated", async () => {
-    const firstEnvironment = EnvironmentId.make(`cache-${sequence++}`);
-    const secondEnvironment = EnvironmentId.make(`cache-${sequence++}`);
-    const first = entry({ mergeability: "conflicting" });
-    const second = entry({ host: "github.example.test", title: "Enterprise widget" });
-    const firstAtom = listAtomFor(firstEnvironment);
-    const secondAtom = listAtomFor(secondEnvironment);
-
-    appAtomRegistry.set(firstAtom, AsyncResult.success(answer(first), { timestamp: 200 }));
-    appAtomRegistry.set(secondAtom, AsyncResult.success(answer(second), { timestamp: 200 }));
-    await mount(<ListProbe environmentIds={[firstEnvironment, secondEnvironment]} />);
-
-    await mount(
-      <SidebarProbe
-        environmentId={firstEnvironment}
-        reference={reference(first)}
-        observedAt={200}
-      />,
-    );
-    expect(observed?.mergeability).toBe("conflicting");
-    await mount(
-      <SidebarProbe
-        environmentId={secondEnvironment}
-        reference={reference(second)}
-        observedAt={200}
-      />,
-    );
-    expect(observed?.title).toBe("Enterprise widget");
-    await mount(
-      <SidebarProbe
-        environmentId={firstEnvironment}
-        reference={reference(second)}
-        observedAt={200}
-      />,
-    );
-    expect(observed).toBeNull();
-    await mount(
-      <SidebarProbe
-        environmentId={secondEnvironment}
-        reference={reference(first)}
-        observedAt={200}
-      />,
-    );
-    expect(observed).toBeNull();
-  });
-
   it("uses observation time for same-dated status changes without replaying stale queries", async () => {
-    const environmentId = EnvironmentId.make(`cache-${sequence++}`);
     const first = entry({ mergeability: "mergeable", checksState: "passing" });
-    const listAtom = listAtomFor(environmentId);
+    const listAtom = pullRequestEnvironment.list(target) as Atom.Writable<
+      AsyncResult.AsyncResult<PullRequestListResult>
+    >;
     appAtomRegistry.set(listAtom, AsyncResult.success(answer(first), { timestamp: 200 }));
-    await mount(<ListProbe environmentIds={[environmentId]} />);
+    await mount(<ListProbe />);
 
     const updated = entry({
       mergeability: "conflicting",
       checksState: "failing",
       updatedAt: first.updatedAt,
     });
-    await mount(
-      <SidebarProbe
-        environmentId={environmentId}
-        reference={reference(updated)}
-        current={pullRequestListEntryToSummary(updated)}
-        observedAt={100}
-      />,
-    );
+    await mount(<SidebarProbe current={pullRequestListEntryToSummary(updated)} observedAt={100} />);
     expect(observed?.mergeability).toBe("mergeable");
     expect(observed?.checksState).toBe("passing");
     appAtomRegistry.set(listAtom, AsyncResult.success(answer(updated), { timestamp: 300 }));
-    await mount(<ListProbe environmentIds={[environmentId]} />);
-    await mount(<SidebarProbe environmentId={environmentId} reference={reference(updated)} />);
+    await mount(<ListProbe />);
+    await mount(<SidebarProbe />);
     expect(observed?.mergeability).toBe("conflicting");
     expect(observed?.checksState).toBe("failing");
 
     await mount(
       <SidebarProbe
-        environmentId={environmentId}
-        reference={reference(first)}
         current={{ ...pullRequestListEntryToSummary(first), checksState: null }}
         observedAt={400}
       />,
     );
     expect(observed?.mergeability).toBe("mergeable");
     expect(observed?.checksState).toBeNull();
-    await mount(<ListProbe environmentIds={[environmentId]} />);
-    await mount(<SidebarProbe environmentId={environmentId} reference={reference(first)} />);
+    await mount(<ListProbe />);
+    await mount(<SidebarProbe />);
     expect(observed?.mergeability).toBe("mergeable");
     expect(observed?.checksState).toBeNull();
   });
