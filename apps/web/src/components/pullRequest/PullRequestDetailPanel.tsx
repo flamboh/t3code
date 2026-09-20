@@ -704,8 +704,14 @@ export function PullRequestDetailPanel({
     detailSummary,
     detailQuery.dataUpdatedAt,
   );
+  // The list row is also published to the shared cache, but only after this commit's layout
+  // effects run, so it is compared directly rather than trusted to be there already.
   const sharedSummary = useMemo(
-    () => newestPullRequestSummary(resolvedCoreDetail, observedSummary ?? listSummary),
+    () =>
+      newestPullRequestSummary(
+        resolvedCoreDetail,
+        newestPullRequestSummary(observedSummary, listSummary),
+      ),
     [resolvedCoreDetail, observedSummary, listSummary],
   );
   const coreDetail = useMemo(
