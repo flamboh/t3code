@@ -18,7 +18,6 @@ import {
   PullRequestActorLabel,
   PullRequestDiffStat,
   pullRequestChecksStatePresentation,
-  resolvePullRequestConflict,
   resolvePullRequestState,
 } from "./pullRequestPresentation";
 
@@ -85,7 +84,6 @@ export function PullRequestDetailGhost({
         ...entry,
         ...summary,
         isDraft: summary.isDraft ?? entry?.isDraft,
-        mergeability: summary.mergeability ?? entry?.mergeability,
       }
     : entry;
   const statePresentation = seed
@@ -96,14 +94,6 @@ export function PullRequestDetailGhost({
     : null;
   const checksPresentation = seed?.checksState
     ? pullRequestChecksStatePresentation(seed.checksState)
-    : null;
-  const conflictPresentation = seed
-    ? resolvePullRequestConflict({
-        state: seed.state,
-        isDraft: seed.isDraft ?? false,
-        mergeability: seed.mergeability ?? "unknown",
-        baseBranch: seed.baseBranch,
-      })
     : null;
 
   return (
@@ -205,17 +195,7 @@ export function PullRequestDetailGhost({
             <GhostBar className="h-6 w-16 rounded-md" />
             <GhostBar className="h-6 w-12 rounded-md" />
           </div>
-          {conflictPresentation ? (
-            <span
-              className={cn(
-                "inline-flex items-center gap-1.5 text-xs",
-                conflictPresentation.toneClassName,
-              )}
-            >
-              <conflictPresentation.Icon aria-hidden className="size-3.5" />
-              {conflictPresentation.label}
-            </span>
-          ) : checksPresentation ? (
+          {checksPresentation ? (
             <span
               className={cn(
                 "inline-flex items-center gap-1.5 text-xs",
