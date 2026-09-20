@@ -149,8 +149,8 @@ import {
   PULL_REQUEST_MERGE_METHOD_LABELS,
   readableFailure,
   readPullRequestDetailSnapshot,
+  resolvePullRequestReferenceHost,
   resolveDisplayedPullRequestDetail,
-  resolvePullRequestPanelReferences,
   resolvePullRequestPrimaryControl,
   allowsSinglePullRequestMerge,
   resolveBaseFreshness,
@@ -534,22 +534,24 @@ export function PullRequestDetailPanel({
   const repositoryIdentity = project?.repositoryIdentity;
   const supportsThreadPullRequests =
     environmentConfigs.get(environmentId)?.environment.capabilities.threadPullRequests === true;
-  const { reference, cacheReference } = useMemo(
+  const reference = useMemo(
     () =>
-      resolvePullRequestPanelReferences(
-        requestedReference,
-        repositoryIdentity,
-        supportsThreadPullRequests,
-      ),
+      supportsThreadPullRequests
+        ? resolvePullRequestReferenceHost(requestedReference, repositoryIdentity)
+        : {
+            projectId: requestedReference.projectId,
+            repository: requestedReference.repository,
+            number: requestedReference.number,
+          },
     [requestedReference, repositoryIdentity, supportsThreadPullRequests],
   );
-  const pullRequestKey = `${cacheReference.projectId}:${cacheReference.host ?? ""}:${cacheReference.repository}#${cacheReference.number}`;
+  const pullRequestKey = `${reference.projectId}:${reference.host ?? ""}:${reference.repository}#${reference.number}`;
   const matchingListEntry =
-    listEntry?.projectId === cacheReference.projectId &&
-    listEntry.repository.toLowerCase() === cacheReference.repository.toLowerCase() &&
-    (cacheReference.host === undefined ||
-      listEntry.host.toLowerCase() === cacheReference.host.toLowerCase()) &&
-    listEntry.number === cacheReference.number
+    listEntry?.projectId === reference.projectId &&
+    listEntry.repository.toLowerCase() === reference.repository.toLowerCase() &&
+    (reference.host === undefined ||
+      listEntry.host.toLowerCase() === reference.host.toLowerCase()) &&
+    listEntry.number === reference.number
       ? listEntry
       : null;
   const [threadPickerOpen, setThreadPickerOpen] = useState(false);
@@ -648,7 +650,7 @@ export function PullRequestDetailPanel({
     readPullRequestDetailSnapshot(
       typeof window === "undefined" ? undefined : window.localStorage,
       environmentId,
-      cacheReference,
+      reference,
     ),
   );
   useEffect(() => {
@@ -656,22 +658,16 @@ export function PullRequestDetailPanel({
       readPullRequestDetailSnapshot(
         typeof window === "undefined" ? undefined : window.localStorage,
         environmentId,
-        cacheReference,
+        reference,
       ),
     );
-  }, [
-    environmentId,
-    pullRequestKey,
-    cacheReference.projectId,
-    cacheReference.repository,
-    cacheReference.number,
-  ]);
+  }, [environmentId, pullRequestKey, reference.projectId, reference.repository, reference.number]);
   useEffect(() => {
     if (detailQuery.data === null) return;
     writePullRequestDetailSnapshot(
       typeof window === "undefined" ? undefined : window.localStorage,
       environmentId,
-      cacheReference,
+      reference,
       detailQuery.data,
     );
     setCachedDetail(detailQuery.data);
@@ -679,14 +675,14 @@ export function PullRequestDetailPanel({
     detailQuery.data,
     environmentId,
     pullRequestKey,
-    cacheReference.projectId,
-    cacheReference.repository,
-    cacheReference.number,
+    reference.projectId,
+    reference.repository,
+    reference.number,
   ]);
   const resolvedCoreDetail = resolveDisplayedPullRequestDetail({
     live: detailQuery.data,
     cached: cachedDetail,
-    reference: cacheReference,
+    reference,
   });
   const listSummary = useMemo(
     () => (matchingListEntry === null ? null : pullRequestListEntryToSummary(matchingListEntry)),
@@ -704,7 +700,7 @@ export function PullRequestDetailPanel({
   );
   const observedSummary = useSharedPullRequestSummary(
     environmentId,
-    cacheReference,
+    reference,
     detailSummary,
     detailQuery.dataUpdatedAt,
   );

@@ -34,6 +34,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -76,7 +77,6 @@ import { previewBridge } from "./preview/previewBridge";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
-import { resolvePullRequestReferenceHost } from "./pullRequest/pullRequestDetail.logic";
 
 interface RightPanelTabsProps {
   mode: PreviewPanelMode;
@@ -781,15 +781,6 @@ function PullRequestSurfaceIcon({
     (identity?.provider
       ? pullRequestHostOf(identity, identity.provider as SourceControlProviderKind)
       : null);
-  const cacheReference = resolvePullRequestReferenceHost(
-    {
-      projectId: surface.projectId as ProjectId,
-      repository: surface.repository,
-      number: surface.number,
-      ...(surface.host === undefined ? {} : { host: surface.host }),
-    },
-    identity,
-  );
   const configs = useServerConfigs();
   const capabilities =
     resolvedEnvironmentId === null
@@ -814,7 +805,15 @@ function PullRequestSurfaceIcon({
           },
         }),
   ).data;
-  const sharedSummary = useSharedPullRequestSummary(resolvedEnvironmentId, cacheReference, null);
+  const reference = useMemo(
+    () => ({
+      projectId: surface.projectId as ProjectId,
+      repository: surface.repository,
+      number: surface.number,
+    }),
+    [surface.projectId, surface.repository, surface.number],
+  );
+  const sharedSummary = useSharedPullRequestSummary(resolvedEnvironmentId, reference, null);
   // The compact tab intentionally shows lifecycle and draft state only. Conflict warnings have
   // their own presentation on surfaces that have mergeability, while this tab stays stable as
   // detail data arrives.

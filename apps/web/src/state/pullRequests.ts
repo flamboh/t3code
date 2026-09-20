@@ -31,8 +31,9 @@ export const linkedPullRequestDetailAtom = createLinkedPullRequestSummaryAtomFam
   pullRequestEnvironment.refreshes,
 );
 
-interface ObservedPullRequestSummary {
+export interface ObservedPullRequestSummary {
   readonly summary: PullRequestSummary;
+  /** Client arrival time, the only ordering older servers leave us for same-dated snapshots. */
   readonly observedAt: number;
 }
 
@@ -43,20 +44,27 @@ const observedPullRequestSummaryAtom = Atom.family((key: string) =>
   ),
 );
 
+/**
+ * Positive when `incoming` is the newer snapshot. Merged is final. Then the host's own update
+ * time, then the server's read-start time, which survives its caches; a snapshot without one
+ * never beats a stamped read. Zero when neither side carries a read time.
+ */
+function compareSummaries(current: PullRequestSummary, incoming: PullRequestSummary): number {
+  const merged = Number(incoming.state === "merged") - Number(current.state === "merged");
+  if (merged !== 0) return merged;
+  const updated = Date.parse(incoming.updatedAt) - Date.parse(current.updatedAt);
+  if (updated !== 0) return updated;
+  if (current.observedAt === undefined && incoming.observedAt === undefined) return 0;
+  return (incoming.observedAt ?? -Infinity) - (current.observedAt ?? -Infinity);
+}
+
 export function newestPullRequestSummary(
   current: PullRequestSummary | null,
   observed: PullRequestSummary | null,
 ): PullRequestSummary | null {
   if (current === null) return observed;
   if (observed === null) return current;
-  if (current.state === "merged" && observed.state !== "merged") return current;
-  if (observed.state === "merged" && current.state !== "merged") return observed;
-  const updatedAtDifference = Date.parse(observed.updatedAt) - Date.parse(current.updatedAt);
-  if (updatedAtDifference !== 0) return updatedAtDifference > 0 ? observed : current;
-  // Server read times survive cache hits. An unstamped response cannot supersede a known read.
-  return (observed.observedAt ?? -Infinity) >= (current.observedAt ?? -Infinity)
-    ? observed
-    : current;
+  return compareSummaries(current, observed) >= 0 ? observed : current;
 }
 
 /** Reuse list status without treating its deferred line-count placeholders as real stats. */
@@ -81,35 +89,34 @@ export function pullRequestListEntryToSummary(entry: PullRequestListEntry): Pull
   };
 }
 
+// A project has one remote, so its id already pins the host. Leaving the host out lets a list
+// row, a hostless legacy reference and a URL-derived thread reference share one entry.
 function pullRequestSummaryKey(environmentId: EnvironmentId, reference: PullRequestRef): string {
   return JSON.stringify([
     environmentId,
     reference.projectId,
-    reference.host?.toLowerCase() ?? null,
     reference.repository.toLowerCase(),
     reference.number,
   ]);
 }
 
-function newestObservation(
+/** The observation to hold after `incoming` arrives. Returns `current` itself on a tie. */
+export function newestPullRequestObservation(
   current: ObservedPullRequestSummary | null,
   incoming: ObservedPullRequestSummary | null,
 ): ObservedPullRequestSummary | null {
   if (current === null) return incoming;
   if (incoming === null) return current;
-  const selected = newestPullRequestSummary(current.summary, incoming.summary);
-  // Older servers lack read timestamps. Only then use query completion time to keep cached
-  // remounts from becoming new observations; never compare client and server clocks.
-  const newlyMerged = incoming.summary.state === "merged" && current.summary.state !== "merged";
+  let order = compareSummaries(current.summary, incoming.summary);
+  // Client clocks only break ties between snapshots that both lack a server read time.
   if (
-    selected !== incoming.summary ||
-    (!newlyMerged &&
-      Date.parse(current.summary.updatedAt) === Date.parse(incoming.summary.updatedAt) &&
-      (current.summary.observedAt !== undefined || incoming.summary.observedAt !== undefined
-        ? current.summary.observedAt === incoming.summary.observedAt
-        : current.observedAt >= incoming.observedAt))
-  )
-    return current;
+    order === 0 &&
+    current.summary.observedAt === undefined &&
+    incoming.summary.observedAt === undefined
+  ) {
+    order = incoming.observedAt - current.observedAt;
+  }
+  if (!(order > 0)) return current;
   // A sparse summary must not erase known status, or carry old detail stats into a new list read.
   return {
     ...incoming,
@@ -137,7 +144,7 @@ function observePullRequestSummary(
 ): void {
   const atom = observedPullRequestSummaryAtom(pullRequestSummaryKey(environmentId, reference));
   appAtomRegistry.modify(atom, (previous) => {
-    const next = newestObservation(previous, { summary, observedAt });
+    const next = newestPullRequestObservation(previous, { summary, observedAt });
     return next === previous ? [false, previous] : [true, next];
   });
 }
@@ -160,7 +167,7 @@ export function useSharedPullRequestSummary(
     observePullRequestSummary(environmentId, reference, current, observedAt);
   }, [current, environmentId, reference, observedAt]);
   return (
-    newestObservation(
+    newestPullRequestObservation(
       observed,
       current === null || observedAt === null ? null : { summary: current, observedAt },
     )?.summary ?? current
