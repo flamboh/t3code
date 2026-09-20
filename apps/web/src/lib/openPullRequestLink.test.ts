@@ -8,6 +8,7 @@ import {
   matchesLinkedPullRequestUrl,
   parseChangeRequestUrl,
   pullRequestCandidateUrlFromReferenceAutolink,
+  resolvePullRequestPreviewTarget,
   shouldOpenPullRequestExternally,
 } from "./openPullRequestLink";
 import { ProjectId, type RepositoryIdentity } from "@t3tools/contracts";
@@ -541,5 +542,56 @@ describe("findProjectForChangeRequest", () => {
         number: 1,
       }),
     ).toBeUndefined();
+  });
+});
+
+describe("resolvePullRequestPreviewTarget", () => {
+  const environmentId = "env-1" as never;
+  const projects = [
+    {
+      id: "project-1",
+      environmentId,
+      repositoryIdentity: {
+        ...repositoryIdentity(
+          "github",
+          "github.com/acme/t3code",
+          "https://github.com/acme/t3code.git",
+        ),
+        displayName: "acme/t3code",
+      },
+    },
+  ] as never;
+
+  it("returns no target when the project or capability is unavailable", () => {
+    expect(
+      resolvePullRequestPreviewTarget({
+        environmentId,
+        projects,
+        pullRequestsEnabled: false,
+        url: "https://github.com/acme/t3code/pull/42",
+      }),
+    ).toBeNull();
+    expect(
+      resolvePullRequestPreviewTarget({
+        environmentId,
+        projects,
+        pullRequestsEnabled: true,
+        url: "https://github.com/other/repo/pull/42",
+      }),
+    ).toBeNull();
+  });
+
+  it("returns the environment and pull request input for a matching project", () => {
+    expect(
+      resolvePullRequestPreviewTarget({
+        environmentId,
+        projects,
+        pullRequestsEnabled: true,
+        url: "https://github.com/acme/t3code/pull/42",
+      }),
+    ).toEqual({
+      environmentId,
+      input: { projectId: "project-1", host: "github.com", repository: "acme/t3code", number: 42 },
+    });
   });
 });
