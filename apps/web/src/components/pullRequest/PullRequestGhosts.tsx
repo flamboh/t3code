@@ -9,6 +9,7 @@
  */
 import type { PullRequestListEntry, PullRequestSummary } from "@t3tools/contracts";
 import { ArrowLeftIcon } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
@@ -75,9 +76,11 @@ export function PullRequestListGhost({
 export function PullRequestDetailGhost({
   seed: entry,
   summary,
+  actions,
 }: {
   seed?: PullRequestListEntry | null;
   summary?: PullRequestSummary | null;
+  actions?: ReactNode;
 }) {
   const seed = summary
     ? {
@@ -107,7 +110,7 @@ export function PullRequestDetailGhost({
         !seed && "motion-safe:animate-skeleton",
       )}
     >
-      <div className="shrink-0 border-b border-border/60">
+      <div className="@container/pr-header shrink-0 border-b border-border/60">
         <div className="flex h-7 items-center justify-between gap-3 px-4">
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
             {seed && statePresentation ? (
@@ -129,8 +132,12 @@ export function PullRequestDetailGhost({
             )}
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            <GhostBar className="h-5 w-16 rounded-md" />
-            <GhostBar className="size-5 rounded-md" />
+            {actions ?? (
+              <>
+                <GhostBar className="h-5 w-16 rounded-md" />
+                <GhostBar className="size-5 rounded-md" />
+              </>
+            )}
           </div>
         </div>
 

@@ -527,10 +527,11 @@ export function PullRequestDetailPanel({
 }) {
   const environmentConfigs = useServerConfigs();
   const projects = useProjects();
-  const repositoryIdentity = projects.find(
+  const project = projects.find(
     (project) =>
       project.id === requestedReference.projectId && project.environmentId === environmentId,
-  )?.repositoryIdentity;
+  );
+  const repositoryIdentity = project?.repositoryIdentity;
   const supportsThreadPullRequests =
     environmentConfigs.get(environmentId)?.environment.capabilities.threadPullRequests === true;
   const { reference, cacheReference } = useMemo(
@@ -759,6 +760,7 @@ export function PullRequestDetailPanel({
           },
     [activity, coreDetail],
   );
+  const handoffSummary = detail ?? sharedSummary;
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { copyToClipboard: copyReference } = useCopyToClipboard<string>({
     target: "pull request reference",
@@ -984,9 +986,11 @@ export function PullRequestDetailPanel({
   const acting =
     pickableEnvironments.find((entry) => entry.environmentId === chosenEnvironmentId) ?? null;
   const actingEnvironmentId = acting?.environmentId ?? environmentId;
+  const checkoutRoot =
+    acting?.workspaceRoot ?? detail?.workspaceRoot ?? project?.workspaceRoot ?? null;
   const prepareThread = usePreparePullRequestThreadAction({
     environmentId: actingEnvironmentId,
-    cwd: acting?.workspaceRoot ?? detail?.workspaceRoot ?? null,
+    cwd: checkoutRoot,
   });
 
   const finishAction = async (
@@ -1217,7 +1221,7 @@ export function PullRequestDetailPanel({
     // already work — and it moves the branch under everything else that is open there.
     mode: "worktree" | "local" = "worktree",
   ) => {
-    if (!detail || handoff !== null) return;
+    if (!handoffSummary || handoff !== null) return;
     if (attachTarget !== null && task !== null) {
       writeTaskToComposer(attachTarget, task);
       toastManager.add({
@@ -1227,6 +1231,7 @@ export function PullRequestDetailPanel({
       });
       return;
     }
+    if (checkoutRoot === null) return;
     setHandoff(kind);
     // The menu closes on the press and takes its "Preparing..." label with it, so this is the
     // only thing answering for the checkout. It carries no timeout of its own: a loading toast
@@ -1237,7 +1242,10 @@ export function PullRequestDetailPanel({
     });
     // Wherever the reader chose to act: the thread, the checkout it is pointed at and the composer
     // the task lands in are all one server's, and picking another one moves all three.
-    const projectRef = scopeProjectRef(actingEnvironmentId, acting?.projectId ?? detail.projectId);
+    const projectRef = scopeProjectRef(
+      actingEnvironmentId,
+      acting?.projectId ?? handoffSummary.projectId,
+    );
     // The thread is opened before the checkout rather than after it, because the project's setup
     // script only runs for a checkout that knows which thread it is for — and a worktree with no
     // dependencies installed is not something anyone can test.
@@ -1258,7 +1266,7 @@ export function PullRequestDetailPanel({
       return;
     }
     const prepared = await prepareThread.run({
-      reference: detail.url,
+      reference: handoffSummary.url,
       mode,
       threadId: opened.threadId,
     });
@@ -1387,7 +1395,7 @@ export function PullRequestDetailPanel({
   };
 
   const startCheckout = (mode: "worktree" | "local") => {
-    if (!detail) return;
+    if (!handoffSummary) return;
     void startHandoff(`checkout:${mode}`, null, mode);
   };
 
@@ -1426,13 +1434,13 @@ export function PullRequestDetailPanel({
   };
 
   const startResolveConflicts = () => {
-    if (!detail) return;
+    if (!handoffSummary) return;
     void startHandoff("conflicts", {
       prompt: buildResolveConflictsPrompt({
-        number: detail.number,
-        url: detail.url,
-        headBranch: detail.headBranch,
-        baseBranch: detail.baseBranch,
+        number: handoffSummary.number,
+        url: handoffSummary.url,
+        headBranch: handoffSummary.headBranch,
+        baseBranch: handoffSummary.baseBranch,
       }),
     });
   };
@@ -1564,10 +1572,108 @@ export function PullRequestDetailPanel({
         ).length
       : 0;
 
+  const checkoutControl =
+    context === "page" ? (
+      <Menu>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <MenuTrigger
+                disabled={handoff !== null || checkoutRoot === null}
+                render={
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    aria-label={handoff?.startsWith("checkout") ? "Checking out..." : "Check out"}
+                  >
+                    <GitBranchIcon aria-hidden className="size-3.5" />
+                    <span className="@max-[35rem]/pr-header:hidden">
+                      {handoff?.startsWith("checkout") ? "Checking out..." : "Check out"}
+                    </span>
+                    <ChevronDownIcon aria-hidden className="size-3.5 text-muted-foreground" />
+                  </Button>
+                }
+              />
+            }
+          />
+          <TooltipPopup>Check out this pull request</TooltipPopup>
+        </Tooltip>
+        <MenuPopup align="end" side="bottom" className="min-w-72">
+          <MenuItem onClick={() => startCheckout("worktree")}>
+            <GitBranchIcon className="mt-0.5 size-3.5 shrink-0 self-start" />
+            <span className="flex min-w-0 flex-col">
+              <span>In a separate worktree</span>
+              <span className="text-xs text-muted-foreground">
+                Its own folder and thread. Nothing you have open moves.
+              </span>
+            </span>
+          </MenuItem>
+          <MenuItem onClick={() => startCheckout("local")}>
+            <FolderGit2Icon className="mt-0.5 size-3.5 shrink-0 self-start" />
+            <span className="flex min-w-0 flex-col">
+              <span>In this repository</span>
+              <span className="text-xs text-muted-foreground">
+                Switches the branch you are working in, like `gh pr checkout`.
+              </span>
+            </span>
+          </MenuItem>
+          {pickableEnvironments.length > 0 ? (
+            <ActOnEnvironmentPicker
+              environments={pickableEnvironments}
+              value={actingEnvironmentId}
+              onChange={(next) => setActingScope({ pullRequestKey, environmentId: next })}
+              disabled={handoff !== null}
+            />
+          ) : null}
+        </MenuPopup>
+      </Menu>
+    ) : null;
+
+  const resolveConflictsControl = (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span className="inline-flex shrink-0">
+            <Button
+              size="xs"
+              variant="destructive-outline"
+              disabled={handoff !== null || (attachTarget === null && checkoutRoot === null)}
+              onClick={startResolveConflicts}
+              aria-label={handoff === "conflicts" ? "Preparing..." : "Resolve conflicts"}
+            >
+              <PullRequestGlyph.conflicting aria-hidden className="size-3.5" />
+              <span className="@max-[30rem]/pr-header:hidden">
+                {handoff === "conflicts" ? "Preparing..." : "Resolve conflicts"}
+              </span>
+            </Button>
+          </span>
+        }
+      />
+      <TooltipPopup side="top">
+        {handoff === "conflicts" ? "Preparing..." : "Resolve conflicts"}
+      </TooltipPopup>
+    </Tooltip>
+  );
+
   // The list already has the pull request's identity and summary. Keep them on screen
   // and let the richer detail read replace the remaining placeholders in place.
   if (detailQuery.isPending && !detail) {
-    return <PullRequestDetailGhost seed={matchingListEntry} summary={sharedSummary} />;
+    return (
+      <PullRequestDetailGhost
+        seed={matchingListEntry}
+        summary={sharedSummary}
+        actions={
+          handoffSummary ? (
+            <TooltipProvider delay={150} closeDelay={150} timeout={400}>
+              {checkoutControl}
+              {handoffSummary.state === "open" && handoffSummary.mergeability === "conflicting"
+                ? resolveConflictsControl
+                : null}
+            </TooltipProvider>
+          ) : undefined
+        }
+      />
+    );
   }
 
   return (
@@ -1775,71 +1881,7 @@ export function PullRequestDetailPanel({
                   threadRef={null}
                 />
               ) : null}
-              {/* Checking a pull request out is the reason to open one here at all, so it is a
-                  button of its own rather than a side effect of asking an agent for something.
-                  It asks where, because the two answers are not interchangeable: one leaves your
-                  work where it is, the other moves the repository you are standing in. Only on
-                  the page: beside a thread the branch is already checked out right there. */}
-              {context === "page" ? (
-                <Menu>
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <MenuTrigger
-                          disabled={handoff !== null}
-                          render={
-                            <Button
-                              size="xs"
-                              variant="outline"
-                              aria-label={
-                                handoff?.startsWith("checkout") ? "Checking out..." : "Check out"
-                              }
-                            >
-                              <GitBranchIcon aria-hidden className="size-3.5" />
-                              <span className="@max-[35rem]/pr-header:hidden">
-                                {handoff?.startsWith("checkout") ? "Checking out..." : "Check out"}
-                              </span>
-                              <ChevronDownIcon
-                                aria-hidden
-                                className="size-3.5 text-muted-foreground"
-                              />
-                            </Button>
-                          }
-                        />
-                      }
-                    />
-                    <TooltipPopup>Check out this pull request</TooltipPopup>
-                  </Tooltip>
-                  <MenuPopup align="end" side="bottom" className="min-w-72">
-                    <MenuItem onClick={() => startCheckout("worktree")}>
-                      <GitBranchIcon className="mt-0.5 size-3.5 shrink-0 self-start" />
-                      <span className="flex min-w-0 flex-col">
-                        <span>In a separate worktree</span>
-                        <span className="text-xs text-muted-foreground">
-                          Its own folder and thread. Nothing you have open moves.
-                        </span>
-                      </span>
-                    </MenuItem>
-                    <MenuItem onClick={() => startCheckout("local")}>
-                      <FolderGit2Icon className="mt-0.5 size-3.5 shrink-0 self-start" />
-                      <span className="flex min-w-0 flex-col">
-                        <span>In this repository</span>
-                        <span className="text-xs text-muted-foreground">
-                          Switches the branch you are working in, like `gh pr checkout`.
-                        </span>
-                      </span>
-                    </MenuItem>
-                    {pickableEnvironments.length > 0 ? (
-                      <ActOnEnvironmentPicker
-                        environments={pickableEnvironments}
-                        value={actingEnvironmentId}
-                        onChange={(next) => setActingScope({ pullRequestKey, environmentId: next })}
-                        disabled={handoff !== null}
-                      />
-                    ) : null}
-                  </MenuPopup>
-                </Menu>
-              ) : null}
+              {checkoutControl}
               {/* Said where the Merge button is, because it is the answer to why nobody has
                   pressed it: the merge is already asked for, and the host is holding it. */}
               {autoMergeArmed && primaryAction !== "auto-merge-armed" ? (
@@ -1864,31 +1906,7 @@ export function PullRequestDetailPanel({
                 </Tooltip>
               ) : null}
               {primaryAction === "resolve" ? (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <span className="inline-flex shrink-0">
-                        <Button
-                          size="xs"
-                          variant="destructive-outline"
-                          disabled={handoff !== null}
-                          onClick={startResolveConflicts}
-                          aria-label={
-                            handoff === "conflicts" ? "Preparing..." : "Resolve conflicts"
-                          }
-                        >
-                          <PullRequestGlyph.conflicting aria-hidden className="size-3.5" />
-                          <span className="@max-[30rem]/pr-header:hidden">
-                            {handoff === "conflicts" ? "Preparing..." : "Resolve conflicts"}
-                          </span>
-                        </Button>
-                      </span>
-                    }
-                  />
-                  <TooltipPopup side="top">
-                    {handoff === "conflicts" ? "Preparing..." : "Resolve conflicts"}
-                  </TooltipPopup>
-                </Tooltip>
+                resolveConflictsControl
               ) : primaryAction === "ready" ? (
                 <Tooltip>
                   <TooltipTrigger
