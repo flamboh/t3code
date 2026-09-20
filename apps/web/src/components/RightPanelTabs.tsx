@@ -62,7 +62,11 @@ import { ScrollArea } from "~/components/ui/scroll-area";
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
 import { faviconUrlForOrigin } from "~/lib/favicon";
 import { useTheme } from "~/hooks/useTheme";
-import { pullRequestEnvironment } from "~/state/pullRequests";
+import {
+  newestPullRequestSummary,
+  pullRequestEnvironment,
+  useSharedPullRequestSummary,
+} from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 
@@ -72,6 +76,7 @@ import { previewBridge } from "./preview/previewBridge";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
+import { resolvePullRequestReferenceHost } from "./pullRequest/pullRequestDetail.logic";
 
 interface RightPanelTabsProps {
   mode: PreviewPanelMode;
@@ -776,6 +781,15 @@ function PullRequestSurfaceIcon({
     (identity?.provider
       ? pullRequestHostOf(identity, identity.provider as SourceControlProviderKind)
       : null);
+  const cacheReference = resolvePullRequestReferenceHost(
+    {
+      projectId: surface.projectId as ProjectId,
+      repository: surface.repository,
+      number: surface.number,
+      ...(surface.host === undefined ? {} : { host: surface.host }),
+    },
+    identity,
+  );
   const configs = useServerConfigs();
   const capabilities =
     resolvedEnvironmentId === null
@@ -800,19 +814,18 @@ function PullRequestSurfaceIcon({
           },
         }),
   ).data;
+  const sharedSummary = useSharedPullRequestSummary(resolvedEnvironmentId, cacheReference, null);
   // The compact tab intentionally shows lifecycle and draft state only. Conflict warnings have
   // their own presentation on surfaces that have mergeability, while this tab stays stable as
   // detail data arrives.
-  const status =
-    linkedSnapshot !== null
-      ? linkedSnapshot
-      : detail === null
-        ? (seed ?? null)
-        : { state: detail.state, isDraft: detail.isDraft };
+  const status = linkedSnapshot ?? newestPullRequestSummary(detail, sharedSummary) ?? seed ?? null;
   if (status === null) {
     return <PullRequestGlyph.pullRequest className="size-3 shrink-0 text-muted-foreground" />;
   }
-  const presentation = resolvePullRequestState({ state: status.state, isDraft: status.isDraft });
+  const presentation = resolvePullRequestState({
+    state: status.state,
+    isDraft: status.isDraft ?? detail?.isDraft ?? seed?.isDraft ?? false,
+  });
   return <presentation.Icon className={cn("size-3 shrink-0", presentation.toneClassName)} />;
 }
 
