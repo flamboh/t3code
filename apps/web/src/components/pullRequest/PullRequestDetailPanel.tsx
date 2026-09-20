@@ -141,6 +141,7 @@ import {
   handoffPrompt,
   handoffReviewComments,
   latestPullRequestReviewOutcomes,
+  loadingPullRequestCheckoutCommand,
   isStackedPullRequestBase,
   pullRequestActionMenuHasGroup,
   pullRequestActionNeedsHostRefresh,
@@ -749,7 +750,7 @@ export function PullRequestDetailPanel({
         detail?.headRepositoryNameWithOwner,
         changeRequestRepositoryUrl(handoffSummary.url),
       )
-    : null;
+    : loadingPullRequestCheckoutCommand(cacheReference, repositoryIdentity);
   const branchRefsQuery = useEnvironmentQuery(
     detail === null
       ? null

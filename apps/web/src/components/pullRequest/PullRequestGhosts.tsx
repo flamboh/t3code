@@ -231,6 +231,7 @@ export function PullRequestDetailGhost({
                     copyLabel="Copy checkout command"
                     copiedLabel="Checkout command copied"
                     className="ml-auto font-mono"
+                    tooltipSide="bottom"
                   />
                 ) : null}
               </div>
