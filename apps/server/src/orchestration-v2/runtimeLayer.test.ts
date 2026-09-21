@@ -47,6 +47,7 @@ import { ProjectionProjectRepository } from "../persistence/Services/ProjectionP
 import { ProjectEnrichmentService } from "../project/ProjectEnrichmentService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
+import { identityLayerTest } from "../environment/ServerEnvironment.ts";
 import { layer as mcpSessionRegistryTestLayer } from "../mcp/McpSessionRegistry.testkit.ts";
 import { ProviderInstanceRegistry } from "../provider/Services/ProviderInstanceRegistry.ts";
 import type { ProviderInstance } from "../provider/ProviderDriver.ts";
@@ -174,6 +175,7 @@ const TestLayer = Layer.mergeAll(
   Layer.provide(GitWorkflowTestLayer),
   Layer.provide(ProjectServiceTestLayer),
   Layer.provide(PlatformTestLayer),
+  Layer.provide(identityLayerTest()),
 );
 
 const LegacyImportTestLayer = OrchestrationV2LayerLive.pipe(
@@ -186,6 +188,7 @@ const LegacyImportTestLayer = OrchestrationV2LayerLive.pipe(
   Layer.provide(GitWorkflowTestLayer),
   Layer.provide(ProjectServiceTestLayer),
   Layer.provide(PlatformTestLayer),
+  Layer.provide(identityLayerTest()),
 );
 
 const ProjectDeletionTestLayer = Layer.mergeAll(
@@ -224,6 +227,7 @@ const ProjectDeletionTestLayer = Layer.mergeAll(
   Layer.provide(TestProviderInstanceRegistry),
   Layer.provide(GitWorkflowTestLayer),
   Layer.provide(PlatformTestLayer),
+  Layer.provide(identityLayerTest()),
 );
 
 it.layer(ProjectDeletionTestLayer)("project deletion during thread commands", (it) => {
@@ -359,6 +363,7 @@ const SharedApplicationDataPlaneTestLayer = Layer.merge(
   Layer.provide(GitWorkflowTestLayer),
   Layer.provide(ProjectServiceTestLayer),
   Layer.provide(PlatformTestLayer),
+  Layer.provide(identityLayerTest()),
 );
 
 it.layer(TestLayer)("OrchestrationV2LayerLive", (it) => {
