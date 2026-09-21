@@ -57,7 +57,9 @@ function link(
   };
 }
 
-const capabilities = new Map([[env, { threadSettlement: true, threadSnooze: true }]]);
+const capabilities = new Map([
+  [env, { threadSettlement: true, threadSnooze: true, threadPullRequests: true }],
+]);
 
 describe("collectPullRequestPreviewEntries", () => {
   it("keeps only unarchived, unsettled threads that have a pull request", () => {
@@ -162,6 +164,22 @@ describe("collectPullRequestPreviewEntries", () => {
       NOW,
     );
     expect(entries).toHaveLength(1);
+  });
+
+  it("falls back to legacy references on servers without modern links", () => {
+    const entries = collectPullRequestPreviewEntries(
+      [
+        thread("a", {
+          pullRequests: [link(8)],
+          linkedPullRequest: pr(7),
+          branchPullRequest: pr(9),
+        }),
+      ],
+      new Map([[env, { threadSettlement: true, threadSnooze: true }]]),
+      NOW,
+    );
+    expect(entries.map((entry) => entry.reference.number)).toEqual([7]);
+    expect(entries.every((entry) => entry.pullRequestLink === null)).toBe(true);
   });
 
   it("counts a pull request as active when an active thread shares it with a snoozed one", () => {

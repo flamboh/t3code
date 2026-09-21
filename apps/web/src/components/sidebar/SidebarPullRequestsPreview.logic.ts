@@ -32,6 +32,7 @@ export type PullRequestPreviewThread = ThreadSnoozeShell &
 export interface PullRequestPreviewCapabilities {
   readonly threadSettlement?: boolean | undefined;
   readonly threadSnooze?: boolean | undefined;
+  readonly threadPullRequests?: boolean | undefined;
 }
 
 export interface PullRequestPreviewEntry {
@@ -88,8 +89,12 @@ export function collectPullRequestPreviewEntries(
     ) {
       continue;
     }
-    const links = visibleThreadPullRequests(thread.pullRequests);
-    // A modern shell's visible links are the source of truth. Legacy fields
+    const supportsModernLinks = capabilities?.threadPullRequests === true;
+    const links = supportsModernLinks ? visibleThreadPullRequests(thread.pullRequests) : [];
+    // A modern shell's visible links are the source of truth only when the
+    // environment supports them. Older servers never emit the events, so a
+    // cached shell reconnecting to one must fall back to legacy references
+    // rather than keep showing a set nothing will ever update. Legacy fields
     // remain useful for cached/pre-migration shells, but adding them beside
     // the links can resurrect a stale projection or branch match as another
     // row for the same thread.
