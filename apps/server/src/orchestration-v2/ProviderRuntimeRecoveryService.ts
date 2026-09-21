@@ -194,7 +194,7 @@ export const make = Effect.gen(function* () {
           ? restartContinuationRun(projection)
           : undefined;
       const foreignRun =
-        candidate !== undefined && !runOwnedByEnvironment(projection, candidate, environmentId);
+        candidate !== undefined && !runOwnedByEnvironment(candidate, environmentId);
       const continuationRun = foreignRun ? undefined : candidate;
       const detail = foreignRun
         ? `Cancelled because this run was started by another T3 Code environment.`
@@ -614,7 +614,7 @@ export const make = Effect.gen(function* () {
       )
         continue;
       const run = restartContinuationRun(projection);
-      if (!run || !runOwnedByEnvironment(projection, run, environmentId)) continue;
+      if (!run || !runOwnedByEnvironment(run, environmentId)) continue;
       const commandId = CommandId.make(`command:restart-prepare:${run.id}`);
       yield* eventSink.writeWithEffects({
         commandId,

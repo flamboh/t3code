@@ -129,39 +129,16 @@ it("requires matching saved native state for an unfinished root run", () => {
     assert.isUndefined(restartContinuationRun(invalid as OrchestrationV2ThreadProjection));
 });
 
-it("owns unstamped runs, own runs, and prepared continuations of own runs", () => {
-  const other = EnvironmentId.make("environment-other");
+it("owns unstamped runs and runs stamped with this environment", () => {
   const run = makeProjection().runs[0]!;
-  const sourceRunId = RunId.make("run:previous-crash");
-  const prepared = {
-    ...run,
-    id: RunId.make("run:continuation"),
-    ordinal: 2,
-    status: "starting" as const,
-    restartContinuationOfRunId: sourceRunId,
-  };
-  const withSource = (environmentId?: EnvironmentId) => ({
-    runs: [{ ...run, id: sourceRunId, status: "cancelled" as const, environmentId }, prepared],
-  });
-  assert.isTrue(runOwnedByEnvironment({ runs: [run] }, run, environmentId));
-  assert.isTrue(runOwnedByEnvironment({ runs: [run] }, { ...run, environmentId }, environmentId));
+  assert.isTrue(runOwnedByEnvironment(run, environmentId));
+  assert.isTrue(runOwnedByEnvironment({ ...run, environmentId }, environmentId));
   assert.isFalse(
-    runOwnedByEnvironment({ runs: [run] }, { ...run, environmentId: other }, environmentId),
+    runOwnedByEnvironment(
+      { ...run, environmentId: EnvironmentId.make("environment-other") },
+      environmentId,
+    ),
   );
-  assert.isTrue(runOwnedByEnvironment(withSource(undefined), prepared, environmentId));
-  assert.isTrue(runOwnedByEnvironment(withSource(environmentId), prepared, environmentId));
-  assert.isFalse(runOwnedByEnvironment(withSource(other), prepared, environmentId));
-});
-
-it("refuses continuation ownership when its ancestry is missing or cyclic", () => {
-  const run = makeProjection().runs[0]!;
-  const continuation = {
-    ...run,
-    restartContinuationOfRunId: RunId.make("run:missing"),
-  };
-  assert.isFalse(runOwnedByEnvironment({ runs: [continuation] }, continuation, environmentId));
-  const cyclic = { ...continuation, restartContinuationOfRunId: continuation.id };
-  assert.isFalse(runOwnedByEnvironment({ runs: [cyclic] }, cyclic, environmentId));
 });
 
 it("recovers an admitted continuation after another crash before provider start", () => {
@@ -304,7 +281,7 @@ it.effect("does not deliver a persisted continuation from another environment", 
     let projection = makeProjection();
     const commands: Parameters<ThreadManagementService["Service"]["dispatch"]>[0][] = [];
     const threads = Layer.mock(ThreadManagementService)({
-      getThreadProjection: () => Effect.succeed(projection),
+      getThreadRecords: () => Effect.succeed(projection),
       dispatch: (command) => {
         commands.push(command);
         return Effect.succeed({} as never);

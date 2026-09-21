@@ -1216,7 +1216,7 @@ for (const prepared of [false, true]) {
         providerTurns: prepared
           ? []
           : [{ id: providerTurnId, providerThreadId, runAttemptId: attemptId, status: "running" }],
-        // A prepared continuation carries no stamp of its own; ownership comes from its source run.
+        // A prepared continuation is stamped with its source run's environment when admitted.
         runs: prepared
           ? [
               {
@@ -1235,6 +1235,7 @@ for (const prepared of [false, true]) {
                 activeAttemptId: attemptId,
                 status: "starting",
                 restartContinuationOfRunId: sourceRunId,
+                environmentId: EnvironmentId.make("environment-other"),
               },
             ]
           : [

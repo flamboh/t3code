@@ -9,6 +9,7 @@ import {
   CheckpointRef,
   CommandId,
   ContextTransferId,
+  EnvironmentId,
   EventId,
   MessageId,
   NodeId,
@@ -2023,7 +2024,12 @@ it.layer(TestLayer)("OrchestrationV2LayerLive lifecycle", (it) => {
               threadId,
               runId: original.id,
               occurredAt: now,
-              payload: { ...original, status: "cancelled", completedAt: now },
+              payload: {
+                ...original,
+                status: "cancelled",
+                completedAt: now,
+                environmentId: EnvironmentId.make("environment-original"),
+              },
             },
           ],
           effects: [],
@@ -2046,6 +2052,8 @@ it.layer(TestLayer)("OrchestrationV2LayerLive lifecycle", (it) => {
         const admitted = yield* orchestrator.getThreadProjection(threadId);
         assert.lengthOf(admitted.runs, 2);
         assert.equal(admitted.runs[1]?.restartContinuationOfRunId, original.id);
+        // The continuation inherits its source's environment so recovery can check ownership.
+        assert.equal(admitted.runs[1]?.environmentId, "environment-original");
         // A differently identified stale delivery still must not create another run.
         yield* orchestrator.dispatch({
           ...command,

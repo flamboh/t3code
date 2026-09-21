@@ -3686,36 +3686,25 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           turnItemRows,
         ] = yield* Effect.all([
           decodeThreadPayload(threadRows[0].payload_json),
-          // Keep continuation ownership available without loading unrelated settled runs.
           sql<PayloadRow>`
-              WITH RECURSIVE recovery_runs(run_id, ordinal, payload_json) AS (
-                SELECT run.run_id, run.ordinal, run.payload_json
-                FROM orchestration_v2_projection_runs AS run
-                WHERE run.thread_id = ${threadId}
-                  AND (
-                    run.status IN ('queued', 'preparing', 'starting', 'running', 'waiting')
-                    OR run.run_id = (
-                      SELECT latest.run_id FROM orchestration_v2_projection_runs AS latest
-                      WHERE latest.thread_id = ${threadId}
-                      ORDER BY latest.ordinal DESC LIMIT 1
-                    )
-                    OR run.run_id IN (
-                      SELECT item.run_id FROM orchestration_v2_projection_turn_items AS item
-                      WHERE item.thread_id = ${threadId}
-                        AND item.type IN ('command_execution', 'dynamic_tool', 'subagent')
-                        AND item.status IN ('pending', 'running', 'waiting')
-                        AND item.run_id IS NOT NULL
-                    )
+              SELECT payload_json FROM orchestration_v2_projection_runs AS run
+              WHERE run.thread_id = ${threadId}
+                AND (
+                  run.status IN ('queued', 'preparing', 'starting', 'running', 'waiting')
+                  OR run.run_id = (
+                    SELECT latest.run_id FROM orchestration_v2_projection_runs AS latest
+                    WHERE latest.thread_id = ${threadId}
+                    ORDER BY latest.ordinal DESC LIMIT 1
                   )
-                UNION
-                SELECT source.run_id, source.ordinal, source.payload_json
-                FROM orchestration_v2_projection_runs AS source
-                JOIN recovery_runs AS continuation
-                  ON source.run_id = json_extract(continuation.payload_json, '$.restartContinuationOfRunId')
-                WHERE source.thread_id = ${threadId}
-                  AND json_extract(continuation.payload_json, '$.environmentId') IS NULL
-              )
-              SELECT payload_json FROM recovery_runs ORDER BY ordinal ASC
+                  OR run.run_id IN (
+                    SELECT item.run_id FROM orchestration_v2_projection_turn_items AS item
+                    WHERE item.thread_id = ${threadId}
+                      AND item.type IN ('command_execution', 'dynamic_tool', 'subagent')
+                      AND item.status IN ('pending', 'running', 'waiting')
+                      AND item.run_id IS NOT NULL
+                  )
+                )
+              ORDER BY run.ordinal ASC
             `,
           sql<PayloadRow>`
               SELECT attempt.payload_json

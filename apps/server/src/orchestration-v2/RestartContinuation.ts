@@ -17,29 +17,14 @@ import { ThreadManagementService } from "./ThreadManagementService.ts";
 /**
  * Whether this environment may resume a run. Runs written before environment
  * stamping have no owner and stay resumable so existing installs keep working
- * through the upgrade. A prepared continuation is only stamped once it reaches
- * `running`, so it inherits ownership through its continuation ancestors.
+ * through the upgrade. A prepared continuation is stamped with its source run's
+ * environment when it is admitted, so ownership is a direct read.
  */
 export function runOwnedByEnvironment(
-  projection: Pick<ProjectionRuntimeRecoveryState, "runs">,
-  run: OrchestrationV2Run,
+  run: Pick<OrchestrationV2Run, "environmentId">,
   environmentId: EnvironmentId,
 ): boolean {
-  let ancestor = run;
-  const visited = new Set<RunId>();
-  while (
-    ancestor.environmentId === undefined &&
-    ancestor.restartContinuationOfRunId !== undefined
-  ) {
-    if (visited.has(ancestor.id)) return false;
-    visited.add(ancestor.id);
-    const source = projection.runs.find(
-      (candidate) => candidate.id === ancestor.restartContinuationOfRunId,
-    );
-    if (!source) return false;
-    ancestor = source;
-  }
-  return ancestor.environmentId === undefined || ancestor.environmentId === environmentId;
+  return run.environmentId === undefined || run.environmentId === environmentId;
 }
 
 /** The run to continue after a restart, before the ownership check in `runOwnedByEnvironment`. */
@@ -121,7 +106,7 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
     const source = projection.runs.find((run) => run.id === input.sourceRunId);
     if (!source || source.status !== "cancelled") return;
     // A foreign run's persisted continuation must stay a no-op.
-    if (!runOwnedByEnvironment(projection, source, environmentId)) return;
+    if (!runOwnedByEnvironment(source, environmentId)) return;
     // A user submission after reconciliation takes precedence over an automatic prompt.
     if (projection.runs.some((run) => run.ordinal > source.ordinal)) return;
     if (projection.thread.providerInstanceId !== source.providerInstanceId) return;
