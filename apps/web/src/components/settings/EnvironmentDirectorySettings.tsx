@@ -6,6 +6,7 @@ import type { EnvironmentPresentation } from "../../state/environments";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { DraftInput } from "../ui/draft-input";
 import { SettingResetButton, SettingsRow } from "./settingsLayout";
+import { SettingsGroup } from "./SettingsGroup";
 
 /**
  * Directory defaults for one environment. Inputs hold only what is stored on
@@ -114,9 +115,9 @@ export function EnvironmentDirectoryDisclosure({
         <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 group-data-panel-open:rotate-90" />
       </CollapsibleTrigger>
       <CollapsiblePanel>
-        <div className="rounded-xl border border-border/60 bg-card/40 shadow-xs/5 [&>*+*]:border-t [&>*+*]:border-border/50 [&>[data-slot=settings-row]]:rounded-none">
+        <SettingsGroup>
           <EnvironmentDirectoryRows environment={environment} />
-        </div>
+        </SettingsGroup>
       </CollapsiblePanel>
     </Collapsible>
   );
