@@ -754,7 +754,9 @@ function useComposerRestingTransition(
   useLayoutEffect(() => {
     const requestId = transitionLayoutRequestRef.current + 1;
     transitionLayoutRequestRef.current = requestId;
-    const stateChanged = previousCollapsedRef.current !== isCollapsed;
+    const stateChanged =
+      previousCollapsedRef.current !== isCollapsed ||
+      previousControlsInStripRef.current !== controlsInStrip;
     // A non-Git context strip enters or leaves flow through ChatView state in
     // an earlier layout effect. Let React flush that parent update before the
     // FLIP reads its destination geometry, while still running before paint.
@@ -767,7 +769,7 @@ function useComposerRestingTransition(
         transitionLayoutRequestRef.current += 1;
       }
     };
-  }, [isCollapsed, transitionToCurrentGeometry]);
+  }, [controlsInStrip, isCollapsed, transitionToCurrentGeometry]);
 
   // The resting flag can change while the collapsed layout stays the same,
   // for example when an unfocused thread crosses the phone breakpoint. The

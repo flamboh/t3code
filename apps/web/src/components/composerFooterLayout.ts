@@ -61,9 +61,9 @@ export function shouldUseRestingComposerLayout(input: {
 
 /**
  * How much taller the empty expanded composer is than its resting row on
- * desktop widths, from the layout classes in ChatComposer: the body loses
+ * desktop widths at the default 16px root font. In ChatComposer the body loses
  * 8px of top padding, the prompt clamps from min-h-17.5 (70px) to 32px, and
- * the 48px footer leaves flow.
+ * the 48px footer leaves flow. These rem-based dimensions scale with the root font.
  */
 export const COMPOSER_RESTING_EXPANSION_MIN_PX = 94;
 
@@ -83,12 +83,15 @@ export function resolveComposerTimelineInset(input: {
   currentInset: number;
   overlayHeight: number;
   isResting: boolean;
-  retainsFooter?: boolean;
+  retainedFooterHeight?: number;
+  rootFontSize?: number;
 }): number {
   return input.isResting
     ? Math.max(
         input.currentInset,
-        input.overlayHeight + COMPOSER_RESTING_EXPANSION_MIN_PX - (input.retainsFooter ? 48 : 0),
+        input.overlayHeight +
+          COMPOSER_RESTING_EXPANSION_MIN_PX * ((input.rootFontSize ?? 16) / 16) -
+          (input.retainedFooterHeight ?? 0),
       )
     : input.overlayHeight;
 }
