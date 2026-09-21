@@ -1,5 +1,7 @@
 import type { SVGProps } from "react";
 
+import { cn } from "~/lib/utils";
+
 export function T3Wordmark(props: SVGProps<SVGSVGElement>) {
   return (
     <svg {...props} viewBox="15.5309 37 94.3941 56.96" xmlns="http://www.w3.org/2000/svg">
@@ -8,5 +10,27 @@ export function T3Wordmark(props: SVGProps<SVGSVGElement>) {
         fill="currentColor"
       />
     </svg>
+  );
+}
+
+export function T3CodeWordmark({ onBackdrop = false }: { readonly onBackdrop?: boolean }) {
+  return (
+    // Center the visible capitals, without the font's ascender/descender space.
+    <span
+      className={cn(
+        "inline-flex min-w-0 items-baseline gap-1 text-sm font-medium tracking-tight",
+        onBackdrop ? "text-white" : "text-foreground",
+      )}
+    >
+      <T3Wordmark aria-label="T3" className="h-[1cap] w-auto shrink-0" />
+      <span
+        className={cn(
+          "truncate [text-box:trim-both_cap_alphabetic]",
+          onBackdrop ? "text-white/70" : "text-muted-foreground",
+        )}
+      >
+        Code
+      </span>
+    </span>
   );
 }
