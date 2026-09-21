@@ -131,6 +131,7 @@ export function DraftHeroHeadline({
         ) ?? null);
   const activeProjectKey = activeProjectGroup?.projectKey ?? "";
   const activeProjectDisplayName = activeProjectGroup?.displayName ?? activeProjectTitle;
+  const hasResolvedProject = activeProjectTitle !== null;
   const canChooseProject = projectPickerEntries.length > 0;
   const shouldShowProjectMenu = canChooseProject;
   const openProjectSettingsMenu = useCallback(
