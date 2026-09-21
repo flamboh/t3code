@@ -1,4 +1,4 @@
-import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId, ThreadPullRequestLink } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -16,11 +16,13 @@ function thread(
   return {
     id: id as PullRequestPreviewThread["id"],
     environmentId: env,
+    projectId: "project-1" as ProjectId,
     title: `Thread ${id}`,
     branch: null,
     archivedAt: null,
     settledOverride: null,
     linkedPullRequest: null,
+    pullRequests: [],
     branchPullRequest: null,
     snoozedUntil: null,
     snoozedAt: null,
@@ -38,6 +40,20 @@ function pr(number: number) {
     repository: "t3tools/t3code",
     number,
     url: `https://github.com/t3tools/t3code/pull/${number}`,
+  };
+}
+
+function link(
+  number: number,
+  source: ThreadPullRequestLink["source"] = "manual",
+): ThreadPullRequestLink {
+  return {
+    ...pr(number),
+    host: "github.com",
+    source,
+    linkedAt: NOW,
+    snapshot: null,
+    stack: null,
   };
 }
 
@@ -67,6 +83,55 @@ describe("collectPullRequestPreviewEntries", () => {
       NOW,
     );
     expect(entry?.reference.number).toBe(7);
+  });
+
+  it("includes visible links from the multi-pull-request thread model", () => {
+    const entries = collectPullRequestPreviewEntries(
+      [
+        thread("a", {
+          pullRequests: [link(7), link(8), link(9, "stack-dismissed")],
+        }),
+      ],
+      capabilities,
+      NOW,
+    );
+    expect(entries.map((entry) => entry.reference.number)).toEqual([7, 8]);
+    expect(entries.every((entry) => entry.pullRequestLink !== null)).toBe(true);
+  });
+
+  it("does not resurrect legacy projections beside visible links", () => {
+    const entries = collectPullRequestPreviewEntries(
+      [
+        thread("a", {
+          pullRequests: [link(7)],
+          linkedPullRequest: pr(8),
+          branchPullRequest: pr(9),
+        }),
+      ],
+      capabilities,
+      NOW,
+    );
+    expect(entries.map((entry) => entry.reference.number)).toEqual([7]);
+  });
+
+  it("keeps same-number pull requests on different hosts distinct", () => {
+    const entries = collectPullRequestPreviewEntries(
+      [
+        thread("a", {
+          pullRequests: [
+            link(7),
+            {
+              ...link(7),
+              host: "forge.example",
+              url: "https://forge.example/t3tools/t3code/pull/7",
+            },
+          ],
+        }),
+      ],
+      capabilities,
+      NOW,
+    );
+    expect(entries).toHaveLength(2);
   });
 
   it("lists active threads first, then snoozed threads by wake time", () => {

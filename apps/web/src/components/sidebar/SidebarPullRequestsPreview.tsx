@@ -10,6 +10,10 @@ import { resolvePullRequestState } from "../pullRequest/pullRequestPresentation"
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { useLinkedThreadPullRequest } from "../ThreadStatusIndicators";
 import {
+  legacyThreadPullRequestKey,
+  threadPullRequestKeyOf,
+} from "@t3tools/shared/threadPullRequests";
+import {
   collectPullRequestPreviewEntries,
   type PullRequestPreviewEntry,
 } from "./SidebarPullRequestsPreview.logic";
@@ -22,6 +26,17 @@ type OpenPullRequest = (
   url: string,
 ) => void;
 
+function samePullRequest(
+  left: PullRequestPreviewEntry["reference"],
+  right: PullRequestPreviewEntry["reference"],
+): boolean {
+  return (
+    left.projectId === right.projectId &&
+    threadPullRequestKeyOf(legacyThreadPullRequestKey(left)) ===
+      threadPullRequestKeyOf(legacyThreadPullRequestKey(right))
+  );
+}
+
 function PullRequestPreviewRow({
   entry,
   onOpen,
@@ -29,7 +44,19 @@ function PullRequestPreviewRow({
   readonly entry: PullRequestPreviewEntry;
   readonly onOpen: OpenPullRequest;
 }) {
-  const detail = useLinkedThreadPullRequest(entry.thread.environmentId, entry.reference);
+  const branchPullRequest =
+    entry.thread.branchPullRequest !== null &&
+    entry.thread.branchPullRequest !== undefined &&
+    samePullRequest(entry.reference, entry.thread.branchPullRequest)
+      ? entry.thread.branchPullRequest
+      : undefined;
+  const detail = useLinkedThreadPullRequest(
+    entry.thread.environmentId,
+    entry.reference,
+    true,
+    entry.pullRequestLink === null ? undefined : [entry.pullRequestLink],
+    branchPullRequest,
+  );
   const pr = detail?.pr ?? null;
   const state = pr
     ? resolvePullRequestState({ state: pr.state, isDraft: pr.isDraft === true })
@@ -115,7 +142,7 @@ export function SidebarPullRequestsPreview() {
     <ul className="flex flex-col">
       {visible.map((entry) => (
         <PullRequestPreviewRow
-          key={scopedThreadKey(scopeThreadRef(entry.thread.environmentId, entry.thread.id))}
+          key={`${scopedThreadKey(scopeThreadRef(entry.thread.environmentId, entry.thread.id))}:${entry.pullRequestLink === null ? threadPullRequestKeyOf(legacyThreadPullRequestKey(entry.reference)) : threadPullRequestKeyOf(entry.pullRequestLink)}`}
           entry={entry}
           onOpen={handleOpen}
         />

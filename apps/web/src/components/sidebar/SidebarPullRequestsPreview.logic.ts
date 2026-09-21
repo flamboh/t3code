@@ -3,18 +3,29 @@ import {
   type ThreadSnoozeShell,
 } from "@t3tools/client-runtime/state/thread-settled";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
-import type { EnvironmentId, ThreadLinkedPullRequest } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ThreadLinkedPullRequest,
+  ThreadPullRequestLink,
+} from "@t3tools/contracts";
+import {
+  legacyThreadPullRequestKey,
+  threadPullRequestKeyOf,
+  visibleThreadPullRequests,
+} from "@t3tools/shared/threadPullRequests";
 
 export type PullRequestPreviewThread = ThreadSnoozeShell &
   Pick<
     EnvironmentThreadShell,
     | "id"
     | "environmentId"
+    | "projectId"
     | "title"
     | "branch"
     | "archivedAt"
     | "settledOverride"
     | "linkedPullRequest"
+    | "pullRequests"
     | "branchPullRequest"
   >;
 
@@ -26,7 +37,30 @@ export interface PullRequestPreviewCapabilities {
 export interface PullRequestPreviewEntry {
   readonly thread: PullRequestPreviewThread;
   readonly reference: ThreadLinkedPullRequest;
+  /** The current link when this row came from the multi-PR thread model. */
+  readonly pullRequestLink: ThreadPullRequestLink | null;
   readonly snoozed: boolean;
+}
+
+function pullRequestIdentity(
+  reference: ThreadLinkedPullRequest,
+  pullRequestLink: ThreadPullRequestLink | null,
+): string {
+  return threadPullRequestKeyOf(
+    pullRequestLink === null ? legacyThreadPullRequestKey(reference) : pullRequestLink,
+  );
+}
+
+function linkedReference(
+  link: ThreadPullRequestLink,
+  projectId: ThreadLinkedPullRequest["projectId"],
+): ThreadLinkedPullRequest {
+  return {
+    projectId,
+    repository: link.repository,
+    number: link.number,
+    url: link.url,
+  };
 }
 
 /**
@@ -45,8 +79,6 @@ export function collectPullRequestPreviewEntries(
   const byPullRequest = new Map<string, PullRequestPreviewEntry>();
   for (const thread of threads) {
     if (thread.archivedAt !== null) continue;
-    const reference = thread.linkedPullRequest ?? thread.branchPullRequest;
-    if (!reference) continue;
     const capabilities = capabilitiesByEnvironment.get(thread.environmentId);
     const isSnoozed = capabilities?.threadSnooze === true && effectiveSnoozed(thread, { now });
     if (
@@ -56,15 +88,38 @@ export function collectPullRequestPreviewEntries(
     ) {
       continue;
     }
-    const key = [
-      thread.environmentId,
-      reference.projectId,
-      reference.repository.toLowerCase(),
-      reference.number,
-    ].join("\0");
-    const existing = byPullRequest.get(key);
-    if (existing && (!existing.snoozed || isSnoozed)) continue;
-    byPullRequest.set(key, { thread, reference, snoozed: isSnoozed });
+    const links = visibleThreadPullRequests(thread.pullRequests);
+    // A modern shell's visible links are the source of truth. Legacy fields
+    // remain useful for cached/pre-migration shells, but adding them beside
+    // the links can resurrect a stale projection or branch match as another
+    // row for the same thread.
+    const candidates: ReadonlyArray<{
+      readonly reference: ThreadLinkedPullRequest;
+      readonly pullRequestLink: ThreadPullRequestLink | null;
+    }> =
+      links.length > 0
+        ? links.map((link) => ({
+            reference: linkedReference(link, thread.projectId),
+            pullRequestLink: link,
+          }))
+        : [
+            ...(thread.linkedPullRequest
+              ? [{ reference: thread.linkedPullRequest, pullRequestLink: null }]
+              : []),
+            ...(thread.branchPullRequest
+              ? [{ reference: thread.branchPullRequest, pullRequestLink: null }]
+              : []),
+          ];
+    for (const { reference, pullRequestLink } of candidates) {
+      const key = [
+        thread.environmentId,
+        reference.projectId,
+        pullRequestIdentity(reference, pullRequestLink),
+      ].join("\0");
+      const existing = byPullRequest.get(key);
+      if (existing && (!existing.snoozed || isSnoozed)) continue;
+      byPullRequest.set(key, { thread, reference, pullRequestLink, snoozed: isSnoozed });
+    }
   }
   const entries = [...byPullRequest.values()];
   const active = entries.filter((entry) => !entry.snoozed);
