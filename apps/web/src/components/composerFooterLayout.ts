@@ -38,8 +38,8 @@ export function shouldUseRestingComposerLayout(input: {
   // Banners and the tasks badge dock above the surface, so they are absent
   // too. Whether the context strip can host the relocated controls is
   // deliberately absent here: resting reclaims vertical space at every
-  // desktop width, and where the strip is missing or too narrow the controls
-  // simply return when the composer is focused.
+  // desktop width. Without a context strip the footer remains inside the
+  // composer; a narrow strip can hide controls until the composer is focused.
   //
   // Only a timeline scroll rests the composer: the user asked for it with the
   // gesture, and it lifts on the next composer interaction. Losing focus never
@@ -83,9 +83,13 @@ export function resolveComposerTimelineInset(input: {
   currentInset: number;
   overlayHeight: number;
   isResting: boolean;
+  retainsFooter?: boolean;
 }): number {
   return input.isResting
-    ? Math.max(input.currentInset, input.overlayHeight + COMPOSER_RESTING_EXPANSION_MIN_PX)
+    ? Math.max(
+        input.currentInset,
+        input.overlayHeight + COMPOSER_RESTING_EXPANSION_MIN_PX - (input.retainsFooter ? 48 : 0),
+      )
     : input.overlayHeight;
 }
 
