@@ -205,9 +205,10 @@ export const githubMediaResponse = Effect.fn("GitHubMediaFetch.githubMediaRespon
           headers,
         });
       }),
-      Effect.catchTag("GitHubMediaBodyTooLargeError", () =>
-        Effect.succeed(HttpServerResponse.empty({ status: 502, headers })),
-      ),
+      Effect.catchTags({
+        GitHubMediaBodyTooLargeError: () =>
+          Effect.succeed(HttpServerResponse.empty({ status: 502, headers })),
+      }),
     );
   }
   for (const name of FORWARDED_RESPONSE_HEADERS) {

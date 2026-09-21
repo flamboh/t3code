@@ -2,7 +2,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import type { HttpClientResponse } from "effect/unstable/http";
+import type * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 
 const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10] as const;
 const BT709_FULL_RANGE_CICP = [1, 1, 0, 1] as const;
