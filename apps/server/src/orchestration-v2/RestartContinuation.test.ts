@@ -153,6 +153,17 @@ it("owns unstamped runs, own runs, and prepared continuations of own runs", () =
   assert.isFalse(runOwnedByEnvironment(withSource(other), prepared, environmentId));
 });
 
+it("refuses continuation ownership when its ancestry is missing or cyclic", () => {
+  const run = makeProjection().runs[0]!;
+  const continuation = {
+    ...run,
+    restartContinuationOfRunId: RunId.make("run:missing"),
+  };
+  assert.isFalse(runOwnedByEnvironment({ runs: [continuation] }, continuation, environmentId));
+  const cyclic = { ...continuation, restartContinuationOfRunId: continuation.id };
+  assert.isFalse(runOwnedByEnvironment({ runs: [cyclic] }, cyclic, environmentId));
+});
+
 it("recovers an admitted continuation after another crash before provider start", () => {
   const projection = makeProjection();
   const starting = {

@@ -2,6 +2,7 @@ import { assert, it } from "@effect/vitest";
 import {
   CommandId,
   ContextTransferId,
+  EnvironmentId,
   EventId,
   MessageId,
   NodeId,
@@ -26,7 +27,7 @@ import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import { EffectOutboxV2, layer as effectOutboxLayer } from "./EffectOutbox.ts";
 import { ProjectionStoreV2, layer as projectionStoreLayer } from "./ProjectionStore.ts";
-import { restartContinuationRun } from "./RestartContinuation.ts";
+import { restartContinuationRun, runOwnedByEnvironment } from "./RestartContinuation.ts";
 
 const TestLayer = Layer.mergeAll(projectionStoreLayer, effectOutboxLayer).pipe(
   Layer.provideMerge(SqlitePersistenceMemory),
@@ -415,6 +416,36 @@ it.effect("includes shared sessions and provider-owned background rosters in rec
       new Set(yield* projections.getUnreadableThreadIds()),
       new Set([first, second]),
     );
+  }).pipe(Effect.provide(TestLayer)),
+);
+
+it.effect("retains ownership across repeated crashes before a continuation starts", () =>
+  Effect.gen(function* () {
+    const projections = yield* ProjectionStoreV2;
+    const threadId = yield* createThread("continuation-ownership");
+    const owner = EnvironmentId.make("environment-original");
+    yield* createRun(threadId, "completed");
+    const original = yield* createRun(threadId, "cancelled", {
+      ordinal: 2,
+      environmentId: owner,
+    });
+    const interrupted = yield* createRun(threadId, "cancelled", {
+      ordinal: 3,
+      restartContinuationOfRunId: original,
+    });
+    const prepared = yield* createRun(threadId, "starting", {
+      ordinal: 4,
+      restartContinuationOfRunId: interrupted,
+    });
+
+    const recovery = yield* projections.getRuntimeRecoveryProjection(threadId);
+    assert.deepEqual(
+      recovery.runs.map((run) => run.id),
+      [original, interrupted, prepared],
+    );
+    const run = recovery.runs.find((candidate) => candidate.id === prepared)!;
+    assert.isTrue(runOwnedByEnvironment(recovery, run, owner));
+    assert.isFalse(runOwnedByEnvironment(recovery, run, EnvironmentId.make("environment-copy")));
   }).pipe(Effect.provide(TestLayer)),
 );
 
