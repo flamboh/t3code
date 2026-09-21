@@ -193,7 +193,7 @@ function SidebarUtilityPreviewItem({
           <div className="flex w-72 max-w-[calc(100vw-3rem)] flex-col gap-2 p-1 text-xs">
             <InlineButton
               aria-label={`Open ${label}`}
-              className="group/preview-heading -mx-1 flex w-fit items-center gap-1 rounded-sm px-1 text-sm leading-5 font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="group/preview-heading w-fit gap-1 text-sm leading-5 font-medium text-foreground"
               onClick={() => {
                 setOpen(false);
                 onClick();
