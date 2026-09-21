@@ -9,6 +9,7 @@ import {
   terminalThemeFromApp,
   terminalLinkChatText,
   terminalLinkCopyText,
+  terminalLinkTargetForEditor,
 } from "./ThreadTerminalDrawer";
 
 describe("terminal selection menus", () => {
@@ -128,6 +129,19 @@ describe("terminal link menus", () => {
     expect(terminalLinkChatText("https://example.com/a", "/repo")).toBe("https://example.com/a");
     expect(terminalLinkCopyText("src/main.ts:12:3")).toBe("src/main.ts");
     expect(terminalLinkCopyText("https://example.com:8080/a")).toBe("https://example.com:8080/a");
+  });
+
+  it("keeps Windows directory paths as directory links", () => {
+    expect(terminalLinkChatText("C:\\work\\", "C:\\repo")).toBe("C:\\work\\");
+  });
+
+  it("strips positions only for the file manager", () => {
+    expect(terminalLinkTargetForEditor("/repo/src/main.ts:12:3", "file-manager")).toBe(
+      "/repo/src/main.ts",
+    );
+    expect(terminalLinkTargetForEditor("/repo/src/main.ts:12:3", "vscode")).toBe(
+      "/repo/src/main.ts:12:3",
+    );
   });
 });
 

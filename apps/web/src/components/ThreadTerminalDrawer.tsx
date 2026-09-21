@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import {
   type ContextMenuItem,
+  type EditorId,
   type ProviderInstanceId,
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
@@ -58,7 +59,11 @@ import {
   type GhosttyTerminalSurfaceOptions,
 } from "~/terminal/ghostty/surface";
 import { type GhosttyColor, type GhosttyTheme } from "~/terminal/ghostty/core";
-import { useOpenInPreferredEditor, usePreferredEditor } from "../editorPreferences";
+import {
+  resolveAndPersistPreferredEditor,
+  useOpenInPreferredEditor,
+  usePreferredEditor,
+} from "../editorPreferences";
 import { openInEditorMenuLabel } from "../editorLabels";
 import { isTerminalUrl, resolvePathLinkTarget } from "../terminal-links";
 import {
@@ -270,9 +275,17 @@ export type TerminalContextMenuAction =
 
 export function terminalLinkChatText(text: string, cwd: string): string {
   if (isTerminalUrl(text)) return text;
-  const path = splitFilePathPosition(text).path.replace(/(?<!^[A-Za-z]:)[\\/]+$/, "") || "/";
+  const isWindowsCwd = /^[A-Za-z]:[\\/]/.test(cwd) || cwd.startsWith("\\\\");
+  const rawPath = splitFilePathPosition(text).path;
+  const path = (isWindowsCwd ? rawPath : rawPath.replace(/[\\/]+$/, "")) || "/";
   const target = resolvePathLinkTarget(path, cwd);
-  return target.endsWith("/") ? target : serializeComposerFileLink(target);
+  return target.endsWith("/") || (isWindowsCwd && target.endsWith("\\"))
+    ? target
+    : serializeComposerFileLink(target);
+}
+
+export function terminalLinkTargetForEditor(target: string, editor: EditorId | null): string {
+  return editor === "file-manager" ? splitFilePathPosition(target).path : target;
 }
 
 export function terminalLinkCopyText(text: string): string {
@@ -435,7 +448,10 @@ export function TerminalViewport({
     environmentId,
     serverConfig?.availableEditors ?? [],
   );
-  const openTerminalPath = useEffectEvent((target: string) => openInPreferredEditor(target));
+  const openTerminalPath = useEffectEvent((target: string) => {
+    const editor = resolveAndPersistPreferredEditor(serverConfig?.availableEditors ?? []);
+    return openInPreferredEditor(terminalLinkTargetForEditor(target, editor));
+  });
   const fileManagerAction = useFileManagerActionForEnvironment(environmentId);
   const readFileManagerReveal = useEffectEvent(() => fileManagerAction?.reveal ?? null);
   const openPreview = useAtomCommand(previewEnvironment.open, {
