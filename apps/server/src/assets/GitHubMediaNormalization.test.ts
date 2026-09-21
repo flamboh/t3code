@@ -209,6 +209,7 @@ describe("githubMediaResponse PNG normalization", () => {
                   headers: {
                     "content-length": String(source.length),
                     "content-type": "image/png",
+                    "accept-ranges": "bytes",
                     etag: '"upstream"',
                   },
                 }),
@@ -225,8 +226,10 @@ describe("githubMediaResponse PNG normalization", () => {
       expect(response.status).toBe(200);
       expect(header(response, "content-type")).toBe("image/png");
       expect(header(response, "cache-control")).toMatch(/^private, max-age=\d+$/);
-      // A validator for the upstream bytes must not describe the normalized ones.
+      // A validator for the upstream bytes must not describe the normalized ones, and
+      // ranges must not be advertised for offsets that only exist unmodified upstream.
       expect(header(response, "etag")).toBeUndefined();
+      expect(header(response, "accept-ranges")).toBeUndefined();
       expect(chunkTypes(yield* readResponseBody(response))).toEqual([
         "IHDR",
         "cHRM",

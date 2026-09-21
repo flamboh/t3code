@@ -195,16 +195,16 @@ export const githubMediaResponse = Effect.fn("GitHubMediaFetch.githubMediaRespon
     contentType === NORMALIZED_CONTENT_TYPE &&
     isGitHubUserAttachmentFetchUrl(asset.url)
   ) {
-    const acceptRanges = response.headers["accept-ranges"];
+    // No accept-ranges: a later Range request streams the unmodified upstream bytes, so
+    // advertising ranges here would let a client address offsets that do not exist there.
     return yield* readBoundedBody(response).pipe(
-      Effect.map((body) => {
-        if (acceptRanges !== undefined) headers["accept-ranges"] = acceptRanges;
-        return HttpServerResponse.uint8Array(stripConflictingBt709Cicp(body), {
+      Effect.map((body) =>
+        HttpServerResponse.uint8Array(stripConflictingBt709Cicp(body), {
           status: 200,
           contentType,
           headers,
-        });
-      }),
+        }),
+      ),
       Effect.catchTags({
         GitHubMediaBodyTooLargeError: () =>
           Effect.succeed(HttpServerResponse.empty({ status: 502, headers })),
