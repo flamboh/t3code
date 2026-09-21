@@ -26,17 +26,6 @@ type OpenPullRequest = (
   url: string,
 ) => void;
 
-function samePullRequest(
-  left: PullRequestPreviewEntry["reference"],
-  right: PullRequestPreviewEntry["reference"],
-): boolean {
-  return (
-    left.projectId === right.projectId &&
-    threadPullRequestKeyOf(legacyThreadPullRequestKey(left)) ===
-      threadPullRequestKeyOf(legacyThreadPullRequestKey(right))
-  );
-}
-
 function PullRequestPreviewRow({
   entry,
   onOpen,
@@ -44,18 +33,16 @@ function PullRequestPreviewRow({
   readonly entry: PullRequestPreviewEntry;
   readonly onOpen: OpenPullRequest;
 }) {
-  const branchPullRequest =
-    entry.thread.branchPullRequest !== null &&
-    entry.thread.branchPullRequest !== undefined &&
-    samePullRequest(entry.reference, entry.thread.branchPullRequest)
-      ? entry.thread.branchPullRequest
-      : undefined;
+  // The hook's multi-link mode ignores its legacy linked reference, so pass
+  // this row's own reference as the fallback. This also prevents a different
+  // branch match on the same thread from supplying the title and state.
+  const fallbackReference = entry.pullRequestLink === null ? entry.reference : undefined;
   const detail = useLinkedThreadPullRequest(
     entry.thread.environmentId,
     entry.reference,
     true,
     entry.pullRequestLink === null ? undefined : [entry.pullRequestLink],
-    branchPullRequest,
+    fallbackReference,
   );
   const pr = detail?.pr ?? null;
   const state = pr

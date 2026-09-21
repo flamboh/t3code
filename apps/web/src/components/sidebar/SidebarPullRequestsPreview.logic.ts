@@ -102,14 +102,11 @@ export function collectPullRequestPreviewEntries(
             reference: linkedReference(link, thread.projectId),
             pullRequestLink: link,
           }))
-        : [
-            ...(thread.linkedPullRequest
-              ? [{ reference: thread.linkedPullRequest, pullRequestLink: null }]
-              : []),
-            ...(thread.branchPullRequest
-              ? [{ reference: thread.branchPullRequest, pullRequestLink: null }]
-              : []),
-          ];
+        : thread.linkedPullRequest
+          ? [{ reference: thread.linkedPullRequest, pullRequestLink: null }]
+          : thread.branchPullRequest
+            ? [{ reference: thread.branchPullRequest, pullRequestLink: null }]
+            : [];
     for (const { reference, pullRequestLink } of candidates) {
       const key = [
         thread.environmentId,

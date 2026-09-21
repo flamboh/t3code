@@ -24,6 +24,7 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "../ui/sidebar";
+import { InlineButton } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
@@ -190,20 +191,19 @@ function SidebarUtilityPreviewItem({
           viewportClassName="not-data-transitioning:overflow-y-auto"
         >
           <div className="flex w-72 max-w-[calc(100vw-3rem)] flex-col gap-2 p-1 text-xs">
-            <button
+            <InlineButton
               aria-label={`Open ${label}`}
               className="group/preview-heading -mx-1 flex w-fit items-center gap-1 rounded-sm px-1 text-sm leading-5 font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onClick={() => {
                 setOpen(false);
                 onClick();
               }}
-              type="button"
             >
               <span className="underline-offset-2 group-hover/preview-heading:underline">
                 {label}
               </span>
               <ArrowUpRightIcon aria-hidden className="size-3.5 text-muted-foreground" />
-            </button>
+            </InlineButton>
             {children}
           </div>
         </PopoverPopup>

@@ -77,12 +77,14 @@ describe("collectPullRequestPreviewEntries", () => {
   });
 
   it("prefers the linked pull request over the branch match", () => {
-    const [entry] = collectPullRequestPreviewEntries(
+    const entries = collectPullRequestPreviewEntries(
       [thread("a", { linkedPullRequest: pr(7), branchPullRequest: pr(8) })],
       capabilities,
       NOW,
     );
+    const [entry] = entries;
     expect(entry?.reference.number).toBe(7);
+    expect(entries).toHaveLength(1);
   });
 
   it("includes visible links from the multi-pull-request thread model", () => {
