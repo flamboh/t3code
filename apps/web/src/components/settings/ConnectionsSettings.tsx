@@ -3385,7 +3385,7 @@ export function ConnectionsSettings() {
                 {renderDisabledNetworkAccessRow()}
                 <CloudLinkRow canManageRelay={canManageRelay} />
               </>
-            )}
+            ) : null}
           </SettingsSection>
           {directoriesSection}
 
