@@ -125,7 +125,7 @@ describe("terminal link menus", () => {
     expect(terminalLinkChatText("src/main.ts:12:3", "/repo")).toContain("src/main.ts");
     expect(terminalLinkChatText("/", "/repo")).toBe("/");
     expect(terminalLinkChatText("src\\", "/repo")).toBe("[src](/repo/src)");
-    expect(terminalLinkChatText("C:\\", "C:\\repo")).not.toContain("repo");
+    expect(terminalLinkChatText("C:\\", "C:\\repo")).toBe("C:\\");
     expect(terminalLinkChatText("https://example.com/a", "/repo")).toBe("https://example.com/a");
     expect(terminalLinkCopyText("src/main.ts:12:3")).toBe("src/main.ts");
     expect(terminalLinkCopyText("https://example.com:8080/a")).toBe("https://example.com:8080/a");
