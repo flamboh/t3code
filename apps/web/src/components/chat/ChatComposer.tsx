@@ -403,12 +403,15 @@ const COMPOSER_RESTING_CONTROLS_ARRIVAL_DRIFT_PX = 4;
 function useComposerRestingTransition(
   isCollapsed: boolean,
   isResting: boolean,
+  controlsInStrip: boolean,
   restingControlsRef: React.RefObject<HTMLDivElement | null>,
   onOverlayHeightChange: (height: number) => void,
 ) {
   const elementRef = useRef<HTMLDivElement>(null);
   const isCollapsedRef = useRef(isCollapsed);
+  const controlsInStripRef = useRef(controlsInStrip);
   const previousCollapsedRef = useRef(isCollapsed);
+  const previousControlsInStripRef = useRef(controlsInStrip);
   const previousRestingRef = useRef(isResting);
   const previousHeightRef = useRef<number | null>(null);
   const previousContentOffsetsRef = useRef<{
@@ -454,6 +457,7 @@ function useComposerRestingTransition(
   }, [clearOverlayPin]);
 
   isCollapsedRef.current = isCollapsed;
+  controlsInStripRef.current = controlsInStrip;
 
   const transitionToCurrentGeometry = useCallback(
     (stateChanged: boolean) => {
@@ -462,6 +466,7 @@ function useComposerRestingTransition(
       if (!element || !surface) return;
 
       const nextIsCollapsed = isCollapsedRef.current;
+      const nextControlsInStrip = controlsInStripRef.current;
 
       const visibleTransitionElement = (selector: string) =>
         Array.from(element.querySelectorAll<HTMLElement>(selector)).find(
@@ -569,7 +574,7 @@ function useComposerRestingTransition(
           footer.style.top = "auto";
           footer.style.bottom = "1px";
           footer.style.height = "3rem";
-          if (nextIsCollapsed) {
+          if (nextControlsInStrip) {
             footer.style.left = "auto";
             footer.style.right = "1px";
           } else {
@@ -654,32 +659,31 @@ function useComposerRestingTransition(
           // The footer controls teleport between the composer footer and the
           // context strip below it in a single commit. Fading the arriving
           // cluster in along its direction of travel reads as one continuous
-          // move instead of a pop. Collapsing controls land in empty strip
-          // space and can appear immediately, but expanding controls return
-          // to the bottom row the prompt still occupies while the surface is
-          // short, so they stay hidden through the first half of the tween
-          // and fade in once the geometry has mostly settled.
-          const arrivingControls = nextIsCollapsed
-            ? restingControlsRef.current
-            : element.querySelector<HTMLElement>('[data-chat-composer-controls="left"]');
-          if (arrivingControls) {
-            const drift = nextIsCollapsed
-              ? -COMPOSER_RESTING_CONTROLS_ARRIVAL_DRIFT_PX
-              : COMPOSER_RESTING_CONTROLS_ARRIVAL_DRIFT_PX;
-            stateChangeAnimations.push(
-              arrivingControls.animate(
-                [
-                  { opacity: 0, transform: `translateY(${String(drift)}px)` },
-                  { opacity: 1, transform: "none" },
-                ],
-                {
-                  duration: nextIsCollapsed ? duration : duration / 2,
-                  delay: nextIsCollapsed ? 0 : duration / 2,
-                  fill: "backwards",
-                  easing: COMPOSER_RESTING_TRANSITION_EASING,
-                },
-              ),
-            );
+          // move instead of a pop. Inline controls stay in the footer for the
+          // local non-Git resting layout, so they do not need an arrival fade.
+          if (previousControlsInStripRef.current !== nextControlsInStrip) {
+            const arrivingControls = nextControlsInStrip
+              ? restingControlsRef.current
+              : element.querySelector<HTMLElement>('[data-chat-composer-controls="left"]');
+            if (arrivingControls) {
+              const drift = nextControlsInStrip
+                ? -COMPOSER_RESTING_CONTROLS_ARRIVAL_DRIFT_PX
+                : COMPOSER_RESTING_CONTROLS_ARRIVAL_DRIFT_PX;
+              stateChangeAnimations.push(
+                arrivingControls.animate(
+                  [
+                    { opacity: 0, transform: `translateY(${String(drift)}px)` },
+                    { opacity: 1, transform: "none" },
+                  ],
+                  {
+                    duration: nextControlsInStrip ? duration : duration / 2,
+                    delay: nextControlsInStrip ? 0 : duration / 2,
+                    fill: "backwards",
+                    easing: COMPOSER_RESTING_TRANSITION_EASING,
+                  },
+                ),
+              );
+            }
           }
 
           const arrivingImagePreviews = nextIsCollapsed
@@ -736,6 +740,7 @@ function useComposerRestingTransition(
       }
 
       previousCollapsedRef.current = nextIsCollapsed;
+      previousControlsInStripRef.current = nextControlsInStrip;
       previousHeightRef.current = nextHeight;
       previousContentOffsetsRef.current = {
         promptFromTop: nextPromptTop === null ? null : nextPromptTop - nextRect.top,
@@ -4735,11 +4740,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const expandedComposerImages = isComposerResting
     ? standaloneComposerImages.filter((image) => pendingSnapShotIdSet.has(image.id))
     : standaloneComposerImages;
-  // The relocated controls live in the context strip whenever the composer is
-  // collapsed for any reason, the desktop resting layout or the phone
-  // collapse. Both leave the footer unrendered, so the strip is the only place
-  // to see or change the model without expanding the composer.
-  const composerControlsInStrip = isComposerResting || isComposerCollapsedMobile;
+  // Only an existing Git/environment strip hosts relocated controls. Without
+  // that context, the footer stays inside the same shell in both layouts.
+  const composerRestingTransitionCollapsed = isComposerResting || isComposerCollapsedMobile;
+  const composerControlsInStrip =
+    composerRestingTransitionCollapsed && restingControlsHaveLeadingContext;
   const composerControlsVisibleInStrip = composerControlsInStrip && restingControlsVisible;
   const composerControlsHidden = composerControlsInStrip && !restingControlsVisible;
   if (composerControlsHidden && isComposerModelPickerOpen) {
@@ -4822,8 +4827,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       </div>
     ) : null;
   const composerMainSurfaceRef = useComposerRestingTransition(
-    composerControlsInStrip,
+    composerRestingTransitionCollapsed,
     isComposerResting,
+    composerControlsInStrip,
     restingComposerControlsRef,
     onComposerOverlayHeightChange,
   );
@@ -6117,7 +6123,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }}
       onFocusCapture={(event) => {
         const activeElement = event.target;
-        if (composerControlsInStrip && isInsideRestingComposerControlScope(activeElement)) {
+        if (
+          composerRestingTransitionCollapsed &&
+          isInsideRestingComposerControlScope(activeElement)
+        ) {
           return;
         }
         if (isInsideCollapsedComposerControls(activeElement)) {
@@ -6805,6 +6814,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   "relative",
                   isComposerResting && "flex min-w-0 items-center gap-1",
                   isComposerResting &&
+                    composerControlsInStrip &&
                     ((settings.contextWindowMeterEnabled && activeContextWindow) ||
                     reserveContextWindowMeter
                       ? "pr-28"
@@ -6948,7 +6958,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             />
 
             {/* Bottom toolbar */}
-            {isComposerCollapsedMobile || isComposerApprovalState ? null : (
+            {(isComposerCollapsedMobile && composerControlsInStrip) ||
+            isComposerApprovalState ? null : (
               <div
                 data-chat-composer-footer="true"
                 data-chat-composer-footer-compact={isComposerFooterCompact ? "true" : "false"}
@@ -6958,6 +6969,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   isComposerFooterCompact ? "gap-1.5" : "gap-2 sm:gap-0",
                   showMobilePendingAnswerActions && "hidden sm:flex",
                   isComposerResting &&
+                    composerControlsInStrip &&
                     "absolute bottom-px right-px z-10 h-12 w-auto gap-0 py-0 sm:gap-0 sm:py-0",
                 )}
               >
@@ -6965,9 +6977,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   ref={expandedControlsLayout.attachControls}
                   data-chat-composer-controls="left"
                   data-chat-composer-footer-controls="true"
+                  data-composer-context-control={
+                    composerRestingTransitionCollapsed && !composerControlsInStrip
+                      ? "true"
+                      : undefined
+                  }
                   className={cn(
                     "relative -m-1 -ms-3.5 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 ps-3.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-                    isComposerResting && "hidden",
+                    isComposerResting && composerControlsInStrip && "hidden",
                   )}
                 >
                   {composerControlsInStrip ? null : composerControls}
@@ -6980,7 +6997,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   data-chat-composer-primary-actions-compact={
                     isComposerPrimaryActionsCompact ? "true" : "false"
                   }
-                  className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
+                  className={cn(
+                    "flex shrink-0 flex-nowrap items-center justify-end gap-2",
+                    isComposerCollapsedMobile && "hidden",
+                  )}
                 >
                   {showComposerAttachAction ? (
                     <>

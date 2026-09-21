@@ -5906,6 +5906,7 @@ export default function ChatView(props: ChatViewProps) {
         currentInset: composerTimelineInsetRef.current,
         overlayHeight: nextHeight,
         isResting: composerRestingRef.current,
+        retainsFooter: !isGitRepo && !showComposerEnvironmentIndicator,
       });
       if (composerTimelineInsetRef.current !== nextInset) {
         composerTimelineInsetRef.current = nextInset;
@@ -5913,7 +5914,7 @@ export default function ChatView(props: ChatViewProps) {
       }
       publishScrollToEndClearance(nextHeight);
     },
-    [publishScrollToEndClearance],
+    [isGitRepo, publishScrollToEndClearance, showComposerEnvironmentIndicator],
   );
   // The composer reports its resting flag from a layout effect, which runs
   // before this component's own layout effects and before any resize
