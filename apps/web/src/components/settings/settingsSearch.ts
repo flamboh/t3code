@@ -55,6 +55,9 @@ export interface SettingsSearchItem {
   readonly windowsOnly?: boolean;
   readonly cloudOnly?: boolean;
   readonly environmentOnly?: boolean;
+  // Its section only renders for the primary environment, so a remote-only
+  // result would land on an anchor that isn't there.
+  readonly primaryEnvironmentOnly?: boolean;
   readonly providerSettingsOnly?: boolean;
   readonly localBackendManagementOnly?: boolean;
   readonly localEnvironmentOnly?: boolean;
@@ -71,6 +74,7 @@ export interface SettingsSearchAvailability {
   readonly localEnvironmentDisabled?: boolean;
   readonly hasCloudPublicConfig: boolean;
   readonly hasEnvironment: boolean;
+  readonly hasPrimaryEnvironment: boolean;
   readonly hasProviderSettingsEnvironment: boolean;
   readonly canManageLocalBackend: boolean;
   readonly isWslSettingsRowVisible: boolean;
@@ -793,6 +797,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Default directories",
     to: "/settings/connections",
     environmentOnly: true,
+    primaryEnvironmentOnly: true,
     searchTerms: [
       "per server environment defaults repositories repos clone add project starts in base directory folder browser path home worktrees",
     ],
@@ -959,6 +964,7 @@ export function filterAvailableSettingsSearchItems(
     (item) =>
       (!item.cloudOnly || availability.hasCloudPublicConfig) &&
       (!item.environmentOnly || availability.hasEnvironment) &&
+      (!item.primaryEnvironmentOnly || availability.hasPrimaryEnvironment) &&
       (!item.providerSettingsOnly || availability.hasProviderSettingsEnvironment) &&
       (!item.localBackendManagementOnly || availability.canManageLocalBackend) &&
       (!item.localEnvironmentOnly || !availability.localEnvironmentDisabled) &&
