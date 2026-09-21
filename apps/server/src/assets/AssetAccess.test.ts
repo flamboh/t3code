@@ -97,22 +97,6 @@ describe("AssetAccess", () => {
     );
   });
 
-  it.effect("issues signed URLs for canonical GitHub user attachments", () =>
-    Effect.gen(function* () {
-      const url = "https://github.com/user-attachments/assets/f1d65268-4213-47a5-864d-5067e8bf5918";
-      const result = yield* issueAssetUrl({
-        resource: { _tag: "github-user-attachment", url },
-      });
-      const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
-      const separator = suffix.indexOf("/");
-
-      expect(yield* resolveAsset(suffix.slice(0, separator), suffix.slice(separator + 1))).toEqual({
-        kind: "github-user-attachment",
-        url,
-      });
-    }).pipe(Effect.provide(testLayer)),
-  );
-
   it.effect("issues exact URLs for media and browser documents outside the workspace", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

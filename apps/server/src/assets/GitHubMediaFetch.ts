@@ -1,5 +1,5 @@
 import * as Mime from "effect/unstable/http/Mime";
-import { githubMediaFileName } from "@t3tools/shared/githubMedia";
+import { githubMediaFileName, isGitHubUserAttachmentFetchUrl } from "@t3tools/shared/githubMedia";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -13,6 +13,7 @@ import {
 } from "effect/unstable/http";
 
 import * as GitHubCli from "../sourceControl/GitHubCli.ts";
+import { readBoundedBody, stripConflictingBt709Cicp } from "./GitHubMediaNormalization.ts";
 
 /**
  * Exactly the hosts the credential is for. Everything a redirect leads to — the presigned
@@ -49,6 +50,8 @@ const FORWARDED_RESPONSE_HEADERS = [
   "etag",
   "last-modified",
 ] as const;
+/** Only this type is ever buffered: everything else streams straight through. */
+const NORMALIZED_CONTENT_TYPE = "image/png";
 /** A pull request embeds pictures and recordings. Anything else is not served from our origin. */
 const MEDIA_CONTENT_TYPE_PATTERN = /^(?:image|video|audio)\/[\w!#$&^.+-]+$/i;
 const SVG_CONTENT_TYPE = "image/svg+xml";
@@ -180,6 +183,32 @@ export const githubMediaResponse = Effect.fn("GitHubMediaFetch.githubMediaRespon
     : Option.getOrElse(Mime.getType(githubMediaFileName(asset.url)), () => "").toLowerCase();
   if (!MEDIA_CONTENT_TYPE_PATTERN.test(contentType)) {
     return HttpServerResponse.empty({ status: 415, headers });
+  }
+  // A screenshot with conflicting color metadata is bytes we can fix, but only in this narrow
+  // case: a full PNG body, fetched whole, from a user attachment. Seeks keep streaming, and so
+  // does every other type and host. Past the size bound the route answers 502 and the client
+  // falls back to the original URL, so the image still loads, just without normalization.
+  if (
+    response.status === 200 &&
+    requestHeaders.range === undefined &&
+    requestHeaders["if-range"] === undefined &&
+    contentType === NORMALIZED_CONTENT_TYPE &&
+    isGitHubUserAttachmentFetchUrl(asset.url)
+  ) {
+    const acceptRanges = response.headers["accept-ranges"];
+    return yield* readBoundedBody(response).pipe(
+      Effect.map((body) => {
+        if (acceptRanges !== undefined) headers["accept-ranges"] = acceptRanges;
+        return HttpServerResponse.uint8Array(stripConflictingBt709Cicp(body), {
+          status: 200,
+          contentType,
+          headers,
+        });
+      }),
+      Effect.catchTag("GitHubMediaBodyTooLargeError", () =>
+        Effect.succeed(HttpServerResponse.empty({ status: 502, headers })),
+      ),
+    );
   }
   for (const name of FORWARDED_RESPONSE_HEADERS) {
     const value = response.headers[name];

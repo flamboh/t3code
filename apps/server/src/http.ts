@@ -31,7 +31,6 @@ import * as ServerConfig from "./config.ts";
 import { ASSET_ROUTE_PREFIX, resolveAsset } from "./assets/AssetAccess.ts";
 import { githubMediaResponse } from "./assets/GitHubMediaFetch.ts";
 import { statMediaFile, streamMediaFile, type OpenMediaFile } from "./assets/MediaFile.ts";
-import { loadGitHubUserAttachment } from "./assets/GitHubUserAttachment.ts";
 import {
   ATTACHMENT_UPLOAD_ROUTE_PREFIX,
   storeAttachmentUpload,
@@ -406,30 +405,6 @@ export const assetRouteLayer = HttpRouter.add(
             status: 502,
             headers: { "cache-control": "private, no-store", "x-content-type-options": "nosniff" },
           }),
-        ),
-      );
-    }
-    if (asset.kind === "github-user-attachment") {
-      return yield* loadGitHubUserAttachment(asset.url).pipe(
-        Effect.map(({ bytes, contentType }) =>
-          HttpServerResponse.uint8Array(bytes, {
-            status: 200,
-            contentType,
-            headers: {
-              "Cache-Control": "private, max-age=3600",
-              "X-Content-Type-Options": "nosniff",
-            },
-          }),
-        ),
-        Effect.tapError((error) =>
-          Effect.logWarning("Failed to load GitHub user attachment", {
-            sourceUrl: asset.url,
-            reason: error.reason,
-            ...(error.status === undefined ? {} : { status: error.status }),
-          }),
-        ),
-        Effect.orElseSucceed(() =>
-          HttpServerResponse.text("GitHub user attachment unavailable", { status: 502 }),
         ),
       );
     }

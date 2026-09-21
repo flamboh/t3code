@@ -57,6 +57,7 @@ function PullRequestGitHubVideo({
     />
   );
 }
+
 /** Renders PR uploads inline, with retry and an original link when video playback fails. */
 export function PullRequestMarkdown({
   text,
@@ -100,7 +101,6 @@ export function PullRequestMarkdown({
               environmentId={environmentId}
               extraRemarkPlugins={extraRemarkPlugins}
               githubMedia
-              normalizeGitHubImages
             />
           );
         }

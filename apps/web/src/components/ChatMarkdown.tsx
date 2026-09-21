@@ -26,13 +26,12 @@ import {
   WrapTextIcon,
   type LucideIcon,
 } from "lucide-react";
-import {
-  isGitHubUserAttachmentUrl,
-  type AssetResource,
-  type EnvironmentId,
-  type ScopedThreadRef,
-  type ServerProviderSkill,
-  type ThreadPullRequestKey,
+import type {
+  AssetResource,
+  EnvironmentId,
+  ScopedThreadRef,
+  ServerProviderSkill,
+  ThreadPullRequestKey,
 } from "@t3tools/contracts";
 import { faviconUrlForOrigin } from "@t3tools/shared/favicon";
 import { githubMediaFetchUrl } from "@t3tools/shared/githubMedia";
@@ -229,7 +228,6 @@ interface ChatMarkdownProps {
       text nests under the heading that introduces it, such as a chat message's
       author. Rendered tags and their styling are unchanged. */
   headingLevelOffset?: number | undefined;
-  normalizeGitHubImages?: boolean;
 }
 
 export interface ChatMarkdownContextReference {
@@ -1584,14 +1582,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
   readonly environmentId: EnvironmentId;
   readonly resource: Extract<
     AssetResource,
-    {
-      readonly _tag:
-        | "attachment"
-        | "workspace-file"
-        | "media-file"
-        | "github-media"
-        | "github-user-attachment";
-    }
+    { readonly _tag: "attachment" | "workspace-file" | "media-file" | "github-media" }
   >;
   readonly kind?: "image" | "video";
   readonly alt: string;
@@ -1628,20 +1619,15 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       : resource._tag === "workspace-file" && props.workspaceRoot
         ? `${props.workspaceRoot.replace(/[\\/]+$/, "")}/${resource.path}`
         : undefined;
-  const reference =
-    resource._tag === "github-user-attachment"
-      ? mediaUrlReference(resource.url)
-      : path
-        ? mediaFileReference(path, props.workspaceRoot)
-        : props.originalUrl
-          ? mediaUrlReference(props.originalUrl)
-          : undefined;
+  const reference = path
+    ? mediaFileReference(path, props.workspaceRoot)
+    : props.originalUrl
+      ? mediaUrlReference(props.originalUrl)
+      : undefined;
   const relativePath = reference?.kind === "file" ? reference.relativePath : undefined;
   const assetSrc = assetUrl._tag === "Success" ? assetUrl.url + (props.srcFragment ?? "") : null;
-  const fallbackBaseSrc =
-    resource._tag === "github-user-attachment" ? resource.url : props.fallbackSrc;
   const fallbackSrc =
-    fallbackBaseSrc === undefined ? null : fallbackBaseSrc + (props.srcFragment ?? "");
+    props.fallbackSrc === undefined ? null : props.fallbackSrc + (props.srcFragment ?? "");
   const assetSourceFailed =
     assetUrl._tag === "Failure" || (assetSrc !== null && failedAssetSrc === assetSrc);
   const usesFallback = assetSourceFailed && fallbackSrc !== null;
@@ -2285,7 +2271,6 @@ function useChatMarkdownState({
   renderContextReference,
   headingLevelOffset = 0,
   githubMedia = false,
-  normalizeGitHubImages,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
   const [localMediaPreview, setLocalMediaPreview] = useState<ExpandedImagePreview | null>(null);
@@ -2699,7 +2684,6 @@ function useChatMarkdownState({
       openMarkdownMedia,
       projects,
       linkedThreadPullRequestFor,
-      normalizeGitHubImages,
       resolveThreadPullRequest,
       resolvedTheme,
       serverConfig,
@@ -2730,7 +2714,6 @@ function useChatMarkdownState({
       openMarkdownMedia,
       projects,
       linkedThreadPullRequestFor,
-      normalizeGitHubImages,
       resolveThreadPullRequest,
       resolvedTheme,
       serverConfig,
@@ -3136,7 +3119,6 @@ const CHAT_MARKDOWN_COMPONENTS = {
       imageBaseDir,
       threadRef,
       renderContextReference,
-      normalizeGitHubImages,
     } = use(ChatMarkdownRendererContext);
     const imageExpand = use(MarkdownLinkContext) ? undefined : expandMedia;
     const contextReference = typeof src === "string" ? parseComposerContextHref(src) : null;
@@ -3207,25 +3189,6 @@ const CHAT_MARKDOWN_COMPONENTS = {
         src: mediaSrc,
         ...(reference ? { reference } : {}),
       };
-      if (
-        normalizeGitHubImages &&
-        kind === "image" &&
-        environmentId &&
-        isGitHubUserAttachmentUrl(mediaSrc)
-      ) {
-        return (
-          <ChatMarkdownAssetImage
-            environmentId={environmentId}
-            resource={{ _tag: "github-user-attachment", url: mediaSrc }}
-            imageProps={imageProps}
-            standalone={standalone}
-            alt={altText}
-            copyMarkdown={copyMarkdown}
-            style={authoredSizeStyle}
-            onImageExpand={imageExpand}
-          />
-        );
-      }
       if (kind === "video") {
         return (
           <ChatMarkdownVideo
