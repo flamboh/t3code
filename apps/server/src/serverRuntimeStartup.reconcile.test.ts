@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  EnvironmentId,
   type OrchestrationCommand,
   type OrchestrationSessionStatus,
   ProviderDriverKind,
@@ -24,12 +25,15 @@ import {
 } from "./provider/Errors.ts";
 import * as ProviderService from "./provider/Services/ProviderService.ts";
 import * as ProviderSessionDirectory from "./provider/Services/ProviderSessionDirectory.ts";
+import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { ServerActivation } from "./serverActivation.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 
 const providerInstanceId = ProviderInstanceId.make("codex");
 const updatedAt = "2026-08-20T12:00:00.000Z";
+const environmentId = EnvironmentId.make("env-reconcile-test");
+const environmentIdentityLayer = ServerEnvironment.identityLayerTest(environmentId);
 
 const makeThread = (
   id: string,
@@ -110,6 +114,7 @@ const runReconciliation = (input: {
         ServerSettings.layerTest({
           continueThreadsAfterServerUpdate: input.continueAfterRestart ?? false,
         }),
+        environmentIdentityLayer,
         NodeServices.layer,
       ),
     ),
@@ -212,6 +217,7 @@ it.effect.each(
             status: "running" as const,
             resumeCursor: { threadId: thread.id },
             runtimePayload: {
+              ...(thread.id === codex.id ? { environmentId } : {}),
               activeTurnId:
                 thread.id === codex.id && persistedTurn !== "current"
                   ? persistedTurn === "previous"
@@ -344,6 +350,7 @@ it.effect.each(
             .filter((binding) => binding.threadId === thread.id)
             .map((binding) => binding.runtimePayload)[0],
           {
+            ...(thread.id === codex.id ? { environmentId } : {}),
             continueAfterServerUpdate: continuationTurnId,
             continueAfterServerUpdatePrepared: true,
             activeTurnId: null,
@@ -723,7 +730,9 @@ it.effect("does not fail startup when the live provider session inventory cannot
       subscribeDomainEvents: Effect.succeed(Stream.empty),
       latestSequence: Effect.succeed(0),
     }),
-    Effect.provide(Layer.mergeAll(NodeServices.layer, ServerSettings.layerTest())),
+    Effect.provide(
+      Layer.mergeAll(NodeServices.layer, ServerSettings.layerTest(), environmentIdentityLayer),
+    ),
     Effect.tap(() => Effect.sync(() => assert.equal(queried, false))),
   );
 });
@@ -737,6 +746,8 @@ for (const scenario of [
   "marked without cursor",
   "marked stopped projection",
   "marked superseded turn",
+  "foreign environment",
+  "marked foreign environment",
 ] as const) {
   it.effect(`does not recover an interrupted session with ${scenario}`, () => {
     const turnId = TurnId.make("turn-excluded-recovery");
@@ -766,6 +777,7 @@ for (const scenario of [
               status: scenario === "stopped binding" ? "stopped" : "running",
               ...(scenario.includes("cursor") ? {} : { resumeCursor: { threadId: thread.id } }),
               runtimePayload: {
+                environmentId: scenario.includes("foreign") ? "env-somewhere-else" : environmentId,
                 activeTurnId: scenario === "marked superseded turn" ? "another-turn" : turnId,
                 ...(scenario.startsWith("marked") ? { continueAfterServerUpdate: turnId } : {}),
               },
@@ -793,6 +805,16 @@ for (const scenario of [
               (command) => command.type === "thread.session.set" && command.session.status,
             ),
             ["error"],
+          );
+          assert.deepStrictEqual(
+            dispatched.map(
+              (command) => command.type === "thread.session.set" && command.session.lastError,
+            ),
+            [
+              scenario.includes("foreign")
+                ? "Provider session was started by another T3 Code environment and was not resumed here. Send a new message to continue."
+                : "Provider session did not survive a server restart. Send a new message to continue.",
+            ],
           );
           assert.deepStrictEqual(
             upserts.map((binding) => binding.status),

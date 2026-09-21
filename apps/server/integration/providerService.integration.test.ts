@@ -25,6 +25,7 @@ import {
 } from "../src/provider/Services/ProviderService.ts";
 import * as ServerConfig from "../src/config.ts";
 import { ServerSettingsService } from "../src/serverSettings.ts";
+import * as ServerEnvironment from "../src/environment/ServerEnvironment.ts";
 import { AnalyticsService } from "../src/telemetry/AnalyticsService.ts";
 import { SqlitePersistenceMemory } from "../src/persistence/Layers/Sqlite.ts";
 import * as ProviderSessionRuntime from "../src/persistence/ProviderSessionRuntime.ts";
@@ -96,6 +97,7 @@ const makeIntegrationFixture = (options?: { readonly analytics?: Layer.Layer<Ana
       Layer.succeed(ProviderAdapterRegistry, registry),
       ServerConfig.layerTest(cwd, cwd).pipe(Layer.provide(NodeServices.layer)),
       ServerSettingsService.layerTest(DEFAULT_SERVER_SETTINGS),
+      ServerEnvironment.identityLayerTest(),
       options?.analytics ?? AnalyticsService.layerTest,
       Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers),
     ).pipe(Layer.provide(SqlitePersistenceMemory));

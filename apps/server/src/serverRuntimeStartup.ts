@@ -344,6 +344,8 @@ const runStartupPhase = <A, E, R>(phase: string, effect: Effect.Effect<A, E, R>)
 
 const ORPHANED_PROVIDER_SESSION_ERROR =
   "Provider session did not survive a server restart. Send a new message to continue.";
+const FOREIGN_PROVIDER_SESSION_ERROR =
+  "Provider session was started by another T3 Code environment and was not resumed here. Send a new message to continue.";
 const SERVER_UPDATE_CONTINUATION_KEY = "continueAfterServerUpdate";
 const SERVER_UPDATE_CONTINUATION_PROMPT = "Continue where you left off.";
 
@@ -389,6 +391,20 @@ function readRuntimePayload(runtimePayload: unknown): Record<string, unknown> {
 }
 
 const isServerUpdateThreadContinuationError = Schema.is(ServerUpdateThreadContinuationError);
+
+/**
+ * Whether an interrupted binding was left behind by this environment.
+ *
+ * A restart cannot be told apart from booting on a copy of the database, and
+ * a copy of a running turn still has a live owner elsewhere (a restored
+ * backup, a migrated T3 home, or a worktree server seeded from live state).
+ * The provider service stamps the environment id when a turn starts; a
+ * binding written before that stamp existed is treated as this server's.
+ */
+function bindingBelongsToEnvironment(runtimePayload: unknown, environmentId: string): boolean {
+  const recorded = readRuntimePayload(runtimePayload).environmentId;
+  return typeof recorded !== "string" || recorded === environmentId;
+}
 
 function readServerUpdateContinuationTurnId(runtimePayload: unknown): TurnId | null {
   if (!hasServerUpdateContinuationMarker(runtimePayload)) {
@@ -486,6 +502,8 @@ export const reconcileProviderSessions = Effect.gen(function* () {
   const providerService = yield* ProviderService.ProviderService;
   const query = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const settings = yield* ServerSettings.ServerSettingsService;
+  const environmentId = yield* (yield* ServerEnvironment.ServerEnvironmentIdentity)
+    .getEnvironmentId;
   const restartSettings = yield* settings.getSettings.pipe(
     Effect.map(Option.some),
     Effect.catch((cause) =>
@@ -577,6 +595,10 @@ export const reconcileProviderSessions = Effect.gen(function* () {
       Option.isSome(binding) &&
       readRuntimePayload(binding.value.runtimePayload).activeTurnId === null &&
       readRuntimePayload(binding.value.runtimePayload).continueAfterServerUpdatePrepared === true;
+    const ownedByThisEnvironment =
+      Option.isSome(binding) &&
+      bindingBelongsToEnvironment(binding.value.runtimePayload, environmentId);
+    const foreignBinding = Option.isSome(binding) && !ownedByThisEnvironment;
     // Runtime events advance the projection's turn, but not the directory's
     // last admitted turn. Use the projection to identify interrupted work.
     const interruptedByRestart =
@@ -646,6 +668,7 @@ export const reconcileProviderSessions = Effect.gen(function* () {
 
     if (
       Option.isSome(binding) &&
+      ownedByThisEnvironment &&
       (continuationMarked || interruptedByRestart) &&
       (session.status === "running" || session.status === "starting" || preparedWhileReady) &&
       binding.value.resumeCursor != null &&
@@ -736,7 +759,15 @@ export const reconcileProviderSessions = Effect.gen(function* () {
       continue;
     }
 
-    yield* settleAsError(ORPHANED_PROVIDER_SESSION_ERROR);
+    if (foreignBinding) {
+      yield* Effect.logInfo("provider session belongs to another environment; not resuming", {
+        threadId: thread.id,
+        recordedEnvironmentId: readRuntimePayload(binding.value.runtimePayload).environmentId,
+      });
+    }
+    yield* settleAsError(
+      foreignBinding ? FOREIGN_PROVIDER_SESSION_ERROR : ORPHANED_PROVIDER_SESSION_ERROR,
+    );
   }
 }).pipe(
   Effect.catchCause((cause) =>

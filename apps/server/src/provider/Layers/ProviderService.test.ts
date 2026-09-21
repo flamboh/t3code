@@ -64,6 +64,7 @@ import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
 import * as ProviderAdapterRegistry from "../Services/ProviderAdapterRegistry.ts";
 import * as ProviderService from "../Services/ProviderService.ts";
 import * as ProviderSessionDirectory from "../Services/ProviderSessionDirectory.ts";
+import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import { makeProviderServiceLive } from "./ProviderService.ts";
 import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import { ProviderSessionDirectoryLive } from "./ProviderSessionDirectory.ts";
@@ -78,6 +79,8 @@ import * as ServerSettings from "../../serverSettings.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import { makeAdapterRegistryMock } from "../testUtils/providerAdapterRegistryMock.ts";
 import * as ProjectionSnapshotQuery from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+
+const environmentIdentityTestLayer = ServerEnvironment.identityLayerTest();
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const defaultServerSettingsLayer = ServerSettings.ServerSettingsService.layerTest();
@@ -448,6 +451,7 @@ function makeProviderServiceLayer(
     Layer.mergeAll(
       makeProviderServiceLive().pipe(
         Layer.provide(NodeServices.layer),
+        Layer.provide(environmentIdentityTestLayer),
         Layer.provide(providerAdapterLayer),
         Layer.provide(directoryLayer),
         Layer.provide(defaultServerSettingsLayer),
@@ -501,6 +505,7 @@ for (const [enabled, completed] of [
         const services = yield* Layer.build(
           makeProviderServiceLive().pipe(
             Layer.provide(NodeServices.layer),
+            Layer.provide(environmentIdentityTestLayer),
             Layer.provide(
               Layer.succeed(ProviderSessionDirectory.ProviderSessionDirectory, directory),
             ),
@@ -621,6 +626,7 @@ it.effect("ProviderServiceLive catches stopAll failures during shutdown", () =>
     const providerLayer = Layer.mergeAll(
       makeProviderServiceLive().pipe(
         Layer.provide(NodeServices.layer),
+        Layer.provide(environmentIdentityTestLayer),
         Layer.provide(providerAdapterLayer),
         Layer.provide(directoryLayer),
         Layer.provide(defaultServerSettingsLayer),
@@ -664,6 +670,7 @@ it.effect("ProviderServiceLive flushes deferred completions during shutdown", ()
     const providerLayer = Layer.mergeAll(
       makeProviderServiceLive().pipe(
         Layer.provide(NodeServices.layer),
+        Layer.provide(environmentIdentityTestLayer),
         Layer.provide(providerAdapterLayer),
         Layer.provide(directoryLayer),
         Layer.provide(defaultServerSettingsLayer),
@@ -801,6 +808,7 @@ it.effect("ProviderServiceLive rejects new sessions for disabled providers", () 
     const directoryLayer = ProviderSessionDirectoryLive.pipe(Layer.provide(runtimeRepositoryLayer));
     const providerLayer = makeProviderServiceLive().pipe(
       Layer.provide(NodeServices.layer),
+      Layer.provide(environmentIdentityTestLayer),
       Layer.provide(providerAdapterLayer),
       Layer.provide(directoryLayer),
       Layer.provide(defaultServerSettingsLayer),
@@ -885,6 +893,7 @@ it.effect(
       );
       const providerLayer = makeProviderServiceLive().pipe(
         Layer.provide(NodeServices.layer),
+        Layer.provide(environmentIdentityTestLayer),
         Layer.provide(providerAdapterLayer),
         Layer.provide(directoryLayer),
         Layer.provide(serverSettingsLayer),
@@ -955,6 +964,7 @@ it.effect("ProviderServiceLive rejects new sessions for disabled custom instance
     const directoryLayer = ProviderSessionDirectoryLive.pipe(Layer.provide(runtimeRepositoryLayer));
     const providerLayer = makeProviderServiceLive().pipe(
       Layer.provide(NodeServices.layer),
+      Layer.provide(environmentIdentityTestLayer),
       Layer.provide(providerAdapterLayer),
       Layer.provide(directoryLayer),
       Layer.provide(defaultServerSettingsLayer),
@@ -1247,6 +1257,7 @@ it.effect(
       );
       const providerLayer = makeProviderServiceLive().pipe(
         Layer.provide(NodeServices.layer),
+        Layer.provide(environmentIdentityTestLayer),
         Layer.provide(Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, registry)),
         Layer.provide(directoryLayer),
         Layer.provide(defaultServerSettingsLayer),
@@ -1306,6 +1317,7 @@ it.effect("ProviderServiceLive writes canonical events to the emitting thread se
         close: () => Effect.void,
       },
     }).pipe(
+      Layer.provide(environmentIdentityTestLayer),
       Layer.provide(Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, registry)),
       Layer.provide(directoryLayer),
       Layer.provide(defaultServerSettingsLayer),
@@ -1368,6 +1380,7 @@ it.effect("ProviderServiceLive keeps persisted resumable sessions on startup", (
 
     const providerLayer = makeProviderServiceLive().pipe(
       Layer.provide(NodeServices.layer),
+      Layer.provide(environmentIdentityTestLayer),
       Layer.provide(Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, registry)),
       Layer.provide(directoryLayer),
       Layer.provide(defaultServerSettingsLayer),
@@ -1434,6 +1447,7 @@ it.effect(
       );
       const firstProviderLayer = makeProviderServiceLive().pipe(
         Layer.provide(NodeServices.layer),
+        Layer.provide(environmentIdentityTestLayer),
         Layer.provide(
           Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, firstRegistry),
         ),
@@ -1495,6 +1509,7 @@ it.effect(
       );
       const secondProviderLayer = makeProviderServiceLive().pipe(
         Layer.provide(NodeServices.layer),
+        Layer.provide(environmentIdentityTestLayer),
         Layer.provide(
           Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, secondRegistry),
         ),
@@ -2960,12 +2975,14 @@ routing.layer("ProviderServiceLive routing", (it) => {
             cwd: string;
             model: string | null;
             activeTurnId: string | null;
+            environmentId: string;
             lastError: string | null;
             lastRuntimeEvent: string | null;
           };
           assert.equal(runtimePayload.cwd, session.cwd);
           assert.equal(runtimePayload.model, null);
           assert.equal(runtimePayload.activeTurnId, `turn-${String(session.threadId)}`);
+          assert.equal(runtimePayload.environmentId, "environment-test");
           assert.equal(runtimePayload.lastError, null);
           assert.equal(runtimePayload.lastRuntimeEvent, "provider.sendTurn");
         }
@@ -3054,6 +3071,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
       );
       const firstProviderLayer = makeProviderServiceLive().pipe(
         Layer.provide(NodeServices.layer),
+        Layer.provide(environmentIdentityTestLayer),
         Layer.provide(
           Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, firstRegistry),
         ),
@@ -3094,6 +3112,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
       );
       const secondProviderLayer = makeProviderServiceLive().pipe(
         Layer.provide(NodeServices.layer),
+        Layer.provide(environmentIdentityTestLayer),
         Layer.provide(
           Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, secondRegistry),
         ),
@@ -3164,6 +3183,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
         );
         const firstProviderLayer = makeProviderServiceLive().pipe(
           Layer.provide(NodeServices.layer),
+          Layer.provide(environmentIdentityTestLayer),
           Layer.provide(
             Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, firstRegistry),
           ),
@@ -3199,6 +3219,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
         );
         const secondProviderLayer = makeProviderServiceLive().pipe(
           Layer.provide(NodeServices.layer),
+          Layer.provide(environmentIdentityTestLayer),
           Layer.provide(
             Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, secondRegistry),
           ),
@@ -5019,6 +5040,7 @@ describe("agent browser access", () => {
             return undefined;
           }),
       }).pipe(
+        Layer.provide(environmentIdentityTestLayer),
         Layer.provide(providerAdapterLayer),
         Layer.provide(directoryLayer),
         Layer.provide(options?.withoutOrchestration ? Layer.empty : projectionLayer),

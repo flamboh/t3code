@@ -42,6 +42,7 @@ import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEng
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderCommandReactor } from "../orchestration/Services/ProviderCommandReactor.ts";
 import { ProviderSessionDirectoryLive } from "../provider/Layers/ProviderSessionDirectory.ts";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import { makeProviderServiceLive } from "../provider/Layers/ProviderService.ts";
 import {
   NoOpProviderEventLoggers,
@@ -903,6 +904,7 @@ it.layer(integrationLayer)("AgentSessionImporter integration", (it) => {
           ),
           Layer.provide(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
           Layer.provide(AnalyticsService.layerTest),
+          Layer.provide(ServerEnvironment.identityLayerTest()),
         );
         const reactorLayer = ProviderCommandReactorLive.pipe(
           Layer.provideMerge(providerLayer),

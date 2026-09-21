@@ -84,6 +84,7 @@ import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
+import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as ProjectionSnapshotQuery from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 const isModelSelection = Schema.is(ModelSelection);
@@ -479,6 +480,11 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const registry = yield* ProviderAdapterRegistry.ProviderAdapterRegistry;
   const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
+  // Running bindings carry the environment that started the turn, so a server
+  // booting on a copied database can tell the interrupted work apart from its
+  // own. See reconcileProviderSessions in serverRuntimeStartup.
+  const environmentId = yield* (yield* ServerEnvironment.ServerEnvironmentIdentity)
+    .getEnvironmentId;
   const projectionQuery = yield* Effect.serviceOption(
     ProjectionSnapshotQuery.ProjectionSnapshotQuery,
   );
@@ -1757,6 +1763,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         runtimePayload: {
           ...(input.modelSelection !== undefined ? { modelSelection: input.modelSelection } : {}),
           activeTurnId: turn.turnId,
+          environmentId,
           // Admission and marker consumption must survive the same restart.
           continueAfterServerUpdate: null,
           continueAfterServerUpdatePrepared: null,
