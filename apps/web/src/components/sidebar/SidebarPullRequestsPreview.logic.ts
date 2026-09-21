@@ -113,11 +113,13 @@ export function collectPullRequestPreviewEntries(
             ? [{ reference: thread.branchPullRequest, pullRequestLink: null }]
             : [];
     for (const { reference, pullRequestLink } of candidates) {
-      const key = [
-        thread.environmentId,
-        reference.projectId,
-        pullRequestIdentity(reference, pullRequestLink),
-      ].join("\0");
+      // One row per pull request within an environment: the normalized host
+      // identity already distinguishes repositories, so the thread's project
+      // must not split the same request into duplicate rows. The surviving
+      // entry keeps its representative thread for navigation.
+      const key = [thread.environmentId, pullRequestIdentity(reference, pullRequestLink)].join(
+        "\0",
+      );
       const existing = byPullRequest.get(key);
       if (existing && (!existing.snoozed || isSnoozed)) continue;
       byPullRequest.set(key, { thread, reference, pullRequestLink, snoozed: isSnoozed });

@@ -208,4 +208,38 @@ describe("collectPullRequestPreviewEntries", () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]?.thread.id).toBe("a");
   });
+
+  it("dedupes the same pull request across projects, preferring the active thread", () => {
+    const entries = collectPullRequestPreviewEntries(
+      [
+        thread("napping", {
+          projectId: "project-2" as ProjectId,
+          linkedPullRequest: { ...pr(1), projectId: "project-2" as ProjectId },
+          snoozedUntil: "2026-09-09T12:00:00.000Z",
+        }),
+        thread("awake", { linkedPullRequest: pr(1) }),
+      ],
+      capabilities,
+      NOW,
+    );
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.thread.id).toBe("awake");
+    expect(entries[0]?.snoozed).toBe(false);
+  });
+
+  it("keeps the same pull request separate across environments", () => {
+    const otherEnv = "env-2" as EnvironmentId;
+    const entries = collectPullRequestPreviewEntries(
+      [
+        thread("a", { linkedPullRequest: pr(1) }),
+        thread("b", { environmentId: otherEnv, linkedPullRequest: pr(1) }),
+      ],
+      new Map([
+        [env, { threadSettlement: true, threadSnooze: true, threadPullRequests: true }],
+        [otherEnv, { threadSettlement: true, threadSnooze: true, threadPullRequests: true }],
+      ]),
+      NOW,
+    );
+    expect(entries).toHaveLength(2);
+  });
 });
