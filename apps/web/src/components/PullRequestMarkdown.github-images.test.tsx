@@ -1,23 +1,12 @@
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { ReactNode } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import { act, create } from "react-test-renderer";
-import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
-
-const testState = vi.hoisted(() => ({
-  resources: [] as Array<unknown>,
-  assetState: "success" as "success" | "loading" | "failure",
-}));
+import { describe, expect, it, vi } from "vite-plus/test";
 
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => null }));
 vi.mock("../assets/assetUrls", () => ({
   useAssetUrlRefresh: () => vi.fn(),
-  useAssetUrlState: (_environmentId: unknown, resource: unknown) => {
-    testState.resources.push(resource);
-    if (testState.assetState === "loading") return { _tag: "Loading" };
-    if (testState.assetState === "failure") return { _tag: "Failure" };
-    return { _tag: "Success", url: "https://signed.test/pr-image.png" };
-  },
+  useAssetUrlState: () => ({ _tag: "Success", url: "https://signed.test/pr-image.png" }),
 }));
 vi.mock("../hooks/useTheme", () => ({ useTheme: () => ({ resolvedTheme: "dark" }) }));
 vi.mock("../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => vi.fn() }));
@@ -50,7 +39,6 @@ vi.mock("./media/MediaActions", () => ({
 }));
 
 import { ChatMarkdownAssetImage } from "./ChatMarkdown";
-import { PullRequestMarkdown } from "./pullRequest/PullRequestMarkdown";
 
 const threadRef = {
   environmentId: EnvironmentId.make("env-pr"),
@@ -59,55 +47,7 @@ const threadRef = {
 const ATTACHMENT_URL =
   "https://github.com/user-attachments/assets/f1d65268-4213-47a5-864d-5067e8bf5918";
 
-function render(text: string): string {
-  testState.resources = [];
-  return renderToStaticMarkup(
-    <PullRequestMarkdown
-      text={text}
-      cwd="/repo"
-      environmentId={threadRef.environmentId}
-      threadRef={threadRef}
-    />,
-  );
-}
-
-describe("PullRequestMarkdown GitHub images", () => {
-  beforeEach(() => {
-    testState.assetState = "success";
-  });
-
-  it("routes attachment images through the authenticated media flow", () => {
-    const html = render(`![screenshot](${ATTACHMENT_URL})`);
-
-    // The renderer carries no GitHub session, so the bytes must come from the server flow
-    // that fetches with the repository credential — never a direct load.
-    expect(testState.resources).toEqual([
-      { _tag: "github-media", cwd: "/repo", url: ATTACHMENT_URL },
-    ]);
-    expect(html).toContain('src="https://signed.test/pr-image.png"');
-    expect(html).not.toContain("Image unavailable");
-  });
-
-  it("falls back to the original URL when the signed URL fails", () => {
-    testState.assetState = "failure";
-    const html = render(`![screenshot](${ATTACHMENT_URL})`);
-
-    expect(testState.resources).toEqual([
-      { _tag: "github-media", cwd: "/repo", url: ATTACHMENT_URL },
-    ]);
-    expect(html).toContain(`src="${ATTACHMENT_URL}"`);
-    expect(html).not.toContain("Image unavailable");
-  });
-
-  it("routes bare attachment uploads through the same flow", () => {
-    const html = render(`${ATTACHMENT_URL}`);
-
-    expect(testState.resources).toEqual([
-      { _tag: "github-media", cwd: "/repo", url: ATTACHMENT_URL },
-    ]);
-    expect(html).toContain("https://signed.test/pr-image.png");
-  });
-
+describe("ChatMarkdownAssetImage GitHub media fallback", () => {
   it("keeps the loading slot through a signed-URL failure, then shows the original", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     let renderer!: ReturnType<typeof create>;

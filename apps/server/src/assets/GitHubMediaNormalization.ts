@@ -1,5 +1,6 @@
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Pull from "effect/Pull";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import type * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
@@ -15,6 +16,11 @@ const SRGB_CHROMATICITIES = [
 export const MAX_NORMALIZED_PNG_BYTES = 25 * 1024 * 1024;
 const NORMALIZED_PNG_BODY_TIMEOUT = Duration.seconds(30);
 const INITIAL_NORMALIZED_PNG_BUFFER_BYTES = 64 * 1024;
+/**
+ * A cICP chunk precedes IDAT, and every chunk before it is small metadata, so this much of a
+ * PNG is enough to know whether the rest of the body is worth buffering at all.
+ */
+export const PNG_CICP_PEEK_BYTES = 64 * 1024;
 
 export class GitHubMediaBodyTooLargeError extends Schema.TaggedError<GitHubMediaBodyTooLargeError>()(
   "GitHubMediaBodyTooLargeError",
@@ -74,6 +80,72 @@ export function stripConflictingBt709Cicp(bytes: Uint8Array): Uint8Array {
   return bytes.subarray(0, bytes.length - chunkLength);
 }
 
+type MediaBody = HttpClientResponse.HttpClientResponse["stream"];
+
+/** Upstream already said the body is past the bound, so there is nothing to peek at or buffer. */
+export function declaresOversizedBody(response: HttpClientResponse.HttpClientResponse): boolean {
+  const declaredLength = Number(response.headers["content-length"]);
+  return Number.isFinite(declaredLength) && declaredLength > MAX_NORMALIZED_PNG_BYTES;
+}
+
+/**
+ * Walks the chunk headers of a PNG prefix. "unknown" means the prefix ended before a decision:
+ * a cICP chunk was not seen yet and IDAT was not reached either.
+ */
+export function pngCicpPresence(prefix: Uint8Array): "present" | "absent" | "unknown" {
+  if (prefix.length < PNG_SIGNATURE.length) return "unknown";
+  if (!bytesEqualAt(prefix, 0, PNG_SIGNATURE)) return "absent";
+  const view = new DataView(prefix.buffer, prefix.byteOffset, prefix.byteLength);
+  let offset: number = PNG_SIGNATURE.length;
+  while (offset + 8 <= prefix.length) {
+    const type = String.fromCharCode(...prefix.subarray(offset + 4, offset + 8));
+    if (type === "cICP") return "present";
+    if (type === "IDAT" || type === "IEND") return "absent";
+    offset += 12 + view.getUint32(offset, false);
+  }
+  return "unknown";
+}
+
+/**
+ * Reads only as much of a PNG body as it takes to tell whether a cICP chunk is present, so a
+ * screenshot without one streams through with nothing but its first chunks in memory. The body
+ * comes back as the peeked prefix plus the untouched remainder, still bound to the caller's
+ * scope like the response stream it came from.
+ */
+export const peekPngCicp = Effect.fn("GitHubMediaNormalization.peekPngCicp")(function* (
+  response: HttpClientResponse.HttpClientResponse,
+) {
+  const pull = yield* Stream.toPull(response.stream);
+  const parts: Array<Uint8Array> = [];
+  let head: Uint8Array = new Uint8Array(0);
+  let presence = pngCicpPresence(head);
+  let ended = false;
+  while (presence === "unknown" && head.length < PNG_CICP_PEEK_BYTES) {
+    const next = yield* pull.pipe(Pull.catchDone(() => Effect.succeed(null)));
+    if (next === null) {
+      ended = true;
+      break;
+    }
+    parts.push(...next);
+    head = concatBytes(parts);
+    presence = pngCicpPresence(head);
+  }
+  const rest: MediaBody = ended ? Stream.empty : Stream.fromPull(Effect.succeed(pull));
+  const body: MediaBody = Stream.concat(Stream.fromArray(parts), rest);
+  return { presence, body };
+});
+
+function concatBytes(parts: ReadonlyArray<Uint8Array>): Uint8Array {
+  if (parts.length === 1) return parts[0]!;
+  const bytes = new Uint8Array(parts.reduce((length, part) => length + part.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    bytes.set(part, offset);
+    offset += part.length;
+  }
+  return bytes;
+}
+
 /**
  * Buffers one response body up to `MAX_NORMALIZED_PNG_BYTES` so the normalizer above can inspect
  * it. Only the narrow PNG case calls this; every other media response keeps streaming. Bodies
@@ -82,9 +154,10 @@ export function stripConflictingBt709Cicp(bytes: Uint8Array): Uint8Array {
  */
 export const readBoundedBody = Effect.fn("GitHubMediaNormalization.readBoundedBody")(function* (
   response: HttpClientResponse.HttpClientResponse,
+  stream: MediaBody = response.stream,
 ) {
   const declaredLength = Number(response.headers["content-length"]);
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_NORMALIZED_PNG_BYTES) {
+  if (declaresOversizedBody(response)) {
     return yield* new GitHubMediaBodyTooLargeError({ maxBytes: MAX_NORMALIZED_PNG_BYTES });
   }
 
@@ -94,7 +167,7 @@ export const readBoundedBody = Effect.fn("GitHubMediaNormalization.readBoundedBo
       : INITIAL_NORMALIZED_PNG_BUFFER_BYTES;
   let bytes = new Uint8Array(initialCapacity);
   let byteLength = 0;
-  yield* response.stream.pipe(
+  yield* stream.pipe(
     Stream.runForEach((chunk) => {
       const nextByteLength = byteLength + chunk.length;
       if (nextByteLength > MAX_NORMALIZED_PNG_BYTES) {

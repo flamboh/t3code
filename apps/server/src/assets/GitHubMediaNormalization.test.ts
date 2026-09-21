@@ -20,6 +20,7 @@ import * as GitHubCli from "../sourceControl/GitHubCli.ts";
 import { githubMediaResponse } from "./GitHubMediaFetch.ts";
 import {
   MAX_NORMALIZED_PNG_BYTES,
+  PNG_CICP_PEEK_BYTES,
   readBoundedBody,
   stripConflictingBt709Cicp,
 } from "./GitHubMediaNormalization.ts";
@@ -265,6 +266,69 @@ describe("githubMediaResponse PNG normalization", () => {
 
       expect(response.body._tag).toBe("Stream");
       expect(yield* readResponseBody(response)).toEqual(source);
+    }),
+  );
+
+  it.effect("streams attachment PNGs without a cICP chunk instead of buffering them", () =>
+    Effect.gen(function* () {
+      // The chunk headers up to IDAT decide; the image data past them is never pulled whole.
+      const idat = new Uint8Array(PNG_CICP_PEEK_BYTES * 4).fill(7);
+      const source = concatBytes([
+        PNG_SIGNATURE,
+        pngChunk("IHDR", EMPTY_IHDR),
+        pngChunk("cHRM", SRGB_CHRM),
+        pngChunk("gAMA", SRGB_GAMMA),
+        pngChunk("IDAT", Array.from(idat)),
+        pngChunk("IEND", []),
+      ]);
+      let pulled = 0;
+      const upstream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (let offset = 0; offset < source.length; offset += 1024) {
+            controller.enqueue(source.subarray(offset, offset + 1024));
+          }
+          controller.close();
+        },
+      }).pipeThrough(
+        new TransformStream<Uint8Array, Uint8Array>({
+          transform(chunk, controller) {
+            pulled += chunk.length;
+            controller.enqueue(chunk);
+          },
+        }),
+      );
+      // The peeked remainder lives in the route scope, which outlives the response being sent.
+      const { response, body } = yield* Effect.gen(function* () {
+        const response = yield* githubMediaResponse(mediaAsset(ATTACHMENT_URL), {});
+        expect(response.body._tag).toBe("Stream");
+        expect(pulled).toBeLessThan(PNG_CICP_PEEK_BYTES);
+        return { response, body: yield* readResponseBody(response) };
+      }).pipe(
+        Effect.provide(
+          httpClientLayer((request) =>
+            Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                new Response(upstream, {
+                  status: 200,
+                  headers: {
+                    "content-length": String(source.length),
+                    "content-type": "image/png",
+                    "accept-ranges": "bytes",
+                    etag: '"upstream"',
+                  },
+                }),
+              ),
+            ),
+          ),
+        ),
+        Effect.scoped,
+      );
+
+      // Streaming keeps the upstream entity headers, since the bytes are the upstream bytes.
+      expect(header(response, "etag")).toBe('"upstream"');
+      expect(header(response, "accept-ranges")).toBe("bytes");
+      expect(body).toEqual(source);
     }),
   );
 

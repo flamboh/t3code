@@ -13,7 +13,12 @@ import {
 } from "effect/unstable/http";
 
 import * as GitHubCli from "../sourceControl/GitHubCli.ts";
-import { readBoundedBody, stripConflictingBt709Cicp } from "./GitHubMediaNormalization.ts";
+import {
+  declaresOversizedBody,
+  peekPngCicp,
+  readBoundedBody,
+  stripConflictingBt709Cicp,
+} from "./GitHubMediaNormalization.ts";
 
 /**
  * Exactly the hosts the credential is for. Everything a redirect leads to — the presigned
@@ -188,6 +193,7 @@ export const githubMediaResponse = Effect.fn("GitHubMediaFetch.githubMediaRespon
   // case: a full PNG body, fetched whole, from a user attachment. Seeks keep streaming, and so
   // does every other type and host. Past the size bound the route answers 502 and the client
   // falls back to the original URL, so the image still loads, just without normalization.
+  let body = response.stream;
   if (
     response.status === 200 &&
     requestHeaders.range === undefined &&
@@ -195,21 +201,30 @@ export const githubMediaResponse = Effect.fn("GitHubMediaFetch.githubMediaRespon
     contentType === NORMALIZED_CONTENT_TYPE &&
     isGitHubUserAttachmentFetchUrl(asset.url)
   ) {
-    // No accept-ranges: a later Range request streams the unmodified upstream bytes, so
-    // advertising ranges here would let a client address offsets that do not exist there.
-    return yield* readBoundedBody(response).pipe(
-      Effect.map((body) =>
-        HttpServerResponse.uint8Array(stripConflictingBt709Cicp(body), {
-          status: 200,
-          contentType,
-          headers,
+    if (declaresOversizedBody(response)) {
+      return HttpServerResponse.empty({ status: 502, headers });
+    }
+    // Most PNGs carry no cICP chunk at all. Those are known from their first chunk headers
+    // and stream through like any other image instead of being held whole in memory.
+    const peeked = yield* peekPngCicp(response);
+    body = peeked.body;
+    if (peeked.presence === "present") {
+      // No accept-ranges: a later Range request streams the unmodified upstream bytes, so
+      // advertising ranges here would let a client address offsets that do not exist there.
+      return yield* readBoundedBody(response, peeked.body).pipe(
+        Effect.map((body) =>
+          HttpServerResponse.uint8Array(stripConflictingBt709Cicp(body), {
+            status: 200,
+            contentType,
+            headers,
+          }),
+        ),
+        Effect.catchTags({
+          GitHubMediaBodyTooLargeError: () =>
+            Effect.succeed(HttpServerResponse.empty({ status: 502, headers })),
         }),
-      ),
-      Effect.catchTags({
-        GitHubMediaBodyTooLargeError: () =>
-          Effect.succeed(HttpServerResponse.empty({ status: 502, headers })),
-      }),
-    );
+      );
+    }
   }
   for (const name of FORWARDED_RESPONSE_HEADERS) {
     const value = response.headers[name];
@@ -219,7 +234,7 @@ export const githubMediaResponse = Effect.fn("GitHubMediaFetch.githubMediaRespon
   if (contentType === SVG_CONTENT_TYPE) {
     headers["content-security-policy"] = SVG_CONTENT_SECURITY_POLICY;
   }
-  return HttpServerResponse.stream(response.stream, {
+  return HttpServerResponse.stream(body, {
     status: response.status,
     headers,
     contentType,
