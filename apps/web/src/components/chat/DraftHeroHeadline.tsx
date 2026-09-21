@@ -163,8 +163,9 @@ export function DraftHeroHeadline({
             // mid-sentence and baffle screen-reader users.
             <MenuTrigger
               onContextMenu={(event) => {
-                if (!activeProjectGroup || !readLocalApi()) return;
+                if (!activeProjectGroup) return;
                 event.preventDefault();
+                event.stopPropagation();
                 void openProjectSettingsMenu(activeProjectGroup.projectKey, {
                   x: event.clientX,
                   y: event.clientY,
@@ -179,6 +180,7 @@ export function DraftHeroHeadline({
                 }
                 const rect = event.currentTarget.getBoundingClientRect();
                 event.preventDefault();
+                event.stopPropagation();
                 void openProjectSettingsMenu(activeProjectGroup.projectKey, {
                   x: rect.left,
                   y: rect.bottom,
@@ -241,8 +243,8 @@ export function DraftHeroHeadline({
                 value={group.projectKey}
                 closeOnClick
                 onContextMenu={(event) => {
-                  if (!readLocalApi()) return;
                   event.preventDefault();
+                  event.stopPropagation();
                   void openProjectSettingsMenu(group.projectKey, {
                     x: event.clientX,
                     y: event.clientY,
