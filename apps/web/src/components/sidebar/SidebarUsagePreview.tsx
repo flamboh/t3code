@@ -101,6 +101,14 @@ export function SidebarUsagePreview() {
     [now, presentations],
   );
   const notices = useMemo(() => collectLimitNotices(presentations), [presentations]);
+  const noticeEntries = useMemo(() => {
+    const counts = new Map<string, number>();
+    return notices.map((notice) => {
+      const occurrence = counts.get(notice) ?? 0;
+      counts.set(notice, occurrence + 1);
+      return { key: `${notice}:${occurrence}`, text: notice };
+    });
+  }, [notices]);
 
   return (
     <>
@@ -113,15 +121,15 @@ export function SidebarUsagePreview() {
           ) : null}
         </span>
       </div>
-      {pools.length > 0 || notices.length > 0 ? (
+      {pools.length > 0 || noticeEntries.length > 0 ? (
         <div className="flex flex-col gap-2 border-t border-border/60 pt-2">
           {pools.map((pool) => (
             <PoolRows key={pool.driver} pool={pool} now={now} />
           ))}
-          {notices.length > 0 ? (
+          {noticeEntries.length > 0 ? (
             <ul className="flex flex-col gap-1 text-muted-foreground">
-              {notices.map((notice, index) => (
-                <li key={`${notice}:${index}`}>{notice}</li>
+              {noticeEntries.map(({ key, text }) => (
+                <li key={key}>{text}</li>
               ))}
             </ul>
           ) : null}
