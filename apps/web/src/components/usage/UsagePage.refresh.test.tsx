@@ -70,6 +70,7 @@ vi.mock("../ui/menu", () => ({
 }));
 vi.mock("../WorkspaceBreadcrumb", () => ({
   WorkspaceBreadcrumb: "div",
+  WorkspaceBreadcrumbChevron: "span",
   WorkspaceBreadcrumbItem: "div",
   WorkspaceBreadcrumbSeparator: "span",
 }));
