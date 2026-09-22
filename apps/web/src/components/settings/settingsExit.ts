@@ -18,24 +18,30 @@ function readEntryIndex(storage: EntryStorage): number | null {
   return Number.isInteger(index) ? index : null;
 }
 
-export function recordSettingsEntry(
-  router: AnyRouter,
-  storage: EntryStorage = window.sessionStorage,
-): () => void {
-  const current = historyIndex(router);
-  const stored = readEntryIndex(storage);
-  if (stored === null || stored > current) {
-    storage.setItem(SETTINGS_ENTRY_INDEX_KEY, String(current));
-  }
-  return () => {
-    if (!isSettingsPath(router.history.location.pathname)) {
-      storage.removeItem(SETTINGS_ENTRY_INDEX_KEY);
+export function recordSettingsEntry(router: AnyRouter, storage?: EntryStorage): () => void {
+  try {
+    const entryStorage = storage ?? window.sessionStorage;
+    const current = historyIndex(router);
+    const stored = readEntryIndex(entryStorage);
+    if (stored === null || stored > current) {
+      entryStorage.setItem(SETTINGS_ENTRY_INDEX_KEY, String(current));
     }
-  };
+    return () => {
+      if (isSettingsPath(router.history.location.pathname)) return;
+      try {
+        entryStorage.removeItem(SETTINGS_ENTRY_INDEX_KEY);
+      } catch {}
+    };
+  } catch {
+    return () => {};
+  }
 }
 
-export function exitSettings(router: AnyRouter, storage: EntryStorage = window.sessionStorage) {
-  const entry = readEntryIndex(storage);
+export function exitSettings(router: AnyRouter, storage?: EntryStorage) {
+  let entry: number | null = null;
+  try {
+    entry = readEntryIndex(storage ?? window.sessionStorage);
+  } catch {}
   const current = historyIndex(router);
   if (entry !== null && entry > 0 && entry <= current) {
     router.history.go(entry - current - 1);
