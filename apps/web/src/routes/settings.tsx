@@ -1,12 +1,5 @@
-import {
-  Outlet,
-  createFileRoute,
-  redirect,
-  useCanGoBack,
-  useLocation,
-  useNavigate,
-} from "@tanstack/react-router";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { Outlet, createFileRoute, redirect, useLocation, useRouter } from "@tanstack/react-router";
+import { useEffect, useState, type ReactNode } from "react";
 import { RotateCcwIcon } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
@@ -27,6 +20,7 @@ import {
   retainSettingsScope,
   validateSettingsRouteSearch,
 } from "../components/settings/settingsScopeNavigation";
+import { exitSettings, recordSettingsEntry } from "../components/settings/settingsExit";
 import {
   getSettingsSearchTargetScope,
   getThreadAutoSettlementSearchAvailability,
@@ -117,17 +111,10 @@ function SettingsScopeBoundary({ pathname, children }: { pathname: string; child
 
 function SettingsContentLayout() {
   const location = useLocation();
-  const navigate = useNavigate();
-  const canGoBack = useCanGoBack();
+  const router = useRouter();
   const { search } = useSettingsScope();
   const [restoreSignal, setRestoreSignal] = useState(0);
-  const navigateBackWithinApp = useCallback(() => {
-    if (canGoBack) {
-      window.history.back();
-      return;
-    }
-    void navigate({ to: "/" });
-  }, [canGoBack, navigate]);
+  useEffect(() => recordSettingsEntry(router), [router]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -140,7 +127,7 @@ function SettingsContentLayout() {
           activeElement.blur();
         }
 
-        navigateBackWithinApp();
+        exitSettings(router);
       }
     };
 
@@ -148,7 +135,7 @@ function SettingsContentLayout() {
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [navigateBackWithinApp]);
+  }, [router]);
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none isolate">
