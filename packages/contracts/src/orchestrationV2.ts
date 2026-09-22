@@ -57,6 +57,7 @@ import {
 } from "./providerPolicy.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import { OrchestrationProjectShell } from "./orchestrationProject.ts";
+import { PullRequestWatchId } from "./pullRequestWatch.ts";
 import {
   TurnTokenUsage,
   ToolActivitySurface,
@@ -827,6 +828,10 @@ export const OrchestrationV2Notification = Schema.Struct({
     Schema.Struct({
       kind: Schema.Literals(["background_task", "background_command", "monitor"]),
       nativeRef: Schema.optional(OrchestrationV2ProviderRef),
+    }),
+    Schema.Struct({
+      kind: Schema.Literal("pull_request_watch"),
+      watchId: PullRequestWatchId,
     }),
   ]),
   // Item status describes this timeline record; outcome describes the reported work.

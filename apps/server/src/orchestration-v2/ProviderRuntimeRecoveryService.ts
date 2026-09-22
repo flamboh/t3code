@@ -90,7 +90,19 @@ function isNonterminalNodeStatus(status: string): boolean {
 function providerThreadHasPendingBackgroundTasks(
   providerThread: OrchestrationV2ThreadProjection["providerThreads"][number],
 ): boolean {
-  return (providerThread.pendingBackgroundTasks?.length ?? 0) > 0;
+  // Pull request watches survive restarts (durable poll loop, not a native
+  // process), so their roster entries are not process-bound work.
+  return (providerThread.pendingBackgroundTasks ?? []).some(
+    (task) => task.taskType !== "pull_request_watch",
+  );
+}
+
+function providerThreadWatchBackgroundTasks(
+  providerThread: OrchestrationV2ThreadProjection["providerThreads"][number],
+): OrchestrationV2ThreadProjection["providerThreads"][number]["pendingBackgroundTasks"] {
+  return (providerThread.pendingBackgroundTasks ?? []).filter(
+    (task) => task.taskType === "pull_request_watch",
+  );
 }
 
 /**
@@ -441,7 +453,9 @@ export const make = Effect.gen(function* () {
       }
       // All provider processes are gone on startup/shutdown: clear any
       // persisted Waiting roster (including idle threads from settled roots)
-      // and idle active threads without resurrecting active status.
+      // and idle active threads without resurrecting active status. Pull
+      // request watch entries survive: watches are durable poll state, not
+      // native processes, and the watch worker re-syncs them after startup.
       for (const providerThread of projection.providerThreads ?? []) {
         const needsIdle = providerThread.status === "active";
         const needsRosterClear = providerThreadHasPendingBackgroundTasks(providerThread);
@@ -458,7 +472,7 @@ export const make = Effect.gen(function* () {
           payload: {
             ...providerThread,
             status: needsIdle ? "idle" : providerThread.status,
-            pendingBackgroundTasks: [],
+            pendingBackgroundTasks: providerThreadWatchBackgroundTasks(providerThread),
             updatedAt: now,
           },
         });

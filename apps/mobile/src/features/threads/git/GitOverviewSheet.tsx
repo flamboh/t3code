@@ -4,6 +4,8 @@ import {
   getGitActionDisabledReason,
   requiresDefaultBranchConfirmation,
 } from "@t3tools/client-runtime/state/vcs";
+import { matchingPullRequestWatches } from "@t3tools/client-runtime/state/pull-request-watch-match";
+import { isPullRequestWatchActive } from "@t3tools/client-runtime/state/pull-request-watches";
 import {
   resolveThreadPullRequestChains,
   threadPullRequestKeyOf,
@@ -36,6 +38,10 @@ import {
 } from "../../../native/StackHeader";
 import { tryOpenExternalUrl } from "../../../lib/openExternalUrl";
 import { useEnvironmentQuery } from "../../../state/query";
+import {
+  pullRequestWatchEnvironment,
+  useSupportsPullRequestWatches,
+} from "../../../state/pull-request-watches";
 import { useThreadSelection } from "../../../state/use-thread-selection";
 import { useSelectedThreadGitActions } from "../../../state/use-selected-thread-git-actions";
 import { useSelectedThreadGitState } from "../../../state/use-selected-thread-git-state";
@@ -72,6 +78,21 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
         supportsLinkedPrSnapshots ? (selectedThread?.pullRequests ?? []) : [],
       ),
     [selectedThread?.pullRequests, supportsLinkedPrSnapshots],
+  );
+  // Older servers never advertised the watch routes: mount no query at all
+  // instead of polling an unknown method while the sheet is open.
+  const supportsPullRequestWatches = useSupportsPullRequestWatches(environmentId);
+  const pullRequestWatchQuery = useEnvironmentQuery(
+    !supportsPullRequestWatches || selectedThread === null
+      ? null
+      : pullRequestWatchEnvironment.listByThread({
+          environmentId: selectedThread.environmentId,
+          input: { threadId: selectedThread.id, projectId: selectedThread.projectId },
+        }),
+  );
+  const activePullRequestWatches = useMemo(
+    () => (pullRequestWatchQuery.data?.watches ?? []).filter(isPullRequestWatchActive),
+    [pullRequestWatchQuery.data],
   );
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
@@ -347,7 +368,17 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
                   <SheetListRow
                     icon="arrow.triangle.pull"
                     title={`#${link.number} ${link.snapshot?.title ?? "Pull request"}`}
-                    subtitle={`${link.repository} · ${link.snapshot === null ? "Status pending" : link.snapshot.isDraft && link.snapshot.state === "open" ? "Draft" : link.snapshot.state}`}
+                    subtitle={[
+                      link.repository,
+                      link.snapshot === null
+                        ? "Status pending"
+                        : link.snapshot.isDraft && link.snapshot.state === "open"
+                          ? "Draft"
+                          : link.snapshot.state,
+                      ...(matchingPullRequestWatches(activePullRequestWatches, link).length > 0
+                        ? ["Watching"]
+                        : []),
+                    ].join(" · ")}
                     onPress={() => {
                       void tryOpenExternalUrl(link.url, "pull-request").then((opened) => {
                         if (!opened)

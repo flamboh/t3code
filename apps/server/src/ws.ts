@@ -213,6 +213,7 @@ import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
+import { PullRequestWatchService } from "./pullRequest/PullRequestWatchService.ts";
 import { listLinkedPullRequestThreads } from "./pullRequest/linkedThreads.ts";
 import { pullRequestSyncKey } from "./pullRequest/pullRequestSyncKey.ts";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -1099,6 +1100,7 @@ const makeWsRpcLayer = (
       const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
       const providerSessionManager = yield* ProviderSessionManagerV2;
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
+      const pullRequestWatches = yield* PullRequestWatchService;
       const pullRequests = yield* PullRequestService.PullRequestService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
       const deviceService = yield* DeviceService.DeviceService;
@@ -2730,6 +2732,25 @@ const makeWsRpcLayer = (
             withPullRequestViewer(input, pullRequests.setLabels(input)),
             {
               "rpc.aggregate": "pull-requests",
+            },
+          ),
+        [WS_METHODS.pullRequestWatchesList]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.pullRequestWatchesList,
+            pullRequestWatches
+              .list(input)
+              .pipe(Effect.map((result) => ({ watches: [...result.watches] }))),
+            {
+              "rpc.aggregate": "pull-requests",
+            },
+          ),
+        [WS_METHODS.pullRequestWatchesCancel]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.pullRequestWatchesCancel,
+            pullRequestWatches.cancel(input).pipe(Effect.map((watch) => ({ watch }))),
+            {
+              "rpc.aggregate": "pull-requests",
+              "pull_request_watch.id": input.watchId,
             },
           ),
         [WS_METHODS.sourceControlLookupRepository]: (input) =>

@@ -1149,3 +1149,85 @@ it.effect(
     }).pipe(Effect.provide(layer));
   },
 );
+
+it.effect("keeps pull request watch roster entries while clearing process-bound work", () => {
+  const threadId = ThreadId.make("thread_recovery_watch_roster");
+  const mixedThreadId = ProviderThreadId.make("provider_thread_recovery_watch_mixed");
+  const watchOnlyThreadId = ProviderThreadId.make("provider_thread_recovery_watch_only");
+  const claudeInstanceId = ProviderInstanceId.make("claude");
+  const watchTask = {
+    taskId: "pull-request-watch:pull-request-watch:thread_recovery_watch_roster:abc",
+    description: "PR #12",
+    taskType: "pull_request_watch",
+  };
+  let committedInput: Parameters<EventSink.EventSinkV2["Service"]["commitCommand"]>[0] | null =
+    null;
+  const projection = {
+    thread: { id: threadId },
+    runtimeRequests: [],
+    providerSessions: [],
+    providerThreads: [
+      {
+        id: mixedThreadId,
+        driver: ProviderDriverKind.make("claude"),
+        providerInstanceId: claudeInstanceId,
+        status: "idle",
+        pendingBackgroundTasks: [{ taskId: "bg-1", description: "sleep 30" }, watchTask],
+      },
+      {
+        // Watch entries alone never trigger a rewrite on an idle thread.
+        id: watchOnlyThreadId,
+        driver: ProviderDriverKind.make("claude"),
+        providerInstanceId: claudeInstanceId,
+        status: "idle",
+        pendingBackgroundTasks: [watchTask],
+      },
+    ],
+    providerTurns: [],
+    runs: [],
+    attempts: [],
+    nodes: [],
+    subagents: [],
+    messages: [],
+    turnItems: [],
+  } as unknown as OrchestrationV2ThreadProjection;
+  const layer = ProviderRuntimeRecovery.layer.pipe(
+    Layer.provide(ServerSettings.layerTest()),
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.mock(ProjectionStore.ProjectionStoreV2)({
+          getRecoveryThreadIds: () => Effect.succeed([threadId]),
+          getRuntimeRecoveryProjection: () => Effect.succeed(projection),
+        }),
+        Layer.mock(EventSink.EventSinkV2)({
+          commitCommand: (input) => {
+            committedInput = input;
+            return Effect.succeed({ committed: true, cancelledEffectCount: 0 } as never);
+          },
+        }),
+        IdAllocator.layer,
+        Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({
+          runRecoveryOnce: Effect.succeed(false),
+        }),
+        Layer.mock(EffectOutbox.EffectOutboxV2)({
+          listByCommandId: () => Effect.succeed([]),
+          reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
+        }),
+      ),
+    ),
+  );
+
+  return Effect.gen(function* () {
+    yield* (yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService).reconcile("startup");
+    const events = committedInput?.events ?? [];
+    const providerThreadEvents = events.filter((event) => event.type === "provider-thread.updated");
+    // Only the mixed roster is rewritten; the watch-only idle thread is
+    // already in its desired state.
+    assert.equal(providerThreadEvents.length, 1);
+    const event = providerThreadEvents[0];
+    assert.isTrue(event?.type === "provider-thread.updated" && event.payload.id === mixedThreadId);
+    if (event?.type !== "provider-thread.updated") return;
+    assert.deepEqual(event.payload.pendingBackgroundTasks, [watchTask]);
+    assert.equal(event.payload.status, "idle");
+  }).pipe(Effect.provide(layer));
+});

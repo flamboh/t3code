@@ -135,6 +135,20 @@ server, but the host's own site will not show them, and the count reads **viewed
 The **Code** tab is a web and desktop surface. The mobile app reports a pull request's status but
 does not show its diff, so marks are made and read on web and desktop.
 
+## Let an agent wait for CI or review feedback
+
+Ask the agent to wait for a pull request instead of polling it. It ends its
+turn and T3 Code watches the pull request on GitHub, then resumes the same
+thread when CI fails or finishes or new review feedback arrives. The thread
+shows a waiting notice above the composer and is marked as waiting in the
+sidebar. If the agent is busy, the update waits until that work finishes.
+
+Cancel a watch from the notice above the composer, or ask the agent to cancel
+it. Closing a client does not cancel a watch, but the environment's server
+must be running to see updates. Finished checks are not always green; the
+agent still reads the result. Watching requires GitHub access on that
+environment.
+
 ## Troubleshooting
 
 - **Not authenticated:** run the provider's login command on the server, then rescan. For Bitbucket,

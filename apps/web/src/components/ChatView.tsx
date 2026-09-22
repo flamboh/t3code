@@ -30,6 +30,7 @@ import {
 } from "@t3tools/shared/usageLimits";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { usageLimitsBannerItem } from "./chat/ComposerUsageLimits";
+import { usePullRequestWatchBannerItem } from "./chat/PullRequestWatchBanner";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import * as Schema from "effect/Schema";
 import { Minimize2Icon } from "lucide-react";
@@ -6735,7 +6736,14 @@ export default function ChatView(props: ChatViewProps) {
   // the turn; once it settles, the composer stop button is gone, so this
   // banner is the only visible stop affordance. The interrupt path also
   // accepts a completed run while its provider still has background work.
-  const activeBackgroundTasks = !isWorking && activeThread ? pendingBackgroundTasks : [];
+  // Watch entries have a dedicated PR watch banner with watch-aware actions;
+  // keep them out of the generic background-work banner whose Stop button
+  // interrupts provider work, not watches. The sidebar/status derivation
+  // still sees them, so the thread reads Waiting.
+  const activeBackgroundTasks =
+    !isWorking && activeThread
+      ? pendingBackgroundTasks.filter((task) => task.taskType !== "pull_request_watch")
+      : [];
   const [stoppingBackgroundWorkKey, setStoppingBackgroundWorkKey] = useState<string | null>(null);
   const isStoppingBackgroundWork =
     stoppingBackgroundWorkKey === `${environmentId}:${activeThreadId}`;
@@ -6990,9 +6998,20 @@ export default function ChatView(props: ChatViewProps) {
           },
         })
       : null;
+  const pullRequestWatchBannerItem = usePullRequestWatchBannerItem(
+    activeThread == null
+      ? null
+      : {
+          environmentId: activeThread.environmentId,
+          threadId: activeThread.id,
+          projectId: activeThread.projectId,
+        },
+  );
   const composerBannerItems = useMemo<ComposerBannerStackItem[]>(() => {
     const limitRecoveryItems = limitRecoveryBanner === null ? [] : [limitRecoveryBanner];
     const backgroundWorkItems = backgroundWorkBannerItem === null ? [] : [backgroundWorkBannerItem];
+    const pullRequestWatchItems =
+      pullRequestWatchBannerItem === null ? [] : [pullRequestWatchBannerItem];
     const resumeCompactionItems =
       resumeCompactionBannerItem === null ? [] : [resumeCompactionBannerItem];
     const wokeThreadItems = wokeThreadBannerItem === null ? [] : [wokeThreadBannerItem];
@@ -7008,6 +7027,7 @@ export default function ChatView(props: ChatViewProps) {
         ...projectCloneItems,
         ...systemComposerBannerItems,
         ...backgroundWorkItems,
+        ...pullRequestWatchItems,
         ...resumeCompactionItems,
         ...wokeThreadItems,
         ...parkedThreadItems,
@@ -7020,6 +7040,7 @@ export default function ChatView(props: ChatViewProps) {
       ...projectCloneItems,
       ...systemComposerBannerItems,
       ...backgroundWorkItems,
+      ...pullRequestWatchItems,
       ...resumeCompactionItems,
       ...wokeThreadItems,
       {
@@ -7071,6 +7092,7 @@ export default function ChatView(props: ChatViewProps) {
     handleRestoreThreadBranch,
     isRestoringThreadBranch,
     backgroundWorkBannerItem,
+    pullRequestWatchBannerItem,
     localCheckoutBranchMismatch,
     parkedThreadBannerItem,
     projectCloneBannerItem,

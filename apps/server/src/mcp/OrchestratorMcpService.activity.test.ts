@@ -17,6 +17,7 @@ import { expect, it } from "vite-plus/test";
 import { ProviderAdapterRegistryV2 } from "../orchestration-v2/ProviderAdapterRegistry.ts";
 import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
 import { ScheduledTaskService } from "../scheduledTasks/ScheduledTaskService.ts";
+import { PullRequestWatchService } from "../pullRequest/PullRequestWatchService.ts";
 import {
   ThreadManagementService,
   ThreadManagementThreadNotFoundError,
@@ -140,6 +141,7 @@ it("readThread prefers activity-run status over a newer cancelled queued run", a
         Layer.mock(ScheduledTaskService)({
           list: () => Effect.succeed({ tasks: [] }),
         } satisfies Partial<ScheduledTaskService["Service"]>),
+        Layer.mock(PullRequestWatchService)({}),
         Layer.mock(ProviderAdapterRegistryV2)({
           list: () => Effect.succeed([]),
         } satisfies Partial<ProviderAdapterRegistryV2["Service"]>),
@@ -193,6 +195,7 @@ it("readThread prefers waiting activity status over a newer cancelled queued run
         Layer.mock(ScheduledTaskService)({
           list: () => Effect.succeed({ tasks: [] }),
         } satisfies Partial<ScheduledTaskService["Service"]>),
+        Layer.mock(PullRequestWatchService)({}),
         Layer.mock(ProviderAdapterRegistryV2)({
           list: () => Effect.succeed([]),
         } satisfies Partial<ProviderAdapterRegistryV2["Service"]>),
@@ -304,6 +307,7 @@ it("taskStatus returns task.providerInstanceId rather than the driver kind", asy
         Layer.mock(ScheduledTaskService)({
           list: () => Effect.succeed({ tasks: [] }),
         } satisfies Partial<ScheduledTaskService["Service"]>),
+        Layer.mock(PullRequestWatchService)({}),
         Layer.mock(ProviderAdapterRegistryV2)({
           list: () => Effect.succeed([]),
         } satisfies Partial<ProviderAdapterRegistryV2["Service"]>),
@@ -437,6 +441,7 @@ it("readThread reaches a thread the user attached as context, but not one an age
         Layer.mock(ScheduledTaskService)({
           list: () => Effect.succeed({ tasks: [] }),
         } satisfies Partial<ScheduledTaskService["Service"]>),
+        Layer.mock(PullRequestWatchService)({}),
         Layer.mock(ProviderAdapterRegistryV2)({
           list: () => Effect.succeed([]),
         } satisfies Partial<ProviderAdapterRegistryV2["Service"]>),

@@ -12,6 +12,10 @@ import {
   OrchestratorMcpScheduleTaskResult,
   OrchestratorMcpTaskCancelInput,
   OrchestratorMcpTaskCancelResult,
+  OrchestratorMcpCancelPullRequestWatchInput,
+  OrchestratorMcpListPullRequestWatchesResult,
+  OrchestratorMcpWatchPullRequestInput,
+  OrchestratorMcpWatchPullRequestResult,
   OrchestratorMcpUpdateScheduledTaskInput,
   OrchestratorMcpTaskStatusInput,
   OrchestratorMcpThreadInterruptInput,
@@ -234,6 +238,44 @@ const ThreadInterruptTool = Tool.make("t3_thread_interrupt", {
   .annotate(Tool.Title, "Interrupt a T3 thread")
   .annotate(Tool.Destructive, true);
 
+export const WatchPullRequestTool = Tool.make("watch_pull_request", {
+  description:
+    "Register a durable one-shot pull request watch for this thread. Omit events by default to wake on CI failure, CI completion, or new/edited review feedback; supply events only to narrow the watch. Nearby updates are combined during a fixed 15-second window after the first match, then queued as one notification. Uses the calling project's checkout and credentials; other repositories on the same host are supported. Returns immediately with a watch id and current state. End the turn instead of polling or sleeping; the server watches and resumes this thread. Optional previousWatchId re-arms gap-free from what the previous watch last saw.",
+  parameters: OrchestratorMcpWatchPullRequestInput,
+  success: OrchestratorMcpWatchPullRequestResult,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies,
+})
+  .annotate(Tool.Title, "Watch a pull request")
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.OpenWorld, true);
+
+const ListPullRequestWatchesTool = Tool.make("list_pull_request_watches", {
+  description:
+    "List this thread's pull request watches with their waiting/cancel state (pending, matched, delivered, cancelled, closed) for the calling project.",
+  success: OrchestratorMcpListPullRequestWatchesResult,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies,
+})
+  .annotate(Tool.Title, "List pull request watches")
+  .annotate(Tool.Readonly, true)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true);
+
+const CancelPullRequestWatchTool = Tool.make("cancel_pull_request_watch", {
+  description:
+    "Cancel a pull request watch for this thread (same thread scope as list_pull_request_watches). A cancelled watch never delivers.",
+  parameters: OrchestratorMcpCancelPullRequestWatchInput,
+  success: OrchestratorMcpWatchPullRequestResult,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies,
+})
+  .annotate(Tool.Title, "Cancel a pull request watch")
+  .annotate(Tool.Destructive, true);
+
 export const OrchestratorToolkit = Toolkit.make(
   OrchestratorCapabilitiesTool,
   DelegateTaskTool,
@@ -243,6 +285,9 @@ export const OrchestratorToolkit = Toolkit.make(
   ListScheduledTasksTool,
   UpdateScheduledTaskTool,
   DeleteScheduledTaskTool,
+  WatchPullRequestTool,
+  ListPullRequestWatchesTool,
+  CancelPullRequestWatchTool,
   CreateThreadsTool,
   ThreadListTool,
   ThreadReadTool,

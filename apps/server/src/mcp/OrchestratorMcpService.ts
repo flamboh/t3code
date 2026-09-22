@@ -43,6 +43,10 @@ import {
   type OrchestratorMcpThreadTimelineItem,
   type OrchestratorMcpThreadWaitInput,
   type OrchestratorMcpThreadWaitResult,
+  type OrchestratorMcpCancelPullRequestWatchInput,
+  type OrchestratorMcpListPullRequestWatchesResult,
+  type OrchestratorMcpWatchPullRequestInput,
+  type OrchestratorMcpWatchPullRequestResult,
   type ProviderInteractionMode,
   type ProviderOptionDescriptor,
   type ProviderOptionSelection,
@@ -50,6 +54,7 @@ import {
   type ScheduledTask,
   type ScheduledTaskUpsertInput,
   type ServerProvider,
+  PullRequestWatchError,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -76,6 +81,7 @@ import {
 } from "../orchestration-v2/ThreadManagementService.ts";
 import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
 import { ScheduledTaskService } from "../scheduledTasks/ScheduledTaskService.ts";
+import { PullRequestWatchService } from "../pullRequest/PullRequestWatchService.ts";
 import type { McpInvocationScope } from "./McpInvocationContext.ts";
 
 const DEFAULT_WAIT_TIMEOUT_MS = 10 * 60 * 1_000;
@@ -130,6 +136,17 @@ export interface OrchestratorMcpServiceShape {
     scope: McpInvocationScope,
     input: OrchestratorMcpDeleteScheduledTaskInput,
   ) => Effect.Effect<OrchestratorMcpDeleteScheduledTaskResult, OrchestratorMcpFailure>;
+  readonly watchPullRequest: (
+    scope: McpInvocationScope,
+    input: OrchestratorMcpWatchPullRequestInput,
+  ) => Effect.Effect<OrchestratorMcpWatchPullRequestResult, OrchestratorMcpFailure>;
+  readonly listPullRequestWatches: (
+    scope: McpInvocationScope,
+  ) => Effect.Effect<OrchestratorMcpListPullRequestWatchesResult, OrchestratorMcpFailure>;
+  readonly cancelPullRequestWatch: (
+    scope: McpInvocationScope,
+    input: OrchestratorMcpCancelPullRequestWatchInput,
+  ) => Effect.Effect<OrchestratorMcpWatchPullRequestResult, OrchestratorMcpFailure>;
   readonly listThreads: (
     scope: McpInvocationScope,
     input: OrchestratorMcpThreadListInput,
@@ -184,6 +201,17 @@ function threadManagementFailure(error: unknown): OrchestratorMcpFailure {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+const isPullRequestWatchError = Schema.is(PullRequestWatchError);
+
+function watchFailure(error: unknown): OrchestratorMcpFailure {
+  if (!isPullRequestWatchError(error)) return failure("orchestration_error", errorMessage(error));
+  if (/was not found/i.test(error.message)) return failure("watch_not_found", error.message);
+  if (/not supported|refusing|at least one event|previous watch/i.test(error.message)) {
+    return failure("invalid_request", error.message);
+  }
+  return failure("orchestration_error", error.message);
 }
 
 /**
@@ -751,6 +779,7 @@ const make = Effect.gen(function* () {
   const providerRegistry = yield* ProviderRegistry;
   const providerAdapters = yield* ProviderAdapterRegistryV2;
   const scheduledTasks = yield* ScheduledTaskService;
+  const pullRequestWatches = yield* PullRequestWatchService;
 
   const requireCapability = (scope: McpInvocationScope) =>
     scope.capabilities.has("orchestration")
@@ -1290,6 +1319,67 @@ const make = Effect.gen(function* () {
             ),
           );
         return { scheduledTaskId: existing.id, deleted: true };
+      }),
+    watchPullRequest: (scope, input) =>
+      Effect.gen(function* () {
+        yield* requireCapability(scope);
+        const parent = yield* loadProjection(scope.threadId);
+        // One-shot durable watch: registration returns immediately with the
+        // watch id and current state. The server polls; the turn must end.
+        const watch = yield* pullRequestWatches
+          .watch({
+            projectId: parent.thread.projectId,
+            threadId: scope.threadId,
+            repository: input.repository,
+            number: input.number,
+            ...(input.host === undefined ? {} : { host: input.host }),
+            ...(input.url === undefined ? {} : { url: input.url }),
+            ...(input.events === undefined ? {} : { events: input.events }),
+            ...(input.previousWatchId === undefined
+              ? {}
+              : { previousWatchId: input.previousWatchId }),
+            // Thread-bound idempotency: the same key retried after a
+            // provider-session rotation reuses the same watch row.
+            ...(input.clientRequestId === undefined
+              ? {}
+              : { clientRequestId: input.clientRequestId }),
+          })
+          .pipe(Effect.mapError(watchFailure));
+        return {
+          ...watch,
+          endTurnInstruction:
+            "The watch is registered and polled server-side. End the turn now instead of polling: the match (or close) arrives as a queued notification message in this thread.",
+        };
+      }),
+    listPullRequestWatches: (scope) =>
+      Effect.gen(function* () {
+        yield* requireCapability(scope);
+        const parent = yield* loadProjection(scope.threadId);
+        // Thread scope: only this thread's watches, only in its project.
+        return yield* pullRequestWatches
+          .list({ threadId: scope.threadId, projectId: parent.thread.projectId })
+          .pipe(Effect.mapError(watchFailure));
+      }),
+    cancelPullRequestWatch: (scope, input) =>
+      Effect.gen(function* () {
+        yield* requireCapability(scope);
+        const parent = yield* loadProjection(scope.threadId);
+        const watch = yield* pullRequestWatches
+          .cancel({
+            threadId: scope.threadId,
+            projectId: parent.thread.projectId,
+            watchId: input.watchId,
+          })
+          .pipe(Effect.mapError(watchFailure));
+        // A terminal no-op must not claim "will not deliver" when the
+        // notification already went out.
+        const endTurnInstruction =
+          watch.status === "delivered"
+            ? "The watch already delivered; nothing to cancel."
+            : watch.status === "closed"
+              ? "The watch already stopped (PR closed, merged, or gone); nothing to cancel."
+              : "The watch is cancelled and will not deliver.";
+        return { ...watch, endTurnInstruction };
       }),
     capabilities: (scope) =>
       Effect.gen(function* () {
@@ -1925,4 +2015,5 @@ export const layer: Layer.Layer<
   | ProviderRegistry
   | ProviderAdapterRegistryV2
   | ScheduledTaskService
+  | PullRequestWatchService
 > = Layer.effect(OrchestratorMcpService, make);

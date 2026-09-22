@@ -8,6 +8,7 @@ import {
   type OrchestrationV2ThreadProjection,
   ProjectId,
   ProviderInstanceId,
+  PullRequestWatchId,
   RunId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -429,3 +430,128 @@ for (const scenario of [
     }),
   );
 }
+
+it.effect("accepts a notification turn item as the receipt for notification sends", () => {
+  const projectId = ProjectId.make("project:thread-management:notification-receipt");
+  const threadId = ThreadId.make("thread:thread-management:notification-receipt");
+  const messageId = MessageId.make("message:thread-management:notification-receipt");
+  const runId = RunId.make("run:thread-management:notification-receipt");
+  const watchId = PullRequestWatchId.make("pull-request-watch:test");
+  const receiptFilters: Array<ReadonlyArray<string> | undefined> = [];
+  const baseThread = { id: threadId, projectId, archivedAt: null, deletedAt: null };
+  const testLayer = layer.pipe(
+    Layer.provide(
+      Layer.mock(OrchestratorV2)({
+        dispatch: () => Effect.succeed({ sequence: 1, storedEvents: [] }),
+        getThreadRecords: (_threadId, _fields, filter) => {
+          receiptFilters.push(filter?.turnItemTypes);
+          // The pre-dispatch read carries no message filter; the receipt
+          // re-read filters on the dispatched message id.
+          if (filter?.messageIds === undefined) {
+            return Effect.succeed({
+              thread: baseThread,
+              runs: [],
+              providerTurns: [],
+            } as unknown as OrchestrationV2ThreadProjection);
+          }
+          return Effect.succeed({
+            thread: baseThread,
+            runs: [{ id: runId, status: "running", userMessageId: messageId }],
+            messages: [{ id: messageId, runId }],
+            // A notification send projects no user_message item: the
+            // projection replaces it with a notification item on the run.
+            turnItems: [
+              {
+                id: "turn-item:notification",
+                threadId,
+                runId,
+                type: "notification",
+                source: { kind: "pull_request_watch", watchId },
+                outcome: "completed",
+                summary: "PR owner/repo#12: Checks finished",
+              },
+            ],
+          } as unknown as OrchestrationV2ThreadProjection);
+        },
+      }),
+    ),
+  );
+
+  return Effect.gen(function* () {
+    const service = yield* ThreadManagementService.pipe(Effect.provide(testLayer));
+    const result = yield* service.sendToThread({
+      projectId,
+      commandId: CommandId.make("command:thread-management:notification-receipt"),
+      threadId,
+      messageId,
+      mode: "queue",
+      createdBy: "agent",
+      creationSource: "server",
+      notification: {
+        source: { kind: "pull_request_watch", watchId },
+        outcome: "completed",
+        summary: "PR owner/repo#12: Checks finished",
+      },
+      text: "PR owner/repo#12: Checks finished",
+      attachments: [],
+    });
+
+    expect(result.run.id).toBe(runId);
+    expect(result.turnItem?.type).toBe("notification");
+    expect(result.delivery).toBe("queued");
+    // The receipt re-read requests the notification kind alongside the
+    // normal user_message filter instead of loosening it.
+    expect(receiptFilters.at(-1)).toEqual(["user_message", "notification"]);
+  });
+});
+
+it.effect("keeps the user_message-only receipt filter for normal sends", () => {
+  const projectId = ProjectId.make("project:thread-management:normal-receipt");
+  const threadId = ThreadId.make("thread:thread-management:normal-receipt");
+  const messageId = MessageId.make("message:thread-management:normal-receipt");
+  const runId = RunId.make("run:thread-management:normal-receipt");
+  const receiptFilters: Array<ReadonlyArray<string> | undefined> = [];
+  const baseThread = { id: threadId, projectId, archivedAt: null, deletedAt: null };
+  const testLayer = layer.pipe(
+    Layer.provide(
+      Layer.mock(OrchestratorV2)({
+        dispatch: () => Effect.succeed({ sequence: 1, storedEvents: [] }),
+        getThreadRecords: (_threadId, _fields, filter) => {
+          receiptFilters.push(filter?.turnItemTypes);
+          if (filter?.messageIds === undefined) {
+            return Effect.succeed({
+              thread: baseThread,
+              runs: [],
+              providerTurns: [],
+            } as unknown as OrchestrationV2ThreadProjection);
+          }
+          return Effect.succeed({
+            thread: baseThread,
+            runs: [{ id: runId, status: "queued", userMessageId: messageId }],
+            messages: [{ id: messageId, runId }],
+            turnItems: [],
+          } as unknown as OrchestrationV2ThreadProjection);
+        },
+      }),
+    ),
+  );
+
+  return Effect.gen(function* () {
+    const service = yield* ThreadManagementService.pipe(Effect.provide(testLayer));
+    const result = yield* service.sendToThread({
+      projectId,
+      commandId: CommandId.make("command:thread-management:normal-receipt"),
+      threadId,
+      messageId,
+      mode: "queue",
+      text: "hello",
+      attachments: [],
+      createdBy: "user",
+      creationSource: "web",
+    });
+
+    expect(result.turnItem).toBeNull();
+    expect(result.delivery).toBe("queued");
+    expect(receiptFilters.at(-1)).toEqual(["user_message"]);
+  });
+});

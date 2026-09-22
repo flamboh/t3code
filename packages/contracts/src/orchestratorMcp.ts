@@ -22,6 +22,11 @@ import {
   ScheduledTaskUpsertSchedule,
 } from "./scheduledTask.ts";
 import { ProviderInteractionMode, RuntimeMode } from "./providerPolicy.ts";
+import {
+  PullRequestWatchEvent,
+  PullRequestWatchId,
+  PullRequestWatchStatus,
+} from "./pullRequestWatch.ts";
 import { ThreadLinkedPullRequest, ThreadTitleRegeneration } from "./orchestration.ts";
 import {
   OrchestrationV2Actor,
@@ -559,6 +564,58 @@ export const OrchestratorMcpDeleteScheduledTaskResult = Schema.Struct({
 export type OrchestratorMcpDeleteScheduledTaskResult =
   typeof OrchestratorMcpDeleteScheduledTaskResult.Type;
 
+export const OrchestratorMcpWatchPullRequestInput = Schema.Struct({
+  repository: TrimmedNonEmptyString.annotate({
+    description: "Pull request repository as owner/repo on the PR's host.",
+  }),
+  number: PositiveInt.annotate({ description: "Pull request number." }),
+  host: Schema.optional(
+    TrimmedNonEmptyString.annotate({
+      description: "PR host (for example github.com). Defaults to github.com.",
+    }),
+  ),
+  url: Schema.optional(
+    TrimmedNonEmptyString.annotate({ description: "PR web URL, stored for display." }),
+  ),
+  events: Schema.optional(
+    Schema.Array(PullRequestWatchEvent).check(Schema.isMinLength(1)).annotate({
+      description:
+        "Omit to watch all three: check_failed, checks_finished, review_feedback. Supply a nonempty subset only to narrow the watch. Nearby matches are combined into one notification; the watch fires once.",
+    }),
+  ),
+  previousWatchId: Schema.optional(
+    PullRequestWatchId.annotate({
+      description:
+        "Previous watch id for gap-free rearm: the new watch continues from what it last saw.",
+    }),
+  ),
+  clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
+});
+export type OrchestratorMcpWatchPullRequestInput = typeof OrchestratorMcpWatchPullRequestInput.Type;
+
+export const OrchestratorMcpWatchPullRequestResult = Schema.Struct({
+  ...PullRequestWatchStatus.fields,
+  endTurnInstruction: Schema.String.annotate({
+    description:
+      "Instruction for the calling agent: the watch is durable and polled server-side, so end the turn instead of polling.",
+  }),
+});
+export type OrchestratorMcpWatchPullRequestResult =
+  typeof OrchestratorMcpWatchPullRequestResult.Type;
+
+export const OrchestratorMcpListPullRequestWatchesResult = Schema.Struct({
+  watches: Schema.Array(PullRequestWatchStatus),
+});
+export type OrchestratorMcpListPullRequestWatchesResult =
+  typeof OrchestratorMcpListPullRequestWatchesResult.Type;
+
+export const OrchestratorMcpCancelPullRequestWatchInput = Schema.Struct({
+  watchId: PullRequestWatchId,
+  clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
+});
+export type OrchestratorMcpCancelPullRequestWatchInput =
+  typeof OrchestratorMcpCancelPullRequestWatchInput.Type;
+
 export class OrchestratorMcpFailure extends Schema.TaggedError<OrchestratorMcpFailure>()(
   "OrchestratorMcpFailure",
   {
@@ -571,6 +628,7 @@ export class OrchestratorMcpFailure extends Schema.TaggedError<OrchestratorMcpFa
       "interaction_mode_escalation_denied",
       "task_not_found",
       "task_not_cancellable",
+      "watch_not_found",
       "thread_not_found",
       "run_not_found",
       "thread_not_sendable",

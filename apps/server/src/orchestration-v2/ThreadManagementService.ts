@@ -12,6 +12,7 @@ import {
   type OrchestrationV2Command,
   type OrchestrationV2ConversationMessage,
   type OrchestrationV2CreationSource,
+  type OrchestrationV2Notification,
   type OrchestrationV2Run,
   type OrchestrationV2ThreadShellSnapshot,
   type OrchestrationV2ThreadProjection,
@@ -109,6 +110,12 @@ export interface ThreadManagementSendInput {
   readonly threadId: ThreadId;
   readonly messageId: MessageId;
   readonly scheduledTaskId?: ScheduledTaskId;
+  /**
+   * Server-authored wake notification. Only valid with mode "queue": the
+   * decider requires notifications to be server/provider-created queued
+   * messages so a wake never interrupts or restarts a turn.
+   */
+  readonly notification?: OrchestrationV2Notification;
   readonly text: string;
   readonly attachments: ReadonlyArray<ChatAttachment>;
   readonly modelSelection?: ModelSelection;
@@ -125,8 +132,15 @@ export interface ThreadManagementSendResult {
   >;
   readonly message: OrchestrationV2ConversationMessage;
   readonly run: OrchestrationV2Run;
-  /** Null for queued sends: the user turn item materializes when the queued turn starts. */
-  readonly turnItem: Extract<OrchestrationV2TurnItem, { readonly type: "user_message" }> | null;
+  /**
+   * Null for queued sends: the user turn item materializes when the queued
+   * turn starts. A notification item for notification sends: the projection
+   * replaces the user item, so no user_message item ever exists for one.
+   */
+  readonly turnItem:
+    | Extract<OrchestrationV2TurnItem, { readonly type: "user_message" }>
+    | Extract<OrchestrationV2TurnItem, { readonly type: "notification" }>
+    | null;
   readonly delivery: "started" | "queued" | "steered" | "restarted";
 }
 
@@ -565,6 +579,7 @@ const make = Effect.gen(function* () {
         threadId: input.threadId,
         messageId: input.messageId,
         ...(input.scheduledTaskId === undefined ? {} : { scheduledTaskId: input.scheduledTaskId }),
+        ...(input.notification === undefined ? {} : { notification: input.notification }),
         text: input.text,
         attachments: input.attachments,
         ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
@@ -572,9 +587,13 @@ const make = Effect.gen(function* () {
         createdBy: input.createdBy,
         creationSource: input.creationSource,
       });
+      // A notification send projects its receipt as a notification turn item
+      // on the new run, never as a user_message item. Request that kind only
+      // for notification sends; the normal message filter stays untouched.
+      const isNotificationSend = input.notification !== undefined;
       const projection = yield* getProjectThreadRecords(input, ["runs", "messages", "turnItems"], {
         messageIds: [input.messageId],
-        turnItemTypes: ["user_message"],
+        turnItemTypes: isNotificationSend ? ["user_message", "notification"] : ["user_message"],
       });
       const message = projection.messages.find((candidate) => candidate.id === input.messageId);
       const run =
@@ -588,6 +607,15 @@ const make = Effect.gen(function* () {
           ): candidate is Extract<OrchestrationV2TurnItem, { readonly type: "user_message" }> =>
             candidate.type === "user_message" && candidate.messageId === input.messageId,
         ) ?? null;
+      const notificationItem = isNotificationSend
+        ? (projection.turnItems.find(
+            (
+              candidate,
+            ): candidate is Extract<OrchestrationV2TurnItem, { readonly type: "notification" }> =>
+              candidate.type === "notification" && candidate.runId === run?.id,
+          ) ?? null)
+        : null;
+      const receipt = turnItem ?? notificationItem;
       // A queued message's user turn item is deliberately not emitted at
       // dispatch time — it materializes when the queued turn actually starts,
       // so it can map onto the provider turn. Every other dispatch mode still
@@ -595,7 +623,7 @@ const make = Effect.gen(function* () {
       if (
         message === undefined ||
         run === undefined ||
-        (turnItem === null && run.status !== "queued")
+        (receipt === null && run.status !== "queued")
       ) {
         return yield* new ThreadManagementDurableRunProjectionError({
           threadId: input.threadId,
@@ -603,14 +631,16 @@ const make = Effect.gen(function* () {
         });
       }
       const delivery: ThreadManagementSendResult["delivery"] =
-        turnItem === null || turnItem.inputIntent === "queued_turn"
+        receipt === null ||
+        receipt.type === "notification" ||
+        (receipt.type === "user_message" && receipt.inputIntent === "queued_turn")
           ? "queued"
-          : turnItem.inputIntent === "turn_start"
+          : receipt.inputIntent === "turn_start"
             ? "started"
             : input.mode === "restart"
               ? "restarted"
               : "steered";
-      return { dispatch, projection, message, run, turnItem, delivery };
+      return { dispatch, projection, message, run, turnItem: receipt, delivery };
     });
 
   const waitForThread: ThreadManagementServiceShape["waitForThread"] = (input) =>
