@@ -78,7 +78,12 @@ import {
 } from "@t3tools/client-runtime/errors";
 import { readPastedComposerContext } from "./composerInlineTokenPaste";
 import { isPasteAsTextShortcut } from "@t3tools/client-runtime/text-paste";
-import { effectiveSnoozed, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
+import {
+  effectiveSnoozed,
+  pullRequestWakeLabel,
+  threadWokeAt,
+  watchedPullRequestLabel,
+} from "@t3tools/client-runtime/state/thread-settled";
 import { useThreadActions } from "../hooks/useThreadActions";
 import {
   deriveThreadActivityRun,
@@ -263,6 +268,8 @@ import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import {
   AlarmClockIcon,
   CheckCircle2Icon,
+  EyeClosedIcon,
+  EyeIcon,
   PaperclipIcon,
   ChevronDownIcon,
   DownloadIcon,
@@ -6804,27 +6811,58 @@ export default function ChatView(props: ChatViewProps) {
     if (!activeThreadWokeVisible) {
       return null;
     }
+    const pullRequestWake =
+      activeThreadShell === null ? null : pullRequestWakeLabel(activeThreadShell);
+    const pullRequestUrl = activeThreadShell?.pullRequestSnooze?.url ?? null;
     return {
       id: `thread-woke:${activeThread?.id ?? "unknown"}`,
       variant: "info",
-      icon: <AlarmClockIcon />,
-      title: "Thread woke from snooze",
+      icon: pullRequestWake === null ? <AlarmClockIcon /> : <EyeIcon />,
+      title: pullRequestWake ?? "Thread woke from snooze",
       description: "Send a message to continue",
+      ...(pullRequestWake === null || pullRequestUrl === null
+        ? {}
+        : {
+            actions: (
+              <Button
+                size="xs"
+                variant="ghost"
+                render={<a href={pullRequestUrl} target="_blank" rel="noreferrer" />}
+              >
+                View pull request
+              </Button>
+            ),
+          }),
       dismissLabel: "Dismiss Woke notification",
       onDismiss: acknowledgeActiveThreadWoke,
     };
-  }, [acknowledgeActiveThreadWoke, activeThread?.id, activeThreadWokeVisible]);
+  }, [acknowledgeActiveThreadWoke, activeThread?.id, activeThreadShell, activeThreadWokeVisible]);
   const parkedThreadBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
     if (!activeThreadSnoozed && !activeThreadSettled) {
       return null;
     }
     const isSnoozed = activeThreadSnoozed;
+    const watchedPullRequest =
+      isSnoozed && activeThreadShell !== null ? watchedPullRequestLabel(activeThreadShell) : null;
     return {
       id: `thread-${isSnoozed ? "snoozed" : "settled"}:${activeThread?.id ?? "unknown"}`,
       variant: "info",
-      icon: isSnoozed ? <AlarmClockIcon /> : <CheckCircle2Icon />,
-      title: `This thread is ${isSnoozed ? "snoozed" : "settled"}`,
-      description: `Send a message to ${isSnoozed ? "wake" : "unsettle"}`,
+      icon:
+        watchedPullRequest !== null ? (
+          <EyeClosedIcon />
+        ) : isSnoozed ? (
+          <AlarmClockIcon />
+        ) : (
+          <CheckCircle2Icon />
+        ),
+      title:
+        watchedPullRequest !== null
+          ? `Snoozed · ${watchedPullRequest.toLowerCase()}`
+          : `This thread is ${isSnoozed ? "snoozed" : "settled"}`,
+      description:
+        watchedPullRequest !== null
+          ? "Wakes on a failed check or new review feedback"
+          : `Send a message to ${isSnoozed ? "wake" : "unsettle"}`,
       actions: (
         <Button
           size="xs"
@@ -6845,6 +6883,7 @@ export default function ChatView(props: ChatViewProps) {
       ),
     };
   }, [
+    activeThreadShell,
     activeThread?.id,
     activeThreadSettled,
     activeThreadSnoozed,

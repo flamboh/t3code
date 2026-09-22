@@ -601,6 +601,7 @@ export const layer = Layer.effect(
                 repository: row.repository,
                 number: row.number,
                 host: canonicalHost(row.host),
+                url: displayUrl(row),
                 observation: greenObservation,
                 deliveredAt: nowIso,
               })

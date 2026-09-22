@@ -35,6 +35,7 @@ export interface PullRequestAutoSnoozeArmInput {
   readonly repository: string;
   readonly number: number;
   readonly host: string;
+  readonly url: string | null;
   readonly observation: PullRequestWatchObservation;
   readonly deliveredAt: string;
 }
@@ -56,6 +57,7 @@ interface AutoSnoozeRow {
   readonly repository: string;
   readonly number: number;
   readonly host: string | null;
+  readonly url: string | null;
   readonly state: "pending" | "snoozed";
   readonly observation_json: string;
   readonly snoozed_at: string | null;
@@ -133,11 +135,11 @@ export const make = Effect.gen(function* () {
       const nowIso = iso(yield* DateTime.now);
       yield* sql`
         INSERT OR REPLACE INTO pull_request_auto_snoozes (
-          thread_id, project_id, watch_id, repository, number, host, state,
+          thread_id, project_id, watch_id, repository, number, host, url, state,
           observation_json, snoozed_at, next_check_at, last_error, created_at, updated_at
         ) VALUES (
           ${input.threadId}, ${input.projectId}, ${input.watchId}, ${input.repository},
-          ${input.number}, ${input.host}, 'pending', ${encodeObservation(input.observation)},
+          ${input.number}, ${input.host}, ${input.url}, 'pending', ${encodeObservation(input.observation)},
           NULL, NULL, NULL, ${input.deliveredAt}, ${nowIso}
         )
       `.pipe(
@@ -171,6 +173,7 @@ export const make = Effect.gen(function* () {
           ),
           threadId: ThreadId.make(row.thread_id),
           snoozedUntil,
+          pullRequest: { repository: row.repository, number: row.number, url: row.url },
         })
         .pipe(Effect.result);
       if (!Result.isSuccess(dispatched)) {
@@ -232,16 +235,17 @@ export const make = Effect.gen(function* () {
       const previous = yield* decodeObservation(row.observation_json).pipe(
         Effect.mapError(() => autoSnoozeError("Could not decode auto-snooze cursor.")),
       );
-      const woke =
-        matchesWatchEvent({ previous, next, event: "check_failed" }) ||
-        matchesWatchEvent({ previous, next, event: "review_feedback" });
-      if (woke) {
+      const wakeReasons = (["check_failed", "review_feedback"] as const).filter((event) =>
+        matchesWatchEvent({ previous, next, event }),
+      );
+      if (wakeReasons.length > 0) {
         yield* threads
           .dispatch({
             type: "thread.unsnooze",
             commandId: CommandId.make(`pull-request-auto-wake:${row.watch_id}:${row.snoozed_at}`),
             threadId: ThreadId.make(row.thread_id),
             reason: "pull-request",
+            wakeReasons,
           })
           .pipe(
             Effect.mapError((cause) =>

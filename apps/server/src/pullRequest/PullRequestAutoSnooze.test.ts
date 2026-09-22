@@ -120,6 +120,7 @@ const makeHarness = (preference: GreenPullRequestSnooze | null) =>
       repository: "owner/repo",
       number: 12,
       host: "github.com",
+      url: "https://github.com/owner/repo/pull/12",
       observation: green,
       deliveredAt: START,
     });
@@ -256,7 +257,10 @@ autoSnoozeTest("checks the pull request on the slow cadence and wakes on a new f
     yield* TestClock.adjust("15 minutes");
     yield* harness.service.sweep();
     const [wake] = yield* harness.wakeCommands;
-    assert.equal(wake?.type === "thread.unsnooze" ? wake.reason : null, "pull-request");
+    assert.deepStrictEqual(
+      wake?.type === "thread.unsnooze" ? [wake.reason, wake.wakeReasons] : null,
+      ["pull-request", ["check_failed"]],
+    );
     assert.equal(yield* harness.rowCount, 0);
   }),
 );
@@ -272,7 +276,10 @@ autoSnoozeTest("new review feedback wakes the thread", () =>
     ]);
     yield* TestClock.adjust("15 minutes");
     yield* harness.service.sweep();
-    assert.equal((yield* harness.wakeCommands).length, 1);
+    const [wake] = yield* harness.wakeCommands;
+    assert.deepStrictEqual(wake?.type === "thread.unsnooze" ? wake.wakeReasons : null, [
+      "review_feedback",
+    ]);
   }),
 );
 

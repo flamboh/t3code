@@ -413,6 +413,7 @@ export function createThreadEnvironmentAtoms<R, E>(
             ...thread,
             pendingRuntimeRequest: null,
             snoozedUntil: DateTime.makeUnsafe(input.snoozedUntil),
+            pullRequestSnooze: null,
             snoozedAt:
               thread.snoozedUntil != null &&
               DateTime.formatIso(thread.snoozedUntil) === input.snoozedUntil
@@ -424,6 +425,7 @@ export function createThreadEnvironmentAtoms<R, E>(
       ...thread,
       snoozedUntil: null,
       snoozedAt: null,
+      pullRequestSnooze: null,
     })),
     pin: optimistic.wrap(commands.pin, (thread, input, now) => ({
       ...thread,
@@ -438,6 +440,7 @@ export function createThreadEnvironmentAtoms<R, E>(
         : {}),
       snoozedUntil: null,
       snoozedAt: null,
+      pullRequestSnooze: null,
     })),
     unpin: optimistic.wrap(commands.unpin, (thread) => ({
       ...thread,

@@ -336,6 +336,21 @@ export const OrchestrationV2LimitRecovery = Schema.Struct({
 });
 export type OrchestrationV2LimitRecovery = typeof OrchestrationV2LimitRecovery.Type;
 
+export const OrchestrationV2PullRequestWakeReason = Schema.Literals([
+  "check_failed",
+  "review_feedback",
+]);
+export type OrchestrationV2PullRequestWakeReason = typeof OrchestrationV2PullRequestWakeReason.Type;
+
+export const OrchestrationV2PullRequestSnooze = Schema.Struct({
+  repository: TrimmedNonEmptyString,
+  number: PositiveInt,
+  url: Schema.NullOr(Schema.String),
+  wokeAt: Schema.NullOr(IsoDateTime),
+  wakeReasons: Schema.Array(OrchestrationV2PullRequestWakeReason),
+});
+export type OrchestrationV2PullRequestSnooze = typeof OrchestrationV2PullRequestSnooze.Type;
+
 /** A choice update preserves omitted options for this same run and reset. */
 export const OrchestrationV2LimitRecoveryUpdate = Schema.Struct({
   runId: RunId,
@@ -396,6 +411,7 @@ export const OrchestrationV2AppThread = Schema.Struct({
   snoozedUntil: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   snoozedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecovery)),
+  pullRequestSnooze: Schema.optional(Schema.NullOr(OrchestrationV2PullRequestSnooze)),
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   // Fractional-index slot in the user-arranged pinned order. Optional so
   // payloads from pre-reorder servers still decode.
@@ -1548,6 +1564,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   snoozedUntil: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   snoozedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecovery)),
+  pullRequestSnooze: Schema.optional(Schema.NullOr(OrchestrationV2PullRequestSnooze)),
   /** Omitted by servers that predate thread pinning. */
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   /** Slot in the user-arranged pinned order; omitted by pre-reorder servers. */
@@ -2296,12 +2313,20 @@ export const OrchestrationV2Command = Schema.Union([
     commandId: CommandId,
     threadId: ThreadId,
     snoozedUntil: IsoDateTime,
+    pullRequest: Schema.optional(
+      OrchestrationV2PullRequestSnooze.mapFields(({ repository, number, url }) => ({
+        repository,
+        number,
+        url,
+      })),
+    ),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.unsnooze"),
     commandId: CommandId,
     threadId: ThreadId,
     reason: Schema.Literals(["user", "pull-request"]),
+    wakeReasons: Schema.optional(Schema.Array(OrchestrationV2PullRequestWakeReason)),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.pin"),

@@ -1768,6 +1768,72 @@ it.layer(TestLayer)("OrchestrationV2LayerLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("records which pull request woke an auto-snoozed thread", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* OrchestratorV2;
+      const threadId = ThreadId.make("runtime-layer-pull-request-snooze-thread");
+      const pullRequest = {
+        repository: "owner/repo",
+        number: 13,
+        url: "https://github.com/owner/repo/pull/13",
+      };
+      const snooze = (id: string, withPullRequest: boolean) =>
+        orchestrator.dispatch({
+          type: "thread.snooze",
+          commandId: CommandId.make(`runtime-layer-pull-request-snooze-${id}`),
+          threadId,
+          snoozedUntil: "2999-01-01T00:00:00.000Z",
+          ...(withPullRequest ? { pullRequest } : {}),
+        });
+      const shell = () =>
+        orchestrator.getThreadShell(threadId).pipe(Effect.map((thread) => thread!));
+
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("runtime-layer-pull-request-snooze-create"),
+        threadId,
+        projectId: ProjectId.make("runtime-layer-pull-request-snooze-project"),
+        title: "Pull request snooze thread",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+      });
+      yield* snooze("auto", true);
+      assert.deepEqual((yield* shell()).pullRequestSnooze, {
+        ...pullRequest,
+        wokeAt: null,
+        wakeReasons: [],
+      });
+
+      yield* orchestrator.dispatch({
+        type: "thread.unsnooze",
+        commandId: CommandId.make("runtime-layer-pull-request-snooze-wake"),
+        threadId,
+        reason: "pull-request",
+        wakeReasons: ["review_feedback"],
+      });
+      const woke = (yield* shell()).pullRequestSnooze;
+      assert.isNull((yield* shell()).snoozedUntil);
+      assert.deepEqual(woke?.wakeReasons, ["review_feedback"]);
+      assert.isNotNull(woke?.wokeAt);
+
+      yield* snooze("manual", false);
+      assert.isNull((yield* shell()).pullRequestSnooze);
+      yield* snooze("auto-again", true);
+      yield* orchestrator.dispatch({
+        type: "thread.unsnooze",
+        commandId: CommandId.make("runtime-layer-pull-request-snooze-user-wake"),
+        threadId,
+        reason: "user",
+      });
+      assert.isNull((yield* shell()).pullRequestSnooze);
+    }),
+  );
+
   it.effect("keeps the branch pull request when linking another pull request", () =>
     Effect.gen(function* () {
       const orchestrator = yield* OrchestratorV2;

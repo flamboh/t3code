@@ -7,11 +7,13 @@ import {
   canSnooze,
   effectiveSnoozed,
   hasQueuedTurnStart,
+  pullRequestWakeLabel,
   resolveSnoozePresets,
   snoozeWakeLabel,
   threadRaisedHandWhileSnoozed,
   threadWokeAt,
   type ThreadSnoozeShell,
+  watchedPullRequestLabel,
 } from "./threadSettled.ts";
 import type { OrchestrationThreadShell } from "@t3tools/contracts";
 
@@ -300,6 +302,39 @@ describe("threadWokeAt", () => {
         { now: NOW },
       ),
     ).toBe("2026-04-10T09:30:00.000Z");
+  });
+});
+
+describe("pull request snoozes", () => {
+  const watching = {
+    repository: "owner/repo",
+    number: 13,
+    url: null,
+    wokeAt: null,
+    wakeReasons: [],
+  };
+  const woke = { ...watching, wokeAt: "2026-04-10T11:30:00.000Z" };
+
+  it("labels a snoozed thread that is still watching its pull request", () => {
+    const shell = { ...makeShell({ snoozedUntil: FUTURE_WAKE }), pullRequestSnooze: watching };
+    expect(watchedPullRequestLabel(shell)).toBe("Watching #13");
+    expect(pullRequestWakeLabel(shell)).toBe(null);
+  });
+
+  it("reports a pull request wake and why it happened", () => {
+    const shell = {
+      ...makeShell({}),
+      pullRequestSnooze: { ...woke, wakeReasons: ["review_feedback" as const] },
+    };
+    expect(threadWokeAt(shell, { now: NOW })).toBe("2026-04-10T11:30:00.000Z");
+    expect(pullRequestWakeLabel(shell)).toBe("New review feedback on #13");
+    expect(watchedPullRequestLabel(shell)).toBe(null);
+    expect(
+      pullRequestWakeLabel({
+        ...shell,
+        pullRequestSnooze: { ...woke, wakeReasons: ["check_failed", "review_feedback"] },
+      }),
+    ).toBe("Check failed and new review feedback on #13");
   });
 });
 

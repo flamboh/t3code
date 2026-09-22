@@ -11,6 +11,7 @@ export default Effect.gen(function* () {
       repository TEXT NOT NULL,
       number INTEGER NOT NULL,
       host TEXT,
+      url TEXT,
       state TEXT NOT NULL,
       observation_json TEXT NOT NULL,
       snoozed_at TEXT,
