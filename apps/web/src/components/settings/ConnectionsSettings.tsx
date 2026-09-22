@@ -75,10 +75,6 @@ import {
   formatDesktopSshTarget,
 } from "./EnvironmentRow";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
-import {
-  EnvironmentDirectoryDisclosure,
-  EnvironmentDirectoryRows,
-} from "./EnvironmentDirectorySettings";
 import { LoadBalancingSettings } from "./LoadBalancingSettings";
 import { GitHubRoutingSettings } from "./GitHubRoutingSettings";
 import { Input } from "../ui/input";
@@ -1591,14 +1587,11 @@ function SavedBackendListRow({
         </Tooltip>
       }
       below={
-        <>
-          {serverUpdateState.status !== "idle" ? (
-            <div className="mt-1 max-w-md">
-              <ServerUpdateProgress state={serverUpdateState} />
-            </div>
-          ) : null}
-          <EnvironmentDirectoryDisclosure environment={environment} />
-        </>
+        serverUpdateState.status !== "idle" ? (
+          <div className="mt-1 max-w-md">
+            <ServerUpdateProgress state={serverUpdateState} />
+          </div>
+        ) : null
       }
     >
       {showUpdateAction ? (
@@ -3273,15 +3266,6 @@ export function ConnectionsSettings() {
     />
   );
 
-  const directoriesSection = primaryEnvironment ? (
-    <SettingsSection {...searchableSetting("environment-directories")}>
-      <EnvironmentDirectoryRows
-        key={primaryEnvironment.environmentId}
-        environment={primaryEnvironment}
-      />
-    </SettingsSection>
-  ) : null;
-
   const primarySettings = (
     <>
       {desktopBridge || canManageLocalBackend ? (
@@ -3387,7 +3371,6 @@ export function ConnectionsSettings() {
               </>
             ) : null}
           </SettingsSection>
-          {directoriesSection}
 
           {isLocalBackendRemotelyReachable ? (
             <FoldedSettingsSection
@@ -3687,16 +3670,13 @@ export function ConnectionsSettings() {
           </Dialog>
         </>
       ) : (
-        <>
-          <SettingsSection {...searchableSetting("connections-environment")}>
-            <SettingsRow
-              title="Administrative access"
-              description="Pairing links and client-session management require the access:write scope for this backend."
-            />
-            <CloudLinkRow canManageRelay={canManageRelay} />
-          </SettingsSection>
-          {directoriesSection}
-        </>
+        <SettingsSection {...searchableSetting("connections-environment")}>
+          <SettingsRow
+            title="Administrative access"
+            description="Pairing links and client-session management require the access:write scope for this backend."
+          />
+          <CloudLinkRow canManageRelay={canManageRelay} />
+        </SettingsSection>
       )}
     </>
   );

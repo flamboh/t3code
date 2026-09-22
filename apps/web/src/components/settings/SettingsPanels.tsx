@@ -2129,6 +2129,11 @@ export function GeneralSettingsPanel() {
     connectedEnvironments.every(
       (target) => target.serverConfig?.environment.capabilities.threadRestartContinuation === true,
     );
+  const supportsWorktreeDirectory =
+    connectedEnvironments.length > 0 &&
+    connectedEnvironments.every(
+      (target) => target.serverConfig?.environment.capabilities.worktreeBaseDirectory === true,
+    );
 
   const textGenerationProviders = serverProviders.filter(
     (provider) => provider.supportsTextGeneration !== false,
@@ -2170,6 +2175,7 @@ export function GeneralSettingsPanel() {
   const backgroundActivityProfileOption = resolveBackgroundActivityProfileOption(settings);
   const mixedBackgroundActivity = useScopedSettingsMixed(["backgroundActivity"]);
   const mixedAddProjectBaseDirectory = useScopedSettingsMixed(["addProjectBaseDirectory"]);
+  const mixedWorktreeBaseDirectory = useScopedSettingsMixed(["worktreeBaseDirectory"]);
   const mixedTextGenerationModel = useScopedSettingsMixed(["textGenerationModelSelection"]);
   const backgroundActivityDescription =
     backgroundActivityProfileOption === "advanced"
@@ -2925,6 +2931,75 @@ export function GeneralSettingsPanel() {
                 updateSettings({ newWorktreesStartFromOrigin: Boolean(checked) })
               }
               aria-label="Start new worktrees from origin by default"
+            />
+          }
+        />
+        <SettingsRow
+          serverScoped
+          settingKeys={["addProjectBaseDirectory"]}
+          {...searchableSetting("repositories-directory")}
+          description="Add Project and Clone Repository start here."
+          resetAction={
+            !mixedAddProjectBaseDirectory && settings.addProjectBaseDirectory !== "" ? (
+              <SettingResetButton
+                label="repositories directory"
+                onClick={() => updateSettings({ addProjectBaseDirectory: "" })}
+              />
+            ) : null
+          }
+          control={
+            <DraftInput
+              size="sm"
+              className="w-full sm:w-72"
+              spellCheck={false}
+              aria-label="Repositories directory"
+              value={mixedAddProjectBaseDirectory ? "" : settings.addProjectBaseDirectory}
+              onCommit={(addProjectBaseDirectory) => updateSettings({ addProjectBaseDirectory })}
+              placeholder={
+                mixedAddProjectBaseDirectory
+                  ? "Mixed"
+                  : ((isEnvironmentScope
+                      ? environment?.serverConfig?.environment.defaultDirectories?.repositories
+                      : undefined) ?? "~")
+              }
+            />
+          }
+        />
+        <SettingsRow
+          serverScoped
+          settingKeys={["worktreeBaseDirectory"]}
+          {...searchableSetting("worktrees-directory")}
+          description={
+            supportsWorktreeDirectory
+              ? "New worktrees only. Existing worktrees stay where they are."
+              : "Update this server to set a worktrees directory."
+          }
+          resetAction={
+            supportsWorktreeDirectory &&
+            !mixedWorktreeBaseDirectory &&
+            settings.worktreeBaseDirectory !== "" ? (
+              <SettingResetButton
+                label="worktrees directory"
+                onClick={() => updateSettings({ worktreeBaseDirectory: "" })}
+              />
+            ) : null
+          }
+          control={
+            <DraftInput
+              size="sm"
+              className="w-full sm:w-72"
+              spellCheck={false}
+              aria-label="Worktrees directory"
+              disabled={!supportsWorktreeDirectory}
+              value={mixedWorktreeBaseDirectory ? "" : settings.worktreeBaseDirectory}
+              onCommit={(worktreeBaseDirectory) => updateSettings({ worktreeBaseDirectory })}
+              placeholder={
+                mixedWorktreeBaseDirectory
+                  ? "Mixed"
+                  : ((isEnvironmentScope
+                      ? environment?.serverConfig?.environment.defaultDirectories?.worktrees
+                      : undefined) ?? "T3 Code default")
+              }
             />
           }
         />

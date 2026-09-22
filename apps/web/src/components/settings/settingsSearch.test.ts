@@ -153,7 +153,6 @@ describe("searchSettings", () => {
     const available = filterAvailableSettingsSearchItems({
       hasCloudPublicConfig: false,
       hasEnvironment: false,
-      hasPrimaryEnvironment: false,
       hasProviderSettingsEnvironment: false,
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
@@ -164,7 +163,6 @@ describe("searchSettings", () => {
       "follow-change-request-templates",
       "git-fetch-interval",
       "network-access",
-      "environment-directories",
       "publish-agent-activity",
       "provider-health-check-interval",
       "source-control-writer-model",
@@ -183,7 +181,6 @@ describe("searchSettings", () => {
     const availability = {
       hasCloudPublicConfig: true,
       hasEnvironment: true,
-      hasPrimaryEnvironment: true,
       hasProviderSettingsEnvironment: true,
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
@@ -206,7 +203,6 @@ describe("searchSettings", () => {
     const available = filterAvailableSettingsSearchItems({
       hasCloudPublicConfig: false,
       hasEnvironment: false,
-      hasPrimaryEnvironment: false,
       hasProviderSettingsEnvironment: false,
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
@@ -337,7 +333,6 @@ describe("searchSettings", () => {
     const available = filterAvailableSettingsSearchItems({
       hasCloudPublicConfig: false,
       hasEnvironment: true,
-      hasPrimaryEnvironment: false,
       hasProviderSettingsEnvironment: true,
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
@@ -347,28 +342,17 @@ describe("searchSettings", () => {
     expect(searchSettings("auto-settle", available)).toHaveLength(3);
   });
 
-  it("hides default directories without a primary environment anchor", () => {
-    const withoutPrimary = filterAvailableSettingsSearchItems({
+  it("finds the directory defaults in general", () => {
+    const available = filterAvailableSettingsSearchItems({
       hasCloudPublicConfig: false,
       hasEnvironment: true,
-      hasPrimaryEnvironment: false,
       hasProviderSettingsEnvironment: true,
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
-      hasThreadAutoSettlement: false,
-    }).map((item) => item.id);
-    expect(withoutPrimary).not.toContain("environment-directories");
-
-    const withPrimary = filterAvailableSettingsSearchItems({
-      hasCloudPublicConfig: false,
-      hasEnvironment: true,
-      hasPrimaryEnvironment: true,
-      hasProviderSettingsEnvironment: true,
-      canManageLocalBackend: false,
-      isWslSettingsRowVisible: false,
-      hasThreadAutoSettlement: false,
-    }).map((item) => item.id);
-    expect(withPrimary).toContain("environment-directories");
+      hasThreadAutoSettlement: true,
+    });
+    expect(searchSettings("worktrees directory", available)[0]?.id).toBe("worktrees-directory");
+    expect(searchSettings("add project", available)[0]?.id).toBe("repositories-directory");
   });
 });
 
@@ -456,7 +440,6 @@ describe("auto-settlement search availability", () => {
     const items = filterAvailableSettingsSearchItems({
       hasCloudPublicConfig: false,
       hasEnvironment: true,
-      hasPrimaryEnvironment: true,
       hasProviderSettingsEnvironment: true,
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,

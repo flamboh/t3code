@@ -64,22 +64,25 @@ another link to share.
 
 ### Choose directories for each machine
 
-On web and desktop, open **Settings → Connections → Default directories** for
-this machine, or expand **Default directories** in a remote environment's card.
+On web and desktop, open **Settings → General → Projects & threads** and find
+the **Repositories directory** and **Worktrees directory** rows. The breadcrumb
+starts at **All environments**, so pick the machine first to set its own paths.
+Leaving **All environments** selected writes the same path to every connected
+environment, which is rarely what you want for directories.
+
 Each field shows the machine's default until you type a path. Set the
 repositories directory to start Add Project and repository cloning in that
-folder. Set the worktree directory to choose where new worktrees are created,
+folder. Set the worktrees directory to choose where new worktrees are created,
 grouped by repository and branch.
 
 These paths belong to the selected machine and apply from every connected
 client, including mobile. Use an absolute worktree path, or a path under that
-machine's home directory such as `~/worktrees`. It cannot be the root of the
-filesystem, your home directory itself, or a directory that contains your home
+machine's home directory such as `~/worktrees`. It cannot be the filesystem
+root, your home directory itself, or a directory that contains your home
 directory. Changing it does not move existing worktrees, and threads whose
-worktree lives in a directory you no longer have set here cannot show diffs
-until you set that directory again. Clear either field to restore its default:
-the home directory for Add Project, or T3 Code's worktrees directory for new
-worktrees.
+worktree is outside the configured directory cannot show diffs until it is set
+again. Clear either field to restore its default: home for Add Project, or
+T3 Code's worktrees directory for new worktrees.
 
 ### Balance new threads across machines
 

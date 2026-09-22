@@ -55,9 +55,6 @@ export interface SettingsSearchItem {
   readonly windowsOnly?: boolean;
   readonly cloudOnly?: boolean;
   readonly environmentOnly?: boolean;
-  // Its section only renders for the primary environment, so a remote-only
-  // result would land on an anchor that isn't there.
-  readonly primaryEnvironmentOnly?: boolean;
   readonly providerSettingsOnly?: boolean;
   readonly localBackendManagementOnly?: boolean;
   readonly localEnvironmentOnly?: boolean;
@@ -74,7 +71,6 @@ export interface SettingsSearchAvailability {
   readonly localEnvironmentDisabled?: boolean;
   readonly hasCloudPublicConfig: boolean;
   readonly hasEnvironment: boolean;
-  readonly hasPrimaryEnvironment: boolean;
   readonly hasProviderSettingsEnvironment: boolean;
   readonly canManageLocalBackend: boolean;
   readonly isWslSettingsRowVisible: boolean;
@@ -430,6 +426,22 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
     scope: "project-defaults",
     searchTerms: ["new worktrees latest matching remote branch local"],
+  },
+  {
+    id: "repositories-directory",
+    title: "Repositories directory",
+    to: "/settings/general",
+    scope: "environment-defaults",
+    searchTerms: [
+      "add project clone starts in base directory folder browser path home repos per server environment",
+    ],
+  },
+  {
+    id: "worktrees-directory",
+    title: "Worktrees directory",
+    to: "/settings/general",
+    scope: "environment-defaults",
+    searchTerms: ["new worktrees base directory folder path per server environment t3 home"],
   },
   {
     id: "unpin-confirmation",
@@ -793,22 +805,10 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
-    id: "environment-directories",
-    title: "Default directories",
-    to: "/settings/connections",
-    environmentOnly: true,
-    primaryEnvironmentOnly: true,
-    searchTerms: [
-      "per server environment defaults repositories repos clone add project starts in base directory folder browser path home worktrees",
-    ],
-  },
-  {
     id: "remote-environments",
     title: "Environments",
     to: "/settings/connections",
-    searchTerms: [
-      "add pair backend host code ssh config agent tunnel saved t3 connect remote directories repositories worktrees paths",
-    ],
+    searchTerms: ["add pair backend host code ssh config agent tunnel saved t3 connect"],
   },
   {
     id: "load-balancing",
@@ -964,7 +964,6 @@ export function filterAvailableSettingsSearchItems(
     (item) =>
       (!item.cloudOnly || availability.hasCloudPublicConfig) &&
       (!item.environmentOnly || availability.hasEnvironment) &&
-      (!item.primaryEnvironmentOnly || availability.hasPrimaryEnvironment) &&
       (!item.providerSettingsOnly || availability.hasProviderSettingsEnvironment) &&
       (!item.localBackendManagementOnly || availability.canManageLocalBackend) &&
       (!item.localEnvironmentOnly || !availability.localEnvironmentDisabled) &&
