@@ -1,3 +1,4 @@
+import { ChevronDownIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 
 import { cn } from "../lib/utils";
@@ -59,6 +60,20 @@ export function WorkspaceBreadcrumbItem({
     >
       {children}
     </li>
+  );
+}
+
+/** Marks a crumb that opens a menu. Always visible so the affordance never hides behind hover. */
+export function WorkspaceBreadcrumbChevron({
+  className,
+  ...props
+}: ComponentProps<typeof ChevronDownIcon>) {
+  return (
+    <ChevronDownIcon
+      aria-hidden
+      className={cn("size-3.5 shrink-0 text-muted-foreground", className)}
+      {...props}
+    />
   );
 }
 

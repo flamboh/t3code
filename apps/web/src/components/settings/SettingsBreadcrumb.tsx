@@ -18,6 +18,7 @@ import {
 } from "../ui/menu";
 import {
   WorkspaceBreadcrumb,
+  WorkspaceBreadcrumbChevron,
   WorkspaceBreadcrumbItem,
   WorkspaceBreadcrumbSeparator,
 } from "../WorkspaceBreadcrumb";
@@ -118,6 +119,7 @@ function ScopeMenu({
       >
         {icon}
         <span className="min-w-0 truncate">{label}</span>
+        <WorkspaceBreadcrumbChevron />
       </MenuTrigger>
       <MenuPopup align="start" className="w-64 max-w-[calc(100vw-2rem)]">
         {children}
