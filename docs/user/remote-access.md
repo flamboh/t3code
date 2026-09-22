@@ -79,10 +79,11 @@ These paths belong to the selected machine and apply from every connected
 client, including mobile. Use an absolute worktree path, or a path under that
 machine's home directory such as `~/worktrees`. It cannot be the filesystem
 root, your home directory itself, or a directory that contains your home
-directory. Changing it does not move existing worktrees, and threads whose
-worktree is outside the configured directory cannot show diffs until it is set
-again. Clear either field to restore its default: home for Add Project, or
-T3 Code's worktrees directory for new worktrees.
+directory. Changing it does not move existing worktrees. Threads whose worktree
+is outside both this directory and T3 Code's default worktrees directory cannot
+show diffs until you set that directory here again. Clear either field to
+restore its default: home for Add Project, or T3 Code's worktrees directory for
+new worktrees.
 
 ### Balance new threads across machines
 
