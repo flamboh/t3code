@@ -19,7 +19,12 @@ import type {
 } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentThreadSearchMatch } from "@t3tools/client-runtime/state/thread-search";
 import type { EnvironmentMachineKind } from "@t3tools/contracts";
-import { canSnooze, resolveSnoozePresets } from "@t3tools/client-runtime/state/thread-settled";
+import {
+  canSnooze,
+  pullRequestWakeLabel,
+  resolveSnoozePresets,
+  watchedPullRequestLabel,
+} from "@t3tools/client-runtime/state/thread-settled";
 import { resolveSettledThreadTimestamp } from "@t3tools/client-runtime/state/thread-sort";
 import type { MenuAction } from "@react-native-menu/menu";
 import { memo, useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
@@ -573,6 +578,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const statusLabel =
     STATUS_LABEL_BY_STATUS[status] ??
     (isUnread ? { label: "Done", className: "text-adaptive-emerald-700-300" } : undefined);
+  const watchedPullRequest = watchedPullRequestLabel(thread);
+  const pullRequestWake = pullRequestWakeLabel(thread);
+  const isPullRequestWoke =
+    pullRequestWake !== null &&
+    thread.settledOverride !== "settled" &&
+    !(Date.parse(thread.lastVisitedAt ?? "") >= Date.parse(thread.pullRequestSnooze?.wokeAt ?? ""));
   // Settled rows label by the same stamp they sort by, so order and label
   // can't disagree. updatedAt is always present, so the resolver never
   // returns null here.
@@ -881,17 +892,27 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             type="monochrome"
           />
         ) : null}
-        <Text
-          className={cn(
-            "text-xs tabular-nums",
-            statusLabel?.className ??
-              (selected
-                ? selectedThreadRowColors.foregroundClassName
-                : rowAppearance.tertiaryForegroundClassName),
-          )}
-        >
-          {statusLabel?.label ?? timeLabel}
-        </Text>
+        {isPullRequestWoke ? (
+          <SymbolView
+            accessibilityLabel={pullRequestWake ?? undefined}
+            name="eye"
+            size={14}
+            tintColorClassName="accent-warning-foreground"
+            type="monochrome"
+          />
+        ) : (
+          <Text
+            className={cn(
+              "text-xs tabular-nums",
+              statusLabel?.className ??
+                (selected
+                  ? selectedThreadRowColors.foregroundClassName
+                  : rowAppearance.tertiaryForegroundClassName),
+            )}
+          >
+            {statusLabel?.label ?? timeLabel}
+          </Text>
+        )}
       </View>
       <Text
         className={cn(
@@ -1045,10 +1066,19 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         key={`${thread.environmentId}:${thread.id}`}
         interactionClassName={rowAppearance.interactionClassName}
         interactionOpacity={rowAppearance.interactionOpacity}
-        className={rowAppearance.className}
+        className={cn(
+          rowAppearance.className,
+          isPullRequestWoke && "border border-warning-foreground/40",
+        )}
         accessibilityHint={swipeAccessibilityHint}
         accessibilityLabel={
-          props.hasQueuedMessages ? `${thread.title}, messages queued to send` : thread.title
+          watchedPullRequest !== null
+            ? `${thread.title}, ${watchedPullRequest} for failed checks or review`
+            : isPullRequestWoke
+              ? `${thread.title}, ${pullRequestWake}`
+              : props.hasQueuedMessages
+                ? `${thread.title}, messages queued to send`
+                : thread.title
         }
         accessibilityRole="button"
         accessibilityState={{ selected }}
@@ -1080,11 +1110,20 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         interactionOpacity={rowAppearance.interactionOpacity}
         accessibilityHint={swipeAccessibilityHint}
         accessibilityLabel={
-          props.hasQueuedMessages ? `${thread.title}, messages queued to send` : thread.title
+          watchedPullRequest !== null
+            ? `${thread.title}, ${watchedPullRequest} for failed checks or review`
+            : isPullRequestWoke
+              ? `${thread.title}, ${pullRequestWake}`
+              : props.hasQueuedMessages
+                ? `${thread.title}, messages queued to send`
+                : thread.title
         }
         accessibilityRole="button"
         accessibilityState={{ selected }}
-        className={rowAppearance.className}
+        className={cn(
+          rowAppearance.className,
+          isPullRequestWoke && "border border-warning-foreground/40",
+        )}
         onPress={() => {
           close();
           onSelectThread(thread);
@@ -1131,21 +1170,56 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             ) : null}
           </View>
           {props.hasQueuedMessages ? <QueuedMessageIcon selected={selected} /> : null}
-          <Text
-            className={cn(
-              "text-sm tabular-nums",
-              selected
-                ? selectedThreadRowColors.mutedForegroundClassName
-                : snoozedRow
-                  ? rowAppearance.mutedForegroundClassName
-                  : rowAppearance.tertiaryForegroundClassName,
-            )}
-            style={{ fontFamily: MONO_FONT }}
-          >
-            {snoozedRow && props.snoozeWakeLabelText !== undefined
-              ? props.snoozeWakeLabelText
-              : timeLabel}
-          </Text>
+          {isPullRequestWoke ? (
+            <SymbolView
+              accessibilityLabel={pullRequestWake ?? undefined}
+              name="eye"
+              size={14}
+              tintColorClassName="accent-warning-foreground"
+              type="monochrome"
+            />
+          ) : watchedPullRequest !== null ? (
+            <View
+              accessibilityLabel={`${watchedPullRequest} for failed checks or review`}
+              className="flex-row items-center gap-1"
+            >
+              <SymbolView
+                name="eye.slash"
+                size={12}
+                tintColorClassName="accent-adaptive-sky-600-400"
+                type="monochrome"
+              />
+              {props.snoozeWakeLabelText !== "∞" ? (
+                <Text
+                  className={cn(
+                    "text-sm tabular-nums",
+                    selected
+                      ? selectedThreadRowColors.mutedForegroundClassName
+                      : rowAppearance.mutedForegroundClassName,
+                  )}
+                  style={{ fontFamily: MONO_FONT }}
+                >
+                  {props.snoozeWakeLabelText}
+                </Text>
+              ) : null}
+            </View>
+          ) : (
+            <Text
+              className={cn(
+                "text-sm tabular-nums",
+                selected
+                  ? selectedThreadRowColors.mutedForegroundClassName
+                  : snoozedRow
+                    ? rowAppearance.mutedForegroundClassName
+                    : rowAppearance.tertiaryForegroundClassName,
+              )}
+              style={{ fontFamily: MONO_FONT }}
+            >
+              {snoozedRow && props.snoozeWakeLabelText !== undefined
+                ? props.snoozeWakeLabelText
+                : timeLabel}
+            </Text>
+          )}
         </View>
       </RowPressable>
     );
