@@ -7,6 +7,7 @@ vi.mock("./ThreadDetailsPrRow", () => ({
   ThreadDetailsPrRow: ({ number }: { number: number }) => <span data-row={String(number)} />,
 }));
 vi.mock("~/state/entities", () => ({ useProjects: () => [] }));
+vi.mock("~/hooks/useThreadPullRequestWatches", () => ({ useThreadPullRequestWatches: () => [] }));
 vi.mock("~/lib/openPullRequestLink", () => ({
   parseChangeRequestUrl: () => null,
   findProjectOnChangeRequestHost: () => undefined,

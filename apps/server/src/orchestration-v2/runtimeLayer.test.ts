@@ -333,6 +333,7 @@ const SharedApplicationDataPlaneTestLayer = Layer.merge(
 ).pipe(
   Layer.provide(
     Layer.succeed(ProjectEnrichmentService, {
+      awaitRepositoryIdentity: () => Effect.void,
       peek: () =>
         Effect.succeed({
           repositoryIdentity: null,

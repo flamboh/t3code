@@ -120,6 +120,10 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.pullRequestsRequestReviewers]: AuthOrchestrationOperateScope,
   [WS_METHODS.pullRequestsLabelCandidates]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsSetLabels]: AuthOrchestrationOperateScope,
+  // Listing is a read like the pull request reads beside it; cancelling one
+  // is a write like every other pull request mutation.
+  [WS_METHODS.pullRequestWatchesList]: AuthOrchestrationReadScope,
+  [WS_METHODS.pullRequestWatchesCancel]: AuthOrchestrationOperateScope,
   [WS_METHODS.sourceControlLookupRepository]: AuthOrchestrationReadScope,
   [WS_METHODS.sourceControlCloneRepository]: AuthOrchestrationOperateScope,
   [WS_METHODS.sourceControlPublishRepository]: AuthOrchestrationOperateScope,

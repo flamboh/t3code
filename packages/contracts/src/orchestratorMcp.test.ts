@@ -10,6 +10,7 @@ import {
   OrchestratorMcpThreadReadInput,
   OrchestratorMcpThreadSendInput,
   OrchestratorMcpThreadWaitInput,
+  OrchestratorMcpWatchPullRequestInput,
 } from "./orchestratorMcp.ts";
 
 const decodeCreateThreadsInput = Schema.decodeUnknownSync(OrchestratorMcpCreateThreadsInput);
@@ -22,6 +23,18 @@ const decodeThreadSendInput = Schema.decodeUnknownSync(OrchestratorMcpThreadSend
 const decodeThreadWaitInput = Schema.decodeUnknownSync(OrchestratorMcpThreadWaitInput);
 
 describe("orchestrator MCP contracts", () => {
+  it("allows PR watches to omit the event filter or request a nonempty subset", () => {
+    const decode = Schema.decodeUnknownSync(OrchestratorMcpWatchPullRequestInput);
+    expect(decode({ repository: "owner/repo", number: 12 }).events).toBeUndefined();
+    expect(
+      decode({ repository: "owner/repo", number: 12, events: ["review_feedback"] }).events,
+    ).toEqual(["review_feedback"]);
+    expect(() => decode({ repository: "owner/repo", number: 12, events: [] })).toThrow();
+    expect(() =>
+      decode({ repository: "owner/repo", number: 12, events: ["any_update"] }),
+    ).toThrow();
+  });
+
   it("decodes cross-provider delegated task requests and durable results", () => {
     const request = decodeDelegateTaskInput({
       task: "Inspect the workspace and report the result.",

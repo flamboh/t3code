@@ -53,6 +53,8 @@ export class ProjectEnrichmentService extends Context.Service<
     readonly request: (workspaceRoot: string) => Effect.Effect<void>;
     /** Read immediately available metadata and schedule anything missing. */
     readonly getAvailable: (workspaceRoot: string) => Effect.Effect<ProjectEnrichment>;
+    /** Await repository routing metadata for background operations that cannot use a cold snapshot. */
+    readonly awaitRepositoryIdentity: (workspaceRoot: string) => Effect.Effect<void>;
     /** Invalidate workspace-derived metadata. */
     readonly invalidate: (workspaceRoots: Iterable<string>) => Effect.Effect<void>;
     /** Subscribe to ephemeral completion notifications. */
@@ -286,6 +288,7 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
   });
 
   return ProjectEnrichmentService.of({
+    awaitRepositoryIdentity: resolveRepositoryIdentity,
     peek,
     request,
     getAvailable,

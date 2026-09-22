@@ -749,6 +749,8 @@ export function BranchToolbarBranchSelector({
             currentLink={currentLinkedPr}
             onOpenLink={openPrLink}
             environmentId={environmentId}
+            threadId={activeThreadId ?? null}
+            projectId={activeProject?.id ?? null}
             pr={displayedPr}
             number={prNumber}
             reference={currentLinkedPr}

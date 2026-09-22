@@ -73,6 +73,7 @@ import {
 } from "../orchestration-v2/testkit/ReplayTranscriptNdjson.ts";
 import { makeProviderRegistryLayer } from "../provider/testUtils/providerRegistryMock.ts";
 import { ScheduledTaskService } from "../scheduledTasks/ScheduledTaskService.ts";
+import { PullRequestWatchService } from "../pullRequest/PullRequestWatchService.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import { delegatedTaskRun, hasPendingChildRuns } from "./OrchestratorMcpService.ts";
@@ -467,6 +468,16 @@ const unusedScheduledTaskStubLayer = Layer.succeed(
   }),
 );
 
+const unusedPullRequestWatchStubLayer = Layer.succeed(
+  PullRequestWatchService,
+  PullRequestWatchService.of({
+    watch: () => Effect.die("PullRequestWatchService.watch is unused in this test"),
+    list: () => Effect.succeed({ watches: [] }),
+    cancel: () => Effect.die("PullRequestWatchService.cancel is unused in this test"),
+    pollDueWatches: () => Effect.void,
+  }),
+);
+
 describe("orchestrator MCP toolkit", () => {
   it.live(
     "delegates cross-provider tasks, polls and cancels children, and creates ordinary threads",
@@ -629,6 +640,7 @@ describe("orchestrator MCP toolkit", () => {
             Layer.provide(registryLayer),
             Layer.provide(providerRegistryLayer),
             Layer.provide(scheduledTaskStubLayer),
+            Layer.provide(unusedPullRequestWatchStubLayer),
             Layer.provide(NodeServices.layer),
           );
 
@@ -3042,6 +3054,7 @@ describe("orchestrator MCP toolkit", () => {
           ),
           Layer.provide(providerRegistryLayer),
           Layer.provide(unusedScheduledTaskStubLayer),
+          Layer.provide(unusedPullRequestWatchStubLayer),
           Layer.provide(NodeServices.layer),
         );
 

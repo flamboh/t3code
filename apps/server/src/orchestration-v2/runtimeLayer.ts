@@ -51,6 +51,11 @@ import { layer as threadLifecycleServiceLayer } from "./ThreadLifecycleService.t
 import { layer as threadForkServiceLayer } from "./ThreadForkService.ts";
 import { layer as turnItemPositionStoreLayer } from "./TurnItemPositionStore.ts";
 import { layer as scheduledTaskServiceLayer } from "../scheduledTasks/ScheduledTaskService.ts";
+import {
+  layer as pullRequestWatchServiceLayer,
+  workerLive as pullRequestWatchWorkerLive,
+} from "../pullRequest/PullRequestWatchService.ts";
+import { layer as pullRequestWatchObserverLayer } from "../pullRequest/PullRequestWatchObservation.ts";
 
 const runtimePolicyProvided = runtimePolicyLayerFromProjectRepository.pipe(
   Layer.provide(ProjectionProjectRepositoryLive),
@@ -241,6 +246,17 @@ const threadLifecycleProvided = threadLifecycleServiceLayer.pipe(
 const scheduledTaskProvided = scheduledTaskServiceLayer.pipe(
   Layer.provide(Layer.mergeAll(threadLaunchProvided, threadManagementProvided)),
 );
+// Pull request watches: the observer answers through PullRequestService and
+// the GitHub CLI (provided by the server composition, like SqlClient), while
+// the service itself hangs off thread management. The worker registers on
+// the shared scheduler clock.
+const pullRequestWatchProvided = pullRequestWatchServiceLayer.pipe(
+  Layer.provide(pullRequestWatchObserverLayer.pipe(Layer.provide(ProjectionProjectRepositoryLive))),
+  Layer.provide(Layer.mergeAll(threadManagementProvided, eventSinkProvided, idAllocatorLayer)),
+);
+const pullRequestWatchWorkerProvided = pullRequestWatchWorkerLive.pipe(
+  Layer.provide(pullRequestWatchProvided),
+);
 const providerContinuationWorkerProvided = providerContinuationWorkerLive.pipe(
   Layer.provide(
     Layer.mergeAll(providerContinuationRequestsLayer, threadManagementProvided, idAllocatorLayer),
@@ -297,6 +313,8 @@ export const OrchestrationV2ProductionLayerLive = Layer.mergeAll(
   threadLaunchProvided,
   threadLifecycleProvided,
   scheduledTaskProvided,
+  pullRequestWatchProvided,
+  pullRequestWatchWorkerProvided,
   UsageLimitRecoveryWorker.workerLive.pipe(
     Layer.provide(Layer.mergeAll(projectionStoreLayer, threadManagementProvided)),
   ),

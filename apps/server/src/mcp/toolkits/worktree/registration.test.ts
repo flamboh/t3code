@@ -20,6 +20,7 @@ import * as ProjectService from "../../../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../../../project/ProjectSetupScriptRunner.ts";
 import { ProviderRegistry } from "../../../provider/Services/ProviderRegistry.ts";
 import { ScheduledTaskService } from "../../../scheduledTasks/ScheduledTaskService.ts";
+import { PullRequestWatchService } from "../../../pullRequest/PullRequestWatchService.ts";
 import * as ServerSettings from "../../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../../vcs/VcsStatusBroadcaster.ts";
 import * as McpHttpServer from "../../McpHttpServer.ts";
@@ -35,6 +36,7 @@ const StubServicesLive = Layer.mergeAll(
   Layer.mock(ProviderRegistry)({}),
   Layer.mock(ProviderAdapterRegistryV2)({}),
   Layer.mock(ScheduledTaskService)({}),
+  Layer.mock(PullRequestWatchService)({}),
   Layer.mock(ProjectService.ProjectService)({}),
   ServerSettings.layerTest({}),
   Layer.mock(GitWorkflowService.GitWorkflowService)({}),

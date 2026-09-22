@@ -101,6 +101,7 @@ const TestLayer = Layer.mergeAll(
   Layer.provide(worktreeRepairDependenciesTestLayer),
   Layer.provide(
     Layer.succeed(ProjectEnrichmentService, {
+      awaitRepositoryIdentity: () => Effect.void,
       peek: () =>
         Effect.succeed({
           repositoryIdentity: null,

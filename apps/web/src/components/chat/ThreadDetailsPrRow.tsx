@@ -17,7 +17,13 @@ import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId, ProjectId, PullRequestRef } from "@t3tools/contracts";
 import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
-import { ArrowUpRightIcon, FileDiffIcon, GitBranchIcon, TriangleAlertIcon } from "lucide-react";
+import {
+  ArrowUpRightIcon,
+  EyeIcon,
+  FileDiffIcon,
+  GitBranchIcon,
+  TriangleAlertIcon,
+} from "lucide-react";
 import { useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
@@ -83,6 +89,7 @@ export function ThreadDetailsPrRow({
   project,
   label,
   openAriaLabel,
+  watchedFor = null,
   onOpen,
   onActed,
 }: {
@@ -95,6 +102,8 @@ export function ThreadDetailsPrRow({
   project: EnvironmentProject | null;
   label: string;
   openAriaLabel: string;
+  /** Null when no agent watch observes this PR, else the wait text (e.g. "Waiting for CI or review feedback"). */
+  watchedFor?: string | null;
   onOpen: (event: ReactMouseEvent<HTMLElement>) => void;
   /** An action changed the pull request on the host, so the vcs status behind the row is stale. */
   onActed?: () => void;
@@ -229,7 +238,11 @@ export function ThreadDetailsPrRow({
   // detail rows, so the two read as one family.
   const rowTooltip =
     detail === null || statePresentation === null ? (
-      <TooltipPopup side="top">{status?.tooltip ?? `Pull request #${number}`}</TooltipPopup>
+      <TooltipPopup side="top">
+        {watchedFor === null
+          ? (status?.tooltip ?? `Pull request #${number}`)
+          : `${status?.tooltip ?? `Pull request #${number}`} · ${watchedFor}`}
+      </TooltipPopup>
     ) : (
       <TooltipPopup
         side="top"
@@ -257,6 +270,12 @@ export function ThreadDetailsPrRow({
                 {detail.baseBranch} ← {detail.headBranch}
               </div>
             </div>
+            {watchedFor !== null ? (
+              <div className="flex min-w-0 items-center gap-2">
+                <EyeIcon className="size-3 shrink-0 stroke-muted-foreground" />
+                <div className="min-w-0 truncate text-foreground/75">{watchedFor}</div>
+              </div>
+            ) : null}
             {detail.state === "open" && checksState !== "none" ? (
               <div className="flex min-w-0 items-center gap-2">
                 <PullRequestCheckStatusIcon
@@ -341,6 +360,12 @@ export function ThreadDetailsPrRow({
     <>
       {icon}
       <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+      {watchedFor !== null ? (
+        <EyeIcon
+          aria-label="Agent is watching this pull request"
+          className="size-3 shrink-0 text-muted-foreground"
+        />
+      ) : null}
     </>
   );
 

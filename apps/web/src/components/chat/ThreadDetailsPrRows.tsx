@@ -1,4 +1,6 @@
-import type { EnvironmentId, ThreadPullRequestLink } from "@t3tools/contracts";
+import { matchingPullRequestWatches } from "@t3tools/client-runtime/state/pull-request-watch-match";
+import { describePullRequestWait } from "@t3tools/client-runtime/state/pull-request-watches";
+import type { EnvironmentId, ProjectId, ThreadId, ThreadPullRequestLink } from "@t3tools/contracts";
 import {
   resolveThreadPullRequestChains,
   threadPullRequestKeyOf,
@@ -14,17 +16,20 @@ import { useProjects } from "~/state/entities";
 import { pullRequestListLines } from "../pullRequest/pullRequestListLines";
 import { linkedPullRequestSnapshotStatus, prStatusIndicator } from "../ThreadStatusIndicators";
 import { Button } from "../ui/button";
+import { useThreadPullRequestWatches } from "~/hooks/useThreadPullRequestWatches";
 import { ThreadDetailsPrRow } from "./ThreadDetailsPrRow";
 import { THREAD_DETAILS_PANEL_ROW_CLASS } from "./threadDetailsPanelStyles";
 
 function ThreadDetailsPrLinkRow({
   environmentId,
   link,
+  watchedFor,
   onOpen,
   onActed,
 }: {
   environmentId: EnvironmentId;
   link: ThreadPullRequestLink;
+  watchedFor: string | null;
   onOpen: (event: ReactMouseEvent<HTMLElement>) => void;
   onActed?: (() => void) | undefined;
 }) {
@@ -45,6 +50,7 @@ function ThreadDetailsPrLinkRow({
       pr={pr}
       number={link.number}
       reference={link}
+      watchedFor={watchedFor}
       status={prStatusIndicator(pr, linked?.sourceControlProvider)}
       project={project}
       label={`#${link.number}${link.snapshot === null ? "" : `: ${link.snapshot.title}`}`}
@@ -59,30 +65,53 @@ export function ThreadDetailsPrRows({
   links,
   currentLink,
   onOpenLink,
+  threadId = null,
+  projectId = null,
   ...row
 }: ComponentProps<typeof ThreadDetailsPrRow> & {
   links: ReadonlyArray<ThreadPullRequestLink>;
   currentLink: ThreadPullRequestLink | null;
   onOpenLink: (event: ReactMouseEvent<HTMLElement>, url: string) => void;
+  threadId?: ThreadId | null;
+  projectId?: ProjectId | null;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const activeWatches = useThreadPullRequestWatches(
+    threadId === null || threadId === undefined || projectId === null || projectId === undefined
+      ? null
+      : { environmentId: row.environmentId, threadId, projectId },
+  );
+  const watchedForOf = (number: number, repository: string | null): string | null => {
+    const matches = matchingPullRequestWatches(activeWatches, { number, repository });
+    return matches.length === 0 ? null : describePullRequestWait(matches);
+  };
   const rest =
     currentLink === null
       ? []
       : pullRequestListLines(resolveThreadPullRequestChains(visibleThreadPullRequests(links)))
           .map((line) => line.link)
           .filter((link) => threadPullRequestKeyOf(link) !== threadPullRequestKeyOf(currentLink));
-  if (rest.length === 0) return <ThreadDetailsPrRow {...row} />;
+  if (rest.length === 0)
+    return (
+      <ThreadDetailsPrRow
+        {...row}
+        watchedFor={row.watchedFor ?? watchedForOf(row.number, row.reference?.repository ?? null)}
+      />
+    );
 
   return (
     <>
-      <ThreadDetailsPrRow {...row} />
+      <ThreadDetailsPrRow
+        {...row}
+        watchedFor={row.watchedFor ?? watchedForOf(row.number, row.reference?.repository ?? null)}
+      />
       {expanded
         ? rest.map((link) => (
             <ThreadDetailsPrLinkRow
               key={threadPullRequestKeyOf(link)}
               environmentId={row.environmentId}
               link={link}
+              watchedFor={watchedForOf(link.number, link.repository)}
               onOpen={(event) => onOpenLink(event, link.url)}
               onActed={row.onActed}
             />

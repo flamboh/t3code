@@ -54,6 +54,24 @@ const handlers = {
       const service = yield* OrchestratorMcpService;
       return yield* service.deleteScheduledTask(scope, input);
     }),
+  watch_pull_request: (input) =>
+    Effect.gen(function* () {
+      const scope = yield* McpInvocationContext;
+      const service = yield* OrchestratorMcpService;
+      return yield* service.watchPullRequest(scope, input);
+    }),
+  list_pull_request_watches: () =>
+    Effect.gen(function* () {
+      const scope = yield* McpInvocationContext;
+      const service = yield* OrchestratorMcpService;
+      return yield* service.listPullRequestWatches(scope);
+    }),
+  cancel_pull_request_watch: (input) =>
+    Effect.gen(function* () {
+      const scope = yield* McpInvocationContext;
+      const service = yield* OrchestratorMcpService;
+      return yield* service.cancelPullRequestWatch(scope, input);
+    }),
   create_threads: (input) =>
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext;

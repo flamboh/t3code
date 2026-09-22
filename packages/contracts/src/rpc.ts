@@ -2,7 +2,7 @@ import { OrchestrationDispatchCommandError } from "./orchestration.ts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
-import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { NonNegativeInt, ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
   ProviderAuthCancelInput,
   ProviderAuthCompleteInput,
@@ -301,6 +301,11 @@ import {
   ScheduledTaskMutationResult,
 } from "./scheduledTask.ts";
 import {
+  PullRequestWatchError,
+  PullRequestWatchId,
+  PullRequestWatchStatus,
+} from "./pullRequestWatch.ts";
+import {
   ProjectCloneActionInput,
   ProjectCloneActionResult,
   ProjectCloneListEvent,
@@ -487,6 +492,11 @@ export const WS_METHODS = {
   pullRequestsRequestReviewers: "pullRequests.requestReviewers",
   pullRequestsLabelCandidates: "pullRequests.labelCandidates",
   pullRequestsSetLabels: "pullRequests.setLabels",
+  // One-shot pull request watches registered by the agent (MCP). Clients
+  // only list the current thread's watches and cancel them; creation stays
+  // server-side so a watch always has a stable delivery identity.
+  pullRequestWatchesList: "pullRequestWatches.list",
+  pullRequestWatchesCancel: "pullRequestWatches.cancel",
 
   // Source control methods
   sourceControlLookupRepository: "sourceControl.lookupRepository",
@@ -1016,6 +1026,48 @@ const WsPullRequestsSetLabelsRpc = Rpc.make(WS_METHODS.pullRequestsSetLabels, {
   payload: PullRequestLabelChangeInput,
   success: Schema.Void,
   error: PullRequestRpcError,
+});
+
+/** Scoped to one thread: a client only ever reads the thread it has open. */
+export const PullRequestWatchListInput = Schema.Struct({
+  threadId: ThreadId,
+  projectId: ProjectId,
+});
+export type PullRequestWatchListInput = typeof PullRequestWatchListInput.Type;
+
+export const PullRequestWatchListResult = Schema.Struct({
+  watches: Schema.Array(PullRequestWatchStatus),
+});
+export type PullRequestWatchListResult = typeof PullRequestWatchListResult.Type;
+
+/** Cancelling another thread's watch reads as not-found, never as forbidden. */
+export const PullRequestWatchCancelInput = Schema.Struct({
+  threadId: ThreadId,
+  projectId: ProjectId,
+  watchId: PullRequestWatchId,
+});
+export type PullRequestWatchCancelInput = typeof PullRequestWatchCancelInput.Type;
+
+export const PullRequestWatchCancelResult = Schema.Struct({
+  watch: PullRequestWatchStatus,
+});
+export type PullRequestWatchCancelResult = typeof PullRequestWatchCancelResult.Type;
+
+const PullRequestWatchRpcError = Schema.Union([
+  PullRequestWatchError,
+  EnvironmentAuthorizationError,
+]);
+
+const WsPullRequestWatchesListRpc = Rpc.make(WS_METHODS.pullRequestWatchesList, {
+  payload: PullRequestWatchListInput,
+  success: PullRequestWatchListResult,
+  error: PullRequestWatchRpcError,
+});
+
+const WsPullRequestWatchesCancelRpc = Rpc.make(WS_METHODS.pullRequestWatchesCancel, {
+  payload: PullRequestWatchCancelInput,
+  success: PullRequestWatchCancelResult,
+  error: PullRequestWatchRpcError,
 });
 
 const WsSourceControlLookupRepositoryRpc = Rpc.make(WS_METHODS.sourceControlLookupRepository, {
@@ -1697,6 +1749,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsPullRequestsRequestReviewersRpc,
   WsPullRequestsLabelCandidatesRpc,
   WsPullRequestsSetLabelsRpc,
+  WsPullRequestWatchesListRpc,
+  WsPullRequestWatchesCancelRpc,
   WsSourceControlLookupRepositoryRpc,
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,

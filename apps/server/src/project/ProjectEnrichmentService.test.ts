@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
+import * as TestClock from "effect/testing/TestClock";
 
 import * as ProjectEnrichment from "./ProjectEnrichmentService.ts";
 import * as ProjectFaviconResolver from "./ProjectFaviconResolver.ts";
@@ -339,5 +340,39 @@ it.effect("deduplicates requests, bounds pending work, and reloads invalidated r
         }),
       ),
     );
+  }),
+);
+
+it.effect("awaits cold and expired routing metadata without depending on UI reads", () =>
+  Effect.gen(function* () {
+    const resolutions = yield* Ref.make(0);
+    const metadata = Layer.merge(
+      Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
+        resolve: (root) =>
+          Ref.updateAndGet(resolutions, (n) => n + 1).pipe(
+            Effect.map((version) => identity(root, version)),
+          ),
+      }),
+      Layer.mock(ProjectFaviconResolver.ProjectFaviconResolver)({
+        resolvePath: () => Effect.succeed(null),
+      }),
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* ProjectEnrichment.ProjectEnrichmentService;
+      assert.isNull((yield* service.peek("/watch")).repositoryIdentity);
+      yield* service.awaitRepositoryIdentity("/watch");
+      assert.deepStrictEqual(
+        (yield* service.getAvailable("/watch")).repositoryIdentity,
+        identity("/watch", 1),
+      );
+      yield* TestClock.adjust("61 seconds");
+      assert.isNull((yield* service.peek("/watch")).repositoryIdentity);
+      yield* service.awaitRepositoryIdentity("/watch");
+      assert.deepStrictEqual(
+        (yield* service.getAvailable("/watch")).repositoryIdentity,
+        identity("/watch", 2),
+      );
+      assert.equal(yield* Ref.get(resolutions), 2);
+    }).pipe(Effect.provide(makeLayer(metadata)));
   }),
 );
