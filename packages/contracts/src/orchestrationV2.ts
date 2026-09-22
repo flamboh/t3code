@@ -2301,7 +2301,7 @@ export const OrchestrationV2Command = Schema.Union([
     type: Schema.Literal("thread.unsnooze"),
     commandId: CommandId,
     threadId: ThreadId,
-    reason: Schema.Literal("user"),
+    reason: Schema.Literals(["user", "pull-request"]),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.pin"),

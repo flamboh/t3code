@@ -66,3 +66,5 @@ export class PullRequestWatchError extends Schema.TaggedError<PullRequestWatchEr
     watchId: Schema.optional(PullRequestWatchId),
   },
 ) {}
+
+export const INDEFINITE_SNOOZE_UNTIL = "9999-12-31T00:00:00.000Z";

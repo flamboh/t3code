@@ -82,6 +82,12 @@ export const SidebarAutoSettleAfterDays = Schema.Number.check(
 );
 export type SidebarAutoSettleAfterDays = typeof SidebarAutoSettleAfterDays.Type;
 const DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS: SidebarAutoSettleAfterDays = 3;
+export const MAX_GREEN_PULL_REQUEST_SNOOZE_HOURS = 24 * 30;
+export const GreenPullRequestSnooze = Schema.Union([
+  Schema.Literal("indefinitely"),
+  Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: MAX_GREEN_PULL_REQUEST_SNOOZE_HOURS })),
+]);
+export type GreenPullRequestSnooze = typeof GreenPullRequestSnooze.Type;
 export const MIN_GLASS_OPACITY = 40;
 export const MAX_GLASS_OPACITY = 100;
 export const GlassOpacity = Schema.Int.check(
@@ -1207,6 +1213,9 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS)),
   ),
   snoozeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  snoozeGreenPullRequests: Schema.NullOr(GreenPullRequestSnooze).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   autoResumeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarAutoSettleOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   backgroundActivity: BackgroundActivitySettings,
@@ -1540,6 +1549,7 @@ export const ServerSettingsPatch = Schema.Struct({
   sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
   autoResumeLimitedThreads: Schema.optionalKey(Schema.Boolean),
   snoozeLimitedThreads: Schema.optionalKey(Schema.Boolean),
+  snoozeGreenPullRequests: Schema.optionalKey(Schema.NullOr(GreenPullRequestSnooze)),
   backgroundActivity: Schema.optionalKey(
     Schema.Struct({
       schemaVersion: Schema.optionalKey(Schema.Literal(1)),

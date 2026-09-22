@@ -149,6 +149,10 @@ must be running to see updates. Finished checks are not always green; the
 agent still reads the result. Watching requires GitHub access on that
 environment.
 
+In **Settings → General → Organization**, choose **Snooze green pull requests** to snooze a thread after
+every check passes. The thread wakes early if a check fails or new review feedback arrives, or after
+the duration you choose.
+
 ## Troubleshooting
 
 - **Not authenticated:** run the provider's login command on the server, then rescan. For Bitbucket,

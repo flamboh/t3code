@@ -38,6 +38,10 @@ import {
   layer as pullRequestWatchServiceLayer,
   PullRequestWatchService,
 } from "./PullRequestWatchService.ts";
+import {
+  type PullRequestAutoSnoozeArmInput,
+  PullRequestAutoSnoozeService,
+} from "./PullRequestAutoSnooze.ts";
 
 const projectId = ProjectId.make("project:test");
 const threadId = ThreadId.make("thread:test");
@@ -105,6 +109,7 @@ interface Harness {
   readonly providerRosters: Ref.Ref<
     Record<string, ReadonlyArray<OrchestrationV2PendingBackgroundTask>>
   >;
+  readonly armed: Ref.Ref<ReadonlyArray<PullRequestAutoSnoozeArmInput>>;
   readonly service: PullRequestWatchService["Service"];
 }
 
@@ -130,6 +135,10 @@ const makeHarness = (
     const providerRosters = yield* Ref.make<
       Record<string, ReadonlyArray<OrchestrationV2PendingBackgroundTask>>
     >({});
+    const armed = yield* Ref.make<ReadonlyArray<PullRequestAutoSnoozeArmInput>>([]);
+    const autoSnoozeMock = Layer.mock(PullRequestAutoSnoozeService)({
+      arm: (input) => Ref.update(armed, (all) => [...all, input]),
+    });
     const observerMock = Layer.mock(PullRequestWatchObserver)({
       read: () =>
         Effect.gen(function* () {
@@ -292,6 +301,7 @@ const makeHarness = (
           pullRequestWatchServiceLayer,
           Layer.mergeAll(
             observerMock,
+            autoSnoozeMock,
             threadMock,
             eventSinkMock,
             IdAllocator.layer,
@@ -310,6 +320,7 @@ const makeHarness = (
       rosterWrites,
       activeProviderThreadId,
       providerRosters,
+      armed,
       service,
     };
   });
@@ -589,6 +600,36 @@ watchTest("reports checks_finished with verdict counts, never empty success", ()
     assert.include(delivered, "1 failed");
     assert.include(delivered, "1 skipped");
     assert.notInclude(delivered, "All ");
+  }),
+);
+
+watchTest("only an all-green delivery arms the auto-snooze", () =>
+  Effect.gen(function* () {
+    const { service, armed } = yield* makeHarness([
+      obs({ checks: [check("a", "passed"), check("b", "skipped")] }),
+    ]);
+    yield* register(service, { events: ["checks_finished"], clientRequestId: "green" });
+    assert.equal((yield* Ref.get(armed)).length, 0);
+    yield* tick(service, "16 seconds");
+    const [arm] = yield* Ref.get(armed);
+    assert.equal(arm?.threadId, threadId);
+    assert.equal(arm?.host, "github.com");
+    assert.deepStrictEqual(
+      arm?.observation.checks.map((c) => c.state),
+      ["passed", "skipped"],
+    );
+  }),
+);
+
+watchTest("a finished rollup with a failure never arms the auto-snooze", () =>
+  Effect.gen(function* () {
+    const { service, sent, armed } = yield* makeHarness([
+      obs({ checks: [check("a", "passed"), check("b", "cancelled")] }),
+    ]);
+    yield* register(service, { events: ["checks_finished"], clientRequestId: "mixed" });
+    yield* tick(service, "16 seconds");
+    assert.equal((yield* Ref.get(sent)).length, 1);
+    assert.equal((yield* Ref.get(armed)).length, 0);
   }),
 );
 

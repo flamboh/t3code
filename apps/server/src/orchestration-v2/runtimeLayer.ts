@@ -56,6 +56,10 @@ import {
   workerLive as pullRequestWatchWorkerLive,
 } from "../pullRequest/PullRequestWatchService.ts";
 import { layer as pullRequestWatchObserverLayer } from "../pullRequest/PullRequestWatchObservation.ts";
+import {
+  layer as pullRequestAutoSnoozeLayer,
+  workerLive as pullRequestAutoSnoozeWorkerLive,
+} from "../pullRequest/PullRequestAutoSnooze.ts";
 
 const runtimePolicyProvided = runtimePolicyLayerFromProjectRepository.pipe(
   Layer.provide(ProjectionProjectRepositoryLive),
@@ -250,12 +254,22 @@ const scheduledTaskProvided = scheduledTaskServiceLayer.pipe(
 // the GitHub CLI (provided by the server composition, like SqlClient), while
 // the service itself hangs off thread management. The worker registers on
 // the shared scheduler clock.
+const pullRequestWatchObserverProvided = pullRequestWatchObserverLayer.pipe(
+  Layer.provide(ProjectionProjectRepositoryLive),
+);
+const pullRequestAutoSnoozeProvided = pullRequestAutoSnoozeLayer.pipe(
+  Layer.provide(Layer.mergeAll(pullRequestWatchObserverProvided, threadManagementProvided)),
+);
 const pullRequestWatchProvided = pullRequestWatchServiceLayer.pipe(
-  Layer.provide(pullRequestWatchObserverLayer.pipe(Layer.provide(ProjectionProjectRepositoryLive))),
+  Layer.provide(pullRequestWatchObserverProvided),
+  Layer.provide(pullRequestAutoSnoozeProvided),
   Layer.provide(Layer.mergeAll(threadManagementProvided, eventSinkProvided, idAllocatorLayer)),
 );
 const pullRequestWatchWorkerProvided = pullRequestWatchWorkerLive.pipe(
   Layer.provide(pullRequestWatchProvided),
+);
+const pullRequestAutoSnoozeWorkerProvided = pullRequestAutoSnoozeWorkerLive.pipe(
+  Layer.provide(pullRequestAutoSnoozeProvided),
 );
 const providerContinuationWorkerProvided = providerContinuationWorkerLive.pipe(
   Layer.provide(
@@ -315,6 +329,7 @@ export const OrchestrationV2ProductionLayerLive = Layer.mergeAll(
   scheduledTaskProvided,
   pullRequestWatchProvided,
   pullRequestWatchWorkerProvided,
+  pullRequestAutoSnoozeWorkerProvided,
   UsageLimitRecoveryWorker.workerLive.pipe(
     Layer.provide(Layer.mergeAll(projectionStoreLayer, threadManagementProvided)),
   ),

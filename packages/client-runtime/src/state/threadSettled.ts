@@ -1,5 +1,5 @@
 // @effect-diagnostics globalDate:off -- UI snooze presets use local calendar boundaries and Intl labels.
-import type { OrchestrationThreadShell } from "@t3tools/contracts";
+import { INDEFINITE_SNOOZE_UNTIL, type OrchestrationThreadShell } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
 interface SettlementRunLike {
@@ -312,14 +312,16 @@ export function resolveSnoozePresets(now: Date): ReadonlyArray<SnoozePreset> {
 }
 
 /**
- * Compact "wakes in" label for snoozed rows: "2h", "18h", "3d". Minutes
- * round up so a snooze never reads "0m" while still hidden. Shared by web
+ * Compact "wakes in" label for snoozed rows: "2h", "18h", "3d", or "∞" for an
+ * open-ended snooze. Minutes round up so a snooze never reads "0m" while
+ * still hidden. Shared by web
  * and mobile so the same wake time never reads differently per client.
  */
 export function snoozeWakeLabel(snoozedUntil: string, options: { readonly now: string }): string {
   const wakeMs = Date.parse(snoozedUntil);
   const nowMs = Date.parse(options.now);
   if (Number.isNaN(wakeMs) || Number.isNaN(nowMs)) return "now";
+  if (wakeMs >= Date.parse(INDEFINITE_SNOOZE_UNTIL)) return "∞";
   const remainingMs = wakeMs - nowMs;
   if (remainingMs <= 0) return "now";
   if (remainingMs < HOUR_MS) return `${Math.max(1, Math.ceil(remainingMs / 60_000))}m`;

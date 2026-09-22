@@ -35,6 +35,7 @@ import {
 import * as EventSink from "../orchestration-v2/EventSink.ts";
 import * as IdAllocator from "../orchestration-v2/IdAllocator.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
+import { PullRequestAutoSnoozeService } from "./PullRequestAutoSnooze.ts";
 import {
   matchesWatchEvent,
   PullRequestWatchObservation,
@@ -90,6 +91,7 @@ const MatchedPayload = Schema.Struct({
   closeReason: Schema.optional(Schema.Literals(["merged", "closed", "not-found"])),
   /** Retained across delivery retries, whose errors temporarily occupy last_error. */
   observationError: Schema.optional(Schema.String),
+  green: Schema.optional(Schema.Boolean),
 });
 type MatchedPayload = typeof MatchedPayload.Type;
 
@@ -271,6 +273,7 @@ export const layer = Layer.effect(
     const sql = yield* SqlClient.SqlClient;
     const crypto = yield* Crypto.Crypto;
     const observer = yield* PullRequestWatchObserver;
+    const autoSnooze = yield* PullRequestAutoSnoozeService;
     const threadManagement = yield* ThreadManagementService;
     const eventSink = yield* EventSink.EventSinkV2;
     const ids = yield* IdAllocator.IdAllocatorV2;
@@ -585,6 +588,31 @@ export const layer = Layer.effect(
             ThreadId.make(row.thread_id),
             ProjectId.make(row.project_id),
           );
+          const greenObservation =
+            frozenPayload.green === true && frozenPayload.closeReason === undefined
+              ? yield* decodeObservationJson(current.last_observation_json)
+              : null;
+          if (greenObservation !== null) {
+            yield* autoSnooze
+              .arm({
+                projectId: ProjectId.make(row.project_id),
+                threadId: ThreadId.make(row.thread_id),
+                watchId,
+                repository: row.repository,
+                number: row.number,
+                host: canonicalHost(row.host),
+                observation: greenObservation,
+                deliveredAt: nowIso,
+              })
+              .pipe(
+                Effect.catch((error) =>
+                  Effect.logWarning("pull request auto-snooze could not arm", {
+                    watchId,
+                    error: error.message,
+                  }),
+                ),
+              );
+          }
         }),
       );
 
@@ -643,12 +671,17 @@ export const layer = Layer.effect(
         );
         details.push(detailFeedback(fresh));
       }
+      const green =
+        hits.length === 1 &&
+        hits[0] === "checks_finished" &&
+        next.checks.every((check) => check.state === "passed" || check.state === "skipped");
       return {
         summary: summaries.join("; "),
         detail: details.join("\n"),
         outcome,
         headSha: next.headSha,
         events: hits,
+        ...(green ? { green } : {}),
       };
     };
 
@@ -691,6 +724,7 @@ export const layer = Layer.effect(
         // old row has a null head, retain the later evidence instead.
         headSha: first.headSha ?? later.headSha,
         events: [...new Set([...first.events, ...later.events])],
+        ...(first.green === true && later.green === true ? { green: true } : {}),
         ...(later.closeReason === undefined && first.closeReason === undefined
           ? {}
           : { closeReason: later.closeReason ?? first.closeReason }),

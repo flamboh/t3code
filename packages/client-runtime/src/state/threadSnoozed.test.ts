@@ -1,5 +1,5 @@
 // @effect-diagnostics globalDate:off -- Tests exercise local calendar snooze boundaries.
-import { ThreadId } from "@t3tools/contracts";
+import { INDEFINITE_SNOOZE_UNTIL, ThreadId } from "@t3tools/contracts";
 import { TurnId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -317,6 +317,10 @@ describe("snoozeWakeLabel", () => {
     expect(snoozeWakeLabel("2026-06-01T23:59:59.000Z", { now })).toBe("now");
     expect(snoozeWakeLabel("not-a-date", { now })).toBe("now");
     expect(snoozeWakeLabel("2026-06-02T09:00:00.000Z", { now: "bad" })).toBe("now");
+  });
+
+  it("shows no countdown for an open-ended snooze", () => {
+    expect(snoozeWakeLabel(INDEFINITE_SNOOZE_UNTIL, { now })).toBe("∞");
   });
 });
 
