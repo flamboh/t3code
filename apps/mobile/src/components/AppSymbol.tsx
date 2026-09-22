@@ -52,6 +52,7 @@ import IconDotsCircleHorizontal from "@tabler/icons-react-native/IconDotsCircleH
 import IconEdit from "@tabler/icons-react-native/IconEdit";
 import IconExternalLink from "@tabler/icons-react-native/IconExternalLink";
 import IconEye from "@tabler/icons-react-native/IconEye";
+import IconEyeOff from "@tabler/icons-react-native/IconEyeOff";
 import IconFileText from "@tabler/icons-react-native/IconFileText";
 import IconFilter from "@tabler/icons-react-native/IconFilter";
 import IconFilterFilled from "@tabler/icons-react-native/IconFilterFilled";
@@ -165,6 +166,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "exclamationmark.triangle": IconAlertTriangle,
   "exclamationmark.circle": IconAlertCircle,
   eye: IconEye,
+  "eye.slash": IconEyeOff,
   folder: IconFolder,
   "folder.badge.plus": IconFolderPlus,
   "folder.fill": IconFolder,

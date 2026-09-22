@@ -1,5 +1,5 @@
 // @effect-diagnostics globalDate:off -- Tests exercise local calendar snooze boundaries.
-import { ThreadId } from "@t3tools/contracts";
+import { INDEFINITE_SNOOZE_UNTIL, ThreadId } from "@t3tools/contracts";
 import { TurnId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -7,11 +7,13 @@ import {
   canSnooze,
   effectiveSnoozed,
   hasQueuedTurnStart,
+  pullRequestWakeLabel,
   resolveSnoozePresets,
   snoozeWakeLabel,
   threadRaisedHandWhileSnoozed,
   threadWokeAt,
   type ThreadSnoozeShell,
+  watchedPullRequestLabel,
 } from "./threadSettled.ts";
 import type { OrchestrationThreadShell } from "@t3tools/contracts";
 
@@ -303,6 +305,39 @@ describe("threadWokeAt", () => {
   });
 });
 
+describe("pull request snoozes", () => {
+  const watching = {
+    repository: "owner/repo",
+    number: 13,
+    url: null,
+    wokeAt: null,
+    wakeReasons: [],
+  };
+  const woke = { ...watching, wokeAt: "2026-04-10T11:30:00.000Z" };
+
+  it("labels a snoozed thread that is still watching its pull request", () => {
+    const shell = { ...makeShell({ snoozedUntil: FUTURE_WAKE }), pullRequestSnooze: watching };
+    expect(watchedPullRequestLabel(shell)).toBe("Watching #13");
+    expect(pullRequestWakeLabel(shell)).toBe(null);
+  });
+
+  it("reports a pull request wake and why it happened", () => {
+    const shell = {
+      ...makeShell({}),
+      pullRequestSnooze: { ...woke, wakeReasons: ["review_feedback" as const] },
+    };
+    expect(threadWokeAt(shell, { now: NOW })).toBe("2026-04-10T11:30:00.000Z");
+    expect(pullRequestWakeLabel(shell)).toBe("New review feedback on #13");
+    expect(watchedPullRequestLabel(shell)).toBe(null);
+    expect(
+      pullRequestWakeLabel({
+        ...shell,
+        pullRequestSnooze: { ...woke, wakeReasons: ["check_failed", "review_feedback"] },
+      }),
+    ).toBe("Check failed and new review feedback on #13");
+  });
+});
+
 describe("snoozeWakeLabel", () => {
   const now = "2026-06-02T00:00:00.000Z";
 
@@ -317,6 +352,10 @@ describe("snoozeWakeLabel", () => {
     expect(snoozeWakeLabel("2026-06-01T23:59:59.000Z", { now })).toBe("now");
     expect(snoozeWakeLabel("not-a-date", { now })).toBe("now");
     expect(snoozeWakeLabel("2026-06-02T09:00:00.000Z", { now: "bad" })).toBe("now");
+  });
+
+  it("shows no countdown for an open-ended snooze", () => {
+    expect(snoozeWakeLabel(INDEFINITE_SNOOZE_UNTIL, { now })).toBe("∞");
   });
 });
 

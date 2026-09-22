@@ -6,7 +6,7 @@ import { useRef, useState } from "react";
 import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
+import { DEFAULT_SERVER_SETTINGS, type GreenPullRequestSnooze } from "@t3tools/contracts";
 import { supportsSharedSettingsSync } from "@t3tools/client-runtime/state/shared-settings";
 import { AppText as Text } from "../../components/AppText";
 import { cn } from "../../lib/cn";
@@ -17,6 +17,7 @@ import { useThreadListV2Enabled } from "../threads/use-thread-list-v2-enabled";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsProjectOverridesSection } from "./components/SettingsProjectOverridesSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
+import { SettingsChoiceRow } from "./components/SettingsChoiceRow";
 import { SettingsScreen } from "./components/SettingsScreen";
 import {
   AndroidSettingsEnvironmentFilter,
@@ -55,6 +56,23 @@ export function SettingsThreadsRouteScreen() {
 }
 
 const AUTO_SETTLE_DEFAULT_DAYS = DEFAULT_SERVER_SETTINGS.sidebarAutoSettleAfterDays ?? 3;
+const GREEN_PULL_REQUEST_SNOOZE_CHOICES: ReadonlyArray<{
+  readonly value: GreenPullRequestSnooze | null;
+  readonly label: string;
+  readonly description: string;
+}> = [
+  { value: null, label: "Off", description: "Leave the thread active when checks pass." },
+  {
+    value: "indefinitely",
+    label: "Until something changes",
+    description: "Wake if a check fails or review feedback arrives.",
+  },
+  { value: 1, label: "1 hour", description: "Wake after 1 hour." },
+  { value: 3, label: "3 hours", description: "Wake after 3 hours." },
+  { value: 24, label: "1 day", description: "Wake after 1 day." },
+  { value: 72, label: "3 days", description: "Wake after 3 days." },
+  { value: 168, label: "1 week", description: "Wake after 1 week." },
+];
 
 /**
  * Mobile edits auto-settle defaults across selected capable targets.
@@ -91,6 +109,7 @@ function AutoSettleSettingsRows() {
     patch: Partial<AutoSettleSettings> & {
       autoResumeLimitedThreads?: boolean;
       snoozeLimitedThreads?: boolean;
+      snoozeGreenPullRequests?: GreenPullRequestSnooze | null;
     },
   ) => {
     if (writeInFlight.current) return;
@@ -129,6 +148,17 @@ function AutoSettleSettingsRows() {
       target.environment.serverConfig.environment.capabilities.projectSettingsOverrides === true,
   );
   const disabled = pendingWrites > 0 || (projectSelected && !supportsProjectOverrides);
+  const supportsPullRequestWatchAutoSnooze =
+    displayTargets.length > 0 &&
+    displayTargets.every(
+      (target) =>
+        target.environment.serverConfig.environment.capabilities.pullRequestWatchAutoSnooze ===
+        true,
+    );
+  const mixedSnoozeGreenPullRequests = displayTargets.some(
+    (target) =>
+      target.settings.snoozeGreenPullRequests !== referenceSettings.snoozeGreenPullRequests,
+  );
   const hasProjectOverrides =
     projectSelected &&
     syncTargets.some(
@@ -171,22 +201,52 @@ function AutoSettleSettingsRows() {
         />
       ) : null}
       {!projectSelected ? (
-        <SettingsSection title="Usage limits">
-          <SettingsSwitchRow
-            icon="clock"
-            label="Auto-resume limited threads"
-            value={uniformMobileSetting(displayTargets, "autoResumeLimitedThreads")}
-            disabled={disabled}
-            onValueChange={(value) => writeToAll({ autoResumeLimitedThreads: value })}
-          />
-          <SettingsSwitchRow
-            icon="clock"
-            label="Snooze limited threads"
-            value={uniformMobileSetting(displayTargets, "snoozeLimitedThreads")}
-            disabled={disabled}
-            onValueChange={(value) => writeToAll({ snoozeLimitedThreads: value })}
-          />
-        </SettingsSection>
+        <>
+          <SettingsSection title="Usage limits">
+            <SettingsSwitchRow
+              icon="clock"
+              label="Auto-resume limited threads"
+              value={uniformMobileSetting(displayTargets, "autoResumeLimitedThreads")}
+              disabled={disabled}
+              onValueChange={(value) => writeToAll({ autoResumeLimitedThreads: value })}
+            />
+            <SettingsSwitchRow
+              icon="clock"
+              label="Snooze limited threads"
+              value={uniformMobileSetting(displayTargets, "snoozeLimitedThreads")}
+              disabled={disabled}
+              onValueChange={(value) => writeToAll({ snoozeLimitedThreads: value })}
+            />
+          </SettingsSection>
+          {supportsPullRequestWatchAutoSnooze ? (
+            <SettingsSection
+              title="Snooze green pull requests"
+              trailing={
+                pendingWrites === 0 && mixedSnoozeGreenPullRequests ? (
+                  <Text className="px-2 text-sm text-foreground-muted android:px-4">Mixed</Text>
+                ) : null
+              }
+            >
+              {GREEN_PULL_REQUEST_SNOOZE_CHOICES.map((choice, index) => (
+                <SettingsChoiceRow
+                  key={choice.label}
+                  label={choice.label}
+                  description={choice.description}
+                  selected={
+                    !mixedSnoozeGreenPullRequests &&
+                    uniformMobileSetting(displayTargets, "snoozeGreenPullRequests") === choice.value
+                  }
+                  separated={index > 0}
+                  disabled={disabled}
+                  onPress={() => writeToAll({ snoozeGreenPullRequests: choice.value })}
+                />
+              ))}
+              <Text className="px-4 pb-4 text-sm text-foreground-muted">
+                A thread wakes early if a check later fails or review feedback arrives.
+              </Text>
+            </SettingsSection>
+          ) : null}
+        </>
       ) : null}
       <SettingsSection title="Auto-settle">
         <SettingsSwitchRow

@@ -71,6 +71,7 @@ import Migration0054 from "./Migrations/054_OrchestrationV2.ts";
 import Migration0055 from "./Migrations/055_RemoveRedundantProjectionIndexes.ts";
 import Migration0056 from "./Migrations/056_PullRequestWatches.ts";
 import Migration0057 from "./Migrations/057_PullRequestWatchCoalescing.ts";
+import Migration0058 from "./Migrations/058_PullRequestAutoSnoozes.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -142,6 +143,7 @@ export const migrationEntries = [
   [55, "RemoveRedundantProjectionIndexes", Migration0055],
   [56, "PullRequestWatches", Migration0056],
   [57, "PullRequestWatchCoalescing", Migration0057],
+  [58, "PullRequestAutoSnoozes", Migration0058],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

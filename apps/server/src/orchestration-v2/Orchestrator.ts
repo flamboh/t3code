@@ -2440,6 +2440,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ...thread,
             snoozedUntil,
             limitRecovery: thread.limitRecovery ? { ...thread.limitRecovery, snooze: false } : null,
+            pullRequestSnooze:
+              command.pullRequest === undefined
+                ? null
+                : { ...command.pullRequest, wokeAt: null, wakeReasons: [] },
             snoozedAt: existingSnoozedAt ?? now,
             updatedAt: existingSnoozedAt === null ? now : thread.updatedAt,
           };
@@ -2450,6 +2454,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ...thread,
             snoozedUntil: null,
             snoozedAt: null,
+            pullRequestSnooze:
+              command.reason === "pull-request" && thread.pullRequestSnooze != null && !alreadyAwake
+                ? {
+                    ...thread.pullRequestSnooze,
+                    wokeAt: DateTime.formatIso(now),
+                    wakeReasons: command.wakeReasons ?? [],
+                  }
+                : null,
             updatedAt: alreadyAwake ? thread.updatedAt : now,
           };
         }
@@ -2473,6 +2485,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             settledAt: thread.settledOverride === "settled" ? null : thread.settledAt,
             snoozedUntil: null,
             snoozedAt: null,
+            pullRequestSnooze: null,
             updatedAt: alreadyPinned && !promotes ? thread.updatedAt : now,
           };
         }
@@ -2538,6 +2551,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   // Recovery changes acknowledge the same stopped run; keep its
                   // metadata timestamp from appearing as a fresh failure wake.
                   snoozedAt: now,
+                  pullRequestSnooze: null,
                 }
               : command.limitRecovery !== undefined &&
                   thread.limitRecovery?.snooze &&
@@ -4048,6 +4062,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           ...projection.thread,
           snoozedUntil: null,
           snoozedAt: null,
+          pullRequestSnooze: null,
           updatedAt: now,
         };
         yield* emit(

@@ -65,8 +65,12 @@ describe("restoring V2 settings", () => {
     ["persistComposerContextStrip", "Composer context"],
     ["autoResumeLimitedThreads", "Auto-resume limited threads"],
     ["snoozeLimitedThreads", "Snooze limited threads"],
+    ["snoozeGreenPullRequests", "Snooze green pull requests"],
   ] as const)("restores %s when it is the only changed setting", async (key, label) => {
-    state.settings = { ...DEFAULT_UNIFIED_SETTINGS, [key]: true };
+    state.settings = {
+      ...DEFAULT_UNIFIED_SETTINGS,
+      [key]: key === "snoozeGreenPullRequests" ? "indefinitely" : true,
+    };
     hooks.beginRender();
     const restore = useSettingsRestore();
 

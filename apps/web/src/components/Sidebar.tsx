@@ -29,7 +29,9 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   canSnooze,
   effectiveSnoozed,
+  pullRequestWakeLabel,
   threadWokeAt,
+  watchedPullRequestLabel,
 } from "@t3tools/client-runtime/state/thread-settled";
 import { resolveSettledThreadTimestamp } from "@t3tools/client-runtime/state/thread-sort";
 import {
@@ -63,6 +65,7 @@ import {
   CircleCheckIcon,
   CircleDashedIcon,
   ClockIcon,
+  EyeClosedIcon,
   EyeIcon,
   FolderIcon,
   GitBranchIcon,
@@ -1201,6 +1204,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     wokeAtDate !== null &&
     (lastVisitedDate === null || lastVisitedDate < wokeAtDate) &&
     thread.settledOverride !== "settled";
+  const pullRequestWake = isWoke ? pullRequestWakeLabel(thread) : null;
+  const wokeTooltip =
+    pullRequestWake === null
+      ? "Dismiss Woke notification"
+      : `${pullRequestWake} · click to dismiss`;
+  const WokeIcon = pullRequestWake === null ? AlarmClockIcon : EyeIcon;
+  const watchedPullRequest = variantAction === "unsnooze" ? watchedPullRequestLabel(thread) : null;
   // Background work always recedes when it is not selected: an unread parent
   // completion must not pull a still-working thread back into the foreground.
   // Ready and action-required rows keep their unread and wake prominence.
@@ -1493,6 +1503,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
           : shouldRecede
             ? "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
             : "bg-transparent text-sidebar-foreground hover:bg-sidebar-row-hover",
+    pullRequestWake !== null && "ring-1 ring-inset ring-amber-500/60 dark:ring-amber-400/50",
     isFileDragOver && "ring-1 ring-inset ring-primary/70",
     isFileDragOver && !props.isActive && !isSelected && "bg-sidebar-row-hover",
     // The lifted row is an opaque card so the rows beneath it never show
@@ -1716,15 +1727,31 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 <span
                   className={cn(
                     "inline-flex justify-end tabular-nums text-secondary-label transition-opacity",
-                    !isWoke && "group-hover/sidebar-row:opacity-0",
+                    !isWoke && watchedPullRequest === null && "group-hover/sidebar-row:opacity-0",
                   )}
                 >
                   {variantAction === "unsnooze" && props.snoozeWakeLabelText !== null ? (
                     // Snoozed rows show when they come BACK, not when they were
                     // last touched — the return ticket is the row's whole story.
-                    <span className="text-xs text-blue-600 tabular-nums dark:text-blue-400">
-                      {props.snoozeWakeLabelText}
-                    </span>
+                    watchedPullRequest === null ? (
+                      <span className="text-xs text-blue-600 tabular-nums dark:text-blue-400">
+                        {props.snoozeWakeLabelText}
+                      </span>
+                    ) : (
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <span className="inline-flex items-center gap-1 text-xs text-blue-600 tabular-nums dark:text-blue-400" />
+                          }
+                        >
+                          <EyeClosedIcon aria-label={watchedPullRequest} className="size-3.5" />
+                          {props.snoozeWakeLabelText === "∞" ? null : props.snoozeWakeLabelText}
+                        </TooltipTrigger>
+                        <TooltipPopup side="top">
+                          {watchedPullRequest} · wakes on a failed check or review
+                        </TooltipPopup>
+                      </Tooltip>
+                    )
                   ) : isWoke ? (
                     // A wake can land straight in the settled tail (e.g. PR
                     // merged while snoozed); the signal must survive the trip.
@@ -1737,12 +1764,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                             onClick={handleAcknowledgeWokeClick}
                             className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-xs font-medium text-amber-700 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring dark:text-amber-300"
                           >
-                            <AlarmClockIcon aria-hidden className="size-3" />
+                            <WokeIcon aria-hidden className="size-3" />
                             <span role="status">Woke</span>
                           </button>
                         }
                       />
-                      <TooltipPopup side="top">Dismiss Woke notification</TooltipPopup>
+                      <TooltipPopup side="top">{wokeTooltip}</TooltipPopup>
                     </Tooltip>
                   ) : (
                     <span className="text-xs">
@@ -1760,7 +1787,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                       onClick={handleUnsnoozeClick}
                       className={cn(
                         "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
-                        isWoke && "group-hover/sidebar-row:static",
+                        (isWoke || watchedPullRequest !== null) && "group-hover/sidebar-row:static",
                       )}
                     >
                       <AlarmClockOffIcon className="mb-px size-3" />
@@ -1891,12 +1918,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                                   topStatus.className,
                                 )}
                               >
-                                <AlarmClockIcon aria-hidden className="size-4 shrink-0" />
+                                <WokeIcon aria-hidden className="size-4 shrink-0" />
                                 <span role="status">{topStatus.label}</span>
                               </button>
                             }
                           />
-                          <TooltipPopup side="top">Dismiss Woke notification</TooltipPopup>
+                          <TooltipPopup side="top">{wokeTooltip}</TooltipPopup>
                         </Tooltip>
                       ) : (
                         <span

@@ -203,6 +203,16 @@ const BACKGROUND_ACTIVITY_PROFILE_LABELS: Record<BackgroundActivityProfile, stri
   "battery-saver": "Battery saver",
 };
 
+const GREEN_PULL_REQUEST_SNOOZE_OPTIONS = [
+  { value: "off", label: "Off" },
+  { value: "indefinitely", label: "Until something changes" },
+  { value: "1", label: "1 hour" },
+  { value: "3", label: "3 hours" },
+  { value: "24", label: "1 day" },
+  { value: "72", label: "3 days" },
+  { value: "168", label: "1 week" },
+] as const;
+
 type BackgroundActivityProfileOption = BackgroundActivityProfile | "advanced";
 
 const BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS: Record<BackgroundActivityProfileOption, string> = {
@@ -557,6 +567,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.snoozeLimitedThreads !== DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads
         ? ["Snooze limited threads"]
         : []),
+      ...(settings.snoozeGreenPullRequests !== DEFAULT_UNIFIED_SETTINGS.snoozeGreenPullRequests
+        ? ["Snooze green pull requests"]
+        : []),
       ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? ["Word wrap"] : []),
       ...(settings.persistComposerContextStrip !==
       DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip
@@ -676,6 +689,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.sidebarAutoSettleOnMerge,
       settings.autoResumeLimitedThreads,
       settings.snoozeLimitedThreads,
+      settings.snoozeGreenPullRequests,
       settings.sidebarProjectGroupingMode,
       settings.sidebarThreadPreviewCount,
       settings.showSkillsInSlashMenu,
@@ -778,6 +792,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
+      snoozeGreenPullRequests: DEFAULT_UNIFIED_SETTINGS.snoozeGreenPullRequests,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
@@ -2115,6 +2130,7 @@ export function GeneralSettingsPanel() {
   const hasServerTargets = connectedEnvironments.length > 0;
   const [backgroundActivityDialogOpen, setBackgroundActivityDialogOpen] = useState(false);
   const mixedResponseStreamingMode = useScopedSettingsMixed(["responseStreamingMode"]);
+  const mixedSnoozeGreenPullRequests = useScopedSettingsMixed(["snoozeGreenPullRequests"]);
   const lastEnabledProjectGroupingMode = useRef<SidebarProjectGroupingMode>(
     readLastEnabledProjectGroupingMode(),
   );
@@ -2123,6 +2139,11 @@ export function GeneralSettingsPanel() {
     connectedEnvironments.length > 0 &&
     connectedEnvironments.every(
       (target) => target.serverConfig?.environment.capabilities.threadAutoSettlement === true,
+    );
+  const supportsPullRequestWatchAutoSnooze =
+    connectedEnvironments.length > 0 &&
+    connectedEnvironments.every(
+      (target) => target.serverConfig?.environment.capabilities.pullRequestWatchAutoSnooze === true,
     );
   const supportsRestartContinuation =
     connectedEnvironments.length > 0 &&
@@ -2254,6 +2275,72 @@ export function GeneralSettingsPanel() {
             />
           }
         />
+        {supportsPullRequestWatchAutoSnooze ? (
+          <SettingsRow
+            serverScoped
+            {...searchableSetting("snooze-green-pull-requests")}
+            description="Snooze a thread once its pull request watch reports every check passing. It wakes early if a check later fails or review feedback arrives."
+            settingKeys={["snoozeGreenPullRequests"]}
+            resetAction={
+              settings.snoozeGreenPullRequests !==
+              DEFAULT_UNIFIED_SETTINGS.snoozeGreenPullRequests ? (
+                <SettingResetButton
+                  label="snooze green pull requests"
+                  onClick={() =>
+                    updateSettings({
+                      snoozeGreenPullRequests: DEFAULT_UNIFIED_SETTINGS.snoozeGreenPullRequests,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Select
+                value={
+                  mixedSnoozeGreenPullRequests
+                    ? null
+                    : settings.snoozeGreenPullRequests === null
+                      ? "off"
+                      : String(settings.snoozeGreenPullRequests)
+                }
+                onValueChange={(value) => {
+                  if (value === null) return;
+                  updateSettings({
+                    snoozeGreenPullRequests:
+                      value === "off"
+                        ? null
+                        : value === "indefinitely"
+                          ? "indefinitely"
+                          : Number(value),
+                  });
+                }}
+              >
+                <SelectTrigger
+                  size="sm"
+                  className="w-full sm:w-52"
+                  aria-label="Snooze green pull requests"
+                >
+                  <SelectValue>
+                    {(value: string | null) =>
+                      value === null
+                        ? "Mixed"
+                        : (GREEN_PULL_REQUEST_SNOOZE_OPTIONS.find(
+                            (option) => option.value === value,
+                          )?.label ?? `${value} hours`)
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  {GREEN_PULL_REQUEST_SNOOZE_OPTIONS.map((option) => (
+                    <SelectItem hideIndicator key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            }
+          />
+        ) : null}
         {supportsAutoSettlement ? (
           <>
             <SettingsRow

@@ -1,5 +1,9 @@
 // @effect-diagnostics globalDate:off -- UI snooze presets use local calendar boundaries and Intl labels.
-import type { OrchestrationThreadShell } from "@t3tools/contracts";
+import {
+  INDEFINITE_SNOOZE_UNTIL,
+  type OrchestrationThreadShell,
+  type OrchestrationV2PullRequestSnooze,
+} from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
 interface SettlementRunLike {
@@ -97,6 +101,7 @@ export function hasQueuedTurnStart(
 export interface ThreadSnoozeShell extends QueuedThreadShell {
   readonly snoozedUntil?: string | null;
   readonly snoozedAt?: string | null;
+  readonly pullRequestSnooze?: OrchestrationV2PullRequestSnooze | null;
   readonly hasPendingApprovals: boolean;
   readonly hasPendingUserInput: boolean;
 }
@@ -195,7 +200,7 @@ export function threadWokeAt(
   shell: ThreadSnoozeShell,
   options: { readonly now: string },
 ): string | null {
-  if (shell.snoozedUntil == null) return null;
+  if (shell.snoozedUntil == null) return shell.pullRequestSnooze?.wokeAt ?? null;
   const wakeAtMs = Date.parse(shell.snoozedUntil);
   if (Number.isNaN(wakeAtMs)) return null;
   // An early hand-raise wake stays authoritative even after the scheduled
@@ -312,14 +317,16 @@ export function resolveSnoozePresets(now: Date): ReadonlyArray<SnoozePreset> {
 }
 
 /**
- * Compact "wakes in" label for snoozed rows: "2h", "18h", "3d". Minutes
- * round up so a snooze never reads "0m" while still hidden. Shared by web
+ * Compact "wakes in" label for snoozed rows: "2h", "18h", "3d", or "∞" for an
+ * open-ended snooze. Minutes round up so a snooze never reads "0m" while
+ * still hidden. Shared by web
  * and mobile so the same wake time never reads differently per client.
  */
 export function snoozeWakeLabel(snoozedUntil: string, options: { readonly now: string }): string {
   const wakeMs = Date.parse(snoozedUntil);
   const nowMs = Date.parse(options.now);
   if (Number.isNaN(wakeMs) || Number.isNaN(nowMs)) return "now";
+  if (wakeMs >= Date.parse(INDEFINITE_SNOOZE_UNTIL)) return "∞";
   const remainingMs = wakeMs - nowMs;
   if (remainingMs <= 0) return "now";
   if (remainingMs < HOUR_MS) return `${Math.max(1, Math.ceil(remainingMs / 60_000))}m`;
@@ -360,4 +367,30 @@ export function localSnoozeDate(date: Date): string {
 
 export function localSnoozeTime(date: Date): string {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+/**
+ * Why a pull request woke this thread, for the Woke tooltip: "New review
+ * comment on #13", "Check failed on #13". Null when something else woke it.
+ */
+export function pullRequestWakeLabel(shell: ThreadSnoozeShell): string | null {
+  const snooze = shell.pullRequestSnooze;
+  if (snooze == null || snooze.wokeAt === null || shell.snoozedUntil != null) return null;
+  const reasons = snooze.wakeReasons;
+  const what =
+    reasons.includes("check_failed") && reasons.includes("review_feedback")
+      ? "Check failed and new review feedback"
+      : reasons.includes("check_failed")
+        ? "Check failed"
+        : reasons.includes("review_feedback")
+          ? "New review feedback"
+          : "Pull request changed";
+  return `${what} on #${snooze.number}`;
+}
+
+/** The pull request a snoozed thread is still watching, for its snoozed-row icon. */
+export function watchedPullRequestLabel(shell: ThreadSnoozeShell): string | null {
+  const snooze = shell.pullRequestSnooze;
+  if (snooze == null || snooze.wokeAt !== null || shell.snoozedUntil == null) return null;
+  return `Watching #${snooze.number}`;
 }
