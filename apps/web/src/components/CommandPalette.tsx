@@ -49,6 +49,7 @@ import {
   FolderPlusIcon,
   LinkIcon,
   MessageSquareIcon,
+  MessagesSquareIcon,
   MonitorIcon,
   MoonIcon,
   PaletteIcon,
@@ -196,6 +197,7 @@ import type { Project } from "../types";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
 
+const ALL_THREADS_VIEW_VALUE = "all-threads";
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 
 const APPEARANCE_OPTIONS = [
@@ -813,7 +815,9 @@ function OpenCommandPaletteDialog(props: {
         .map((environment) => environment.environmentId),
     [environments],
   );
-  const threadSearchQuery = currentView === null && !isActionsOnly ? deferredQuery : "";
+  const isAllThreadsView = currentView?.groups[0]?.value === ALL_THREADS_VIEW_VALUE;
+  const threadSearchQuery =
+    (currentView === null || isAllThreadsView) && !isActionsOnly ? deferredQuery : "";
   const threadSearch = useThreadSearch(environmentIds, threadSearchQuery);
   const threadContentMatchByKey = useMemo(
     () =>
@@ -2078,6 +2082,20 @@ function OpenCommandPaletteDialog(props: {
   }
 
   const rootGroups = buildRootGroups({ actionItems, recentThreadItems });
+  const threadSearchItems =
+    linkedThreadSearch?.linkedThreads && deferredQuery === linkedThreadSearch.query
+      ? buildLinkedThreadActionItems({
+          ...linkedThreadSearch.linkedThreads,
+          query: linkedThreadSearch.query,
+          icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
+          runThread: async (thread) => {
+            await navigate({
+              to: "/$environmentId/$threadId",
+              params: buildThreadRouteParams(scopeThreadRef(thread.environmentId, thread.id)),
+            });
+          },
+        })
+      : allThreadItems;
   const settingsSearchItems: CommandPaletteActionItem[] = searchSettings(
     deferredQuery,
     availableSettingsSearchItems,
@@ -2112,28 +2130,29 @@ function OpenCommandPaletteDialog(props: {
         ? changeThemeItem.groups
         : currentView?.groups[0]?.value === "appearance"
           ? changeAppearanceItem.groups
-          : (currentView?.groups ?? rootGroups);
+          : isAllThreadsView
+            ? [{ value: ALL_THREADS_VIEW_VALUE, label: "Threads", items: threadSearchItems }]
+            : (currentView?.groups ?? rootGroups);
 
+  const showAllThreadsIcon = <MessagesSquareIcon className={ITEM_ICON_CLASS} />;
+  const showAllThreadsAddonIcon = <MessagesSquareIcon className={ADDON_ICON_CLASS} />;
   const filteredGroups = filterCommandPaletteGroups({
     activeGroups,
     query: deferredQuery,
     isInSubmenu: currentView !== null,
     projectSearchItems: projectSearchItems,
     settingsSearchItems,
-    threadSearchItems:
-      linkedThreadSearch?.linkedThreads && deferredQuery === linkedThreadSearch.query
-        ? buildLinkedThreadActionItems({
-            ...linkedThreadSearch.linkedThreads,
-            query: linkedThreadSearch.query,
-            icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
-            runThread: async (thread) => {
-              await navigate({
-                to: "/$environmentId/$threadId",
-                params: buildThreadRouteParams(scopeThreadRef(thread.environmentId, thread.id)),
-              });
-            },
-          })
-        : allThreadItems,
+    threadSearchItems,
+    threadSearchOverflowItem: (matchCount) => ({
+      kind: "submenu",
+      value: "threads:show-all",
+      searchTerms: [],
+      title: `Show all ${matchCount} threads`,
+      icon: showAllThreadsIcon,
+      addonIcon: showAllThreadsAddonIcon,
+      groups: [{ value: ALL_THREADS_VIEW_VALUE, label: "Threads", items: [] }],
+      initialQuery: deferredQuery,
+    }),
   });
 
   const handleAddProjectForEnvironment = useCallback(
