@@ -81,7 +81,6 @@ export function useThreadSearch(
   query: string,
 ): {
   readonly matches: ReadonlyArray<EnvironmentThreadSearchMatch>;
-  /** The settled query `matches` were fetched for; empty while newer input debounces. */
   readonly query: string;
   readonly isPending: boolean;
 } {

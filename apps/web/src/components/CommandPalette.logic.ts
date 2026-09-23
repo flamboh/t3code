@@ -387,7 +387,6 @@ export function filterCommandPaletteGroups(input: {
   projectSearchItems: ReadonlyArray<CommandPaletteActionItem>;
   settingsSearchItems?: ReadonlyArray<CommandPaletteActionItem>;
   threadSearchItems: ReadonlyArray<CommandPaletteActionItem>;
-  /** Replaces root thread matches past `THREAD_SEARCH_RESULT_LIMIT`, e.g. with a "show all" view. */
   threadSearchOverflowItem?: (matchCount: number) => CommandPaletteSubmenuItem;
 }): CommandPaletteGroup[] {
   const isActionsFilter = input.query.startsWith(">");

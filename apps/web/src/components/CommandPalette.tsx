@@ -58,6 +58,7 @@ import {
   SunIcon,
   TextSearchIcon,
 } from "lucide-react";
+import type { LegendListRef } from "@legendapp/list/react";
 import {
   useCallback,
   useDeferredValue,
@@ -816,6 +817,7 @@ function OpenCommandPaletteDialog(props: {
     [environments],
   );
   const isAllThreadsView = currentView?.groups[0]?.value === ALL_THREADS_VIEW_VALUE;
+  const allThreadsListRef = useRef<LegendListRef | null>(null);
   const threadSearchQuery =
     (currentView === null || isAllThreadsView) && !isActionsOnly ? deferredQuery : "";
   const threadSearch = useThreadSearch(environmentIds, threadSearchQuery);
@@ -2604,6 +2606,9 @@ function OpenCommandPaletteDialog(props: {
     displayedGroups = relativePathNeedsActiveProject ? [] : browseGroups;
   }
 
+  const allThreadsItemValues = isAllThreadsView
+    ? displayedGroups.flatMap((group) => group.items.map((item) => item.value))
+    : undefined;
   const inputPlaceholder =
     remoteProjectInputPlaceholder(addProjectCloneFlow) ??
     getCommandPaletteInputPlaceholder(paletteMode);
@@ -2683,6 +2688,18 @@ function OpenCommandPaletteDialog(props: {
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
+    if (isAllThreadsView && event.key === "Enter" && !event.nativeEvent.isComposing) {
+      const highlightedItem = displayedGroups
+        .flatMap((group) => group.items)
+        .find((item) => item.value === highlightedItemValue);
+      if (highlightedItem) {
+        (event as typeof event & { preventBaseUIHandler?: () => void }).preventBaseUIHandler?.();
+        event.preventDefault();
+        event.stopPropagation();
+        executeItem(highlightedItem);
+        return;
+      }
+    }
     const command = resolveShortcutCommand(event, keybindings, {
       platform: navigator.platform,
       context: { modelPickerOpen: false },
@@ -3000,8 +3017,15 @@ function OpenCommandPaletteDialog(props: {
         onKeyDown: handleKeyDown,
       }}
       mode="none"
-      onItemHighlighted={(value) => {
+      {...(allThreadsItemValues ? { items: allThreadsItemValues, virtualized: true } : {})}
+      onItemHighlighted={(value, eventDetails) => {
         setHighlightedItemValue(typeof value === "string" ? value : null);
+        if (isAllThreadsView && eventDetails.reason === "keyboard" && eventDetails.index >= 0) {
+          void allThreadsListRef.current?.scrollIndexIntoView?.({
+            index: eventDetails.index,
+            animated: false,
+          });
+        }
       }}
       onValueChange={handleQueryChange}
       panelClassName="max-h-[min(28rem,70vh)]"
@@ -3028,6 +3052,8 @@ function OpenCommandPaletteDialog(props: {
         isActionsOnly={isActionsOnly}
         keybindings={keybindings}
         onExecuteItem={executeItem}
+        virtualized={isAllThreadsView}
+        ref={allThreadsListRef}
         {...(addProjectCloneFlow?.step === "repository"
           ? {
               emptyStateMessage:
