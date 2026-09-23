@@ -1370,7 +1370,7 @@ function OpenCommandPaletteDialog(props: {
             ? {
                 source: match.source,
                 snippet: match.snippet,
-                query: threadSearchQuery,
+                query: threadSearch.query,
               }
             : undefined;
         },
@@ -1390,7 +1390,7 @@ function OpenCommandPaletteDialog(props: {
       projectTitleById,
       providerEntryByEnvironmentAndInstanceId,
       threadContentMatchByKey,
-      threadSearchQuery,
+      threadSearch.query,
       threads,
     ],
   );
