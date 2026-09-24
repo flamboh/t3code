@@ -1054,9 +1054,15 @@ function OpenCommandPaletteDialog(props: {
       getFilesystemBrowsePath(
         query,
         browseEnvironmentPlatform,
-        browseEnvironmentId !== null && !isRemoteProjectRepositoryStep,
+        browseEnvironmentId !== null && !isRemoteProjectRepositoryStep && !isAllThreadsView,
       ),
-    [browseEnvironmentId, browseEnvironmentPlatform, isRemoteProjectRepositoryStep, query],
+    [
+      browseEnvironmentId,
+      browseEnvironmentPlatform,
+      isAllThreadsView,
+      isRemoteProjectRepositoryStep,
+      query,
+    ],
   );
   const isBrowsing = browsePath.isBrowsing;
   const browseDirectoryPath = browsePath.directoryPath;
