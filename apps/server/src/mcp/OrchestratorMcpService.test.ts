@@ -58,6 +58,7 @@ describe("OrchestratorMcpService", () => {
         runs: [{ id: childRunId, ordinal: 1, status: "completed" }],
         contextTransfers: [],
         messages: [],
+        turnItems: [],
         subagents: [],
         providerThreads: [],
       } as unknown as OrchestrationV2ThreadProjection;

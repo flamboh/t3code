@@ -3248,6 +3248,9 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   json_extract(t.payload_json, '$.limitRecovery.runId') IS NOT r.run_id
                   OR json_extract(t.payload_json, '$.limitRecovery.resetAt') IS NOT json_extract(item.payload_json, '$.failure.resetAt')
                 )
+                -- A subagent child reports its failure to the parent, which owns
+                -- the retry. Only an explicit per-thread choice resumes one.
+                AND json_extract(t.payload_json, '$.lineage.relationshipToParent') IS NOT 'subagent'
                 AND (
                   ${options.autoResume}
                   OR (${options.snooze} AND julianday(json_extract(item.payload_json, '$.failure.resetAt')) > julianday(${DateTime.formatIso(options.now)}))
@@ -5422,7 +5425,10 @@ export const layerMemory: Layer.Layer<ProjectionStoreV2> = Layer.effect(
                   thread.limitRecovery?.runId !== thread.latestRunId ||
                   thread.limitRecovery.resetAt !== thread.usageLimitResetAt
                 ) {
-                  return options.autoResume || (options.snooze && resetMs > nowMs);
+                  return (
+                    thread.lineage.relationshipToParent !== "subagent" &&
+                    (options.autoResume || (options.snooze && resetMs > nowMs))
+                  );
                 }
                 return (
                   thread.limitRecovery.autoResume &&

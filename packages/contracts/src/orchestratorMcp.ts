@@ -203,6 +203,10 @@ export const OrchestratorMcpDelegateTaskResult = Schema.Struct({
   providerInstanceId: ProviderInstanceId,
   model: Schema.NullOr(Schema.String),
   summary: Schema.NullOr(Schema.String),
+  usageLimitResetAt: Schema.NullOr(IsoDateTime).annotate({
+    description:
+      "Set when the child stopped on a provider usage limit: when that limit resets. The child does not resume on its own; after this time, continue it with t3_thread_send to childThreadId or delegate again.",
+  }),
   resultContextTransferId: Schema.NullOr(ContextTransferId),
   waitTimedOut: Schema.Boolean.annotate({
     description:

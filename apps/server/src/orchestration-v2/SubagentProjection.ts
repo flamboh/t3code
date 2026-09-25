@@ -159,6 +159,8 @@ export function subagentResultForRun(
   readonly text: string;
   readonly messageId: OrchestrationV2ConversationMessage["id"] | null;
   readonly turnItemId: OrchestrationV2TurnItem["id"] | null;
+  /** Set when the run stopped on a provider usage limit that named its reset. */
+  readonly usageLimitResetAt: string | null;
 } {
   const message =
     projection.messages
@@ -200,6 +202,10 @@ export function subagentResultForRun(
     text,
     messageId: failure === undefined ? (message?.id ?? turnItem?.messageId ?? null) : null,
     turnItemId: failure?.id ?? turnItem?.id ?? null,
+    usageLimitResetAt:
+      failure?.type === "error" && failure.failure.class === "usage_limit"
+        ? (failure.failure.resetAt ?? null)
+        : null,
   };
 }
 

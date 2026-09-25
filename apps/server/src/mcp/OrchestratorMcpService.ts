@@ -1066,12 +1066,11 @@ const make = Effect.gen(function* () {
             : taskStatusForRun(childRun) === "queued"
               ? "queued"
               : "running";
-      const derivedResult =
-        task.result !== null
-          ? task.result
-          : progress.resultRun !== undefined && isTerminalTaskStatus(status)
-            ? subagentResultForRun(childProjection, progress.resultRun).text
-            : null;
+      const resultRunResult =
+        progress.resultRun !== undefined && isTerminalTaskStatus(status)
+          ? subagentResultForRun(childProjection, progress.resultRun)
+          : undefined;
+      const derivedResult = task.result !== null ? task.result : (resultRunResult?.text ?? null);
       const resultTransfers = parentProjection.contextTransfers.filter(
         (transfer) =>
           transfer.type === "subagent_result" &&
@@ -1099,6 +1098,7 @@ const make = Effect.gen(function* () {
         providerInstanceId: task.providerInstanceId,
         model: task.model,
         summary: derivedResult,
+        usageLimitResetAt: resultRunResult?.usageLimitResetAt ?? null,
         resultContextTransferId: resultTransfer?.id ?? null,
         latestTerminalRunId: terminalRun?.id ?? null,
         latestTerminalStatus:

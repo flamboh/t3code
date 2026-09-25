@@ -9,6 +9,7 @@ import {
   TurnItemId,
   type OrchestrationV2Run,
   type OrchestrationV2AppThread,
+  type OrchestrationV2TurnItem,
   ProjectId,
   ProviderInstanceId,
   ProviderThreadId,
@@ -281,4 +282,45 @@ it("exposes the provider failure rather than a progress message from the failed 
   assert.equal(result.text, failure.message);
   assert.equal(result.turnItemId, artifacts.turnItem.id);
   assert.isNull(result.messageId);
+  assert.isNull(result.usageLimitResetAt);
+});
+
+it("reports when a usage limit that stopped the child resets", () => {
+  const { projection, run } = taskFixture();
+  const resetAt = "2026-09-25T04:10:00.000Z";
+  const failure = {
+    class: "usage_limit" as const,
+    message: "Claude API rate limit reached. Try again later.",
+    code: "api_error_429",
+    retryable: true,
+    resetAt,
+  };
+  const turnItems: ReadonlyArray<OrchestrationV2TurnItem> = [
+    {
+      id: TurnItemId.make("limit-error"),
+      threadId: childThreadId,
+      runId: run.id,
+      nodeId: run.rootNodeId,
+      providerThreadId: null,
+      providerTurnId: null,
+      nativeItemRef: null,
+      parentItemId: null,
+      ordinal: 1,
+      status: "failed",
+      title: "Usage limit reached",
+      startedAt: childCreatedAt,
+      completedAt: childCreatedAt,
+      updatedAt: childCreatedAt,
+      type: "error",
+      failure,
+    },
+  ];
+  const failed = subagentResultForRun({ ...projection, turnItems }, { ...run, status: "failed" });
+  assert.equal(failed.text, failure.message);
+  assert.equal(failed.usageLimitResetAt, resetAt);
+  // Only a failed run exposes its error, so an interrupted run has no limit to report.
+  assert.isNull(
+    subagentResultForRun({ ...projection, turnItems }, { ...run, status: "interrupted" })
+      .usageLimitResetAt,
+  );
 });

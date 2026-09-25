@@ -2056,6 +2056,35 @@ it.layer(TestLayer)("ProjectionStoreV2", (it) => {
         yield* sql`UPDATE orchestration_v2_projection_threads
           SET payload_json = ${originalRow!.payload_json} WHERE thread_id = ${threadId}`;
       }
+      // A subagent child's parent owns its retry, so preferences never arm it,
+      // but an explicit per-thread choice still resumes it.
+      yield* sql`UPDATE orchestration_v2_projection_threads
+        SET payload_json = json_set(payload_json, '$.lineage.relationshipToParent', 'subagent')
+        WHERE thread_id = ${threadId}`;
+      assert.isUndefined(
+        (yield* store.getLimitRecoveryCandidates({ now, autoResume: true, snooze: true })).find(
+          (row) => row.id === threadId,
+        ),
+      );
+      const childChoice = {
+        runId: original.id,
+        resetAt: limitItem.failure.resetAt,
+        autoResume: true,
+        requestId: CommandId.make("recovery:child-choice"),
+      };
+      yield* sql`UPDATE orchestration_v2_projection_threads
+        SET payload_json = json_set(payload_json, '$.limitRecovery', json(${encodeUnknownJsonString(childChoice)}))
+        WHERE thread_id = ${threadId}`;
+      assert.deepEqual(
+        (yield* store.getLimitRecoveryCandidates({
+          now: DateTime.makeUnsafe(limitItem.failure.resetAt),
+          autoResume: false,
+          snooze: false,
+        })).find((row) => row.id === threadId)?.limitRecovery,
+        childChoice,
+      );
+      yield* sql`UPDATE orchestration_v2_projection_threads
+        SET payload_json = ${originalRow!.payload_json} WHERE thread_id = ${threadId}`;
       yield* sql`UPDATE orchestration_v2_projection_threads SET deleted_at = ${DateTime.formatIso(now)} WHERE thread_id = ${threadId}`;
       assert.isUndefined(
         (yield* store.getLimitRecoveryCandidates({ now, autoResume: true, snooze: false })).find(

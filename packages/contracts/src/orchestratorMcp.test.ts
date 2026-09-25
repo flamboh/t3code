@@ -46,6 +46,7 @@ describe("orchestrator MCP contracts", () => {
       providerInstanceId: "claudeAgent",
       model: "claude-sonnet-4-6",
       summary: "Workspace inspected.",
+      usageLimitResetAt: null,
       resultContextTransferId: "context-transfer-result-1",
       latestTerminalRunId: "run-child-1",
       latestTerminalStatus: "completed",

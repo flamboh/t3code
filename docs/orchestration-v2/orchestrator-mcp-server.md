@@ -249,6 +249,7 @@ type DelegateTaskResult = {
   providerInstanceId: string;
   model: string | null;
   summary: string | null;
+  usageLimitResetAt: string | null;
   resultContextTransferId: string | null;
   latestTerminalRunId: string | null;
   latestTerminalStatus: "completed" | "failed" | "cancelled" | "interrupted" | null;
@@ -267,7 +268,10 @@ and an available result. The task remains nonterminal until its known work
 finishes. Its published `summary` and result transfer then remain stable across
 later follow-ups. `hasPendingChildRuns` reports later queued or executing turns;
 `latestTerminal*` exposes later executed, non-monitor results without replacing
-the published task result.
+the published task result. `usageLimitResetAt` is set when the task stopped on a
+provider usage limit. Limit recovery never arms a subagent child from the
+auto-resume preference, so the parent decides whether to continue it after that
+time.
 
 ### `task_cancel`
 
