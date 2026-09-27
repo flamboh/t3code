@@ -101,6 +101,7 @@ export interface EventSinkV2Shape {
     readonly activeAttemptId: RunAttemptId;
     readonly expectedStatus: OrchestrationV2Run["status"];
     readonly events: ReadonlyArray<OrchestrationV2DomainEvent>;
+    readonly effects?: ReadonlyArray<PendingOrchestrationEffectV2>;
   }) => Effect.Effect<
     {
       readonly committed: boolean;
@@ -122,6 +123,7 @@ export interface EventSinkV2Shape {
     readonly activeAttemptId: RunAttemptId;
     readonly expectedLastRunOrdinal: number;
     readonly events: ReadonlyArray<OrchestrationV2DomainEvent>;
+    readonly effects?: ReadonlyArray<PendingOrchestrationEffectV2>;
   }) => Effect.Effect<
     {
       readonly committed: boolean;
@@ -389,9 +391,13 @@ const baseLayer: Layer.Layer<
               events: normalized,
             });
             yield* applyStoredEvents(storedEvents);
+            yield* effectOutbox.enqueue(input.effects ?? []);
             return { committed: true as const, storedEvents };
           }),
         );
+        if (result.committed && input.effects !== undefined && input.effects.length > 0) {
+          yield* effectOutbox.notifyAvailable(input.effects.length);
+        }
         if (result.committed) {
           yield* eventStore.publishCommitted(result.storedEvents);
           yield* publishLiveEvents(result.storedEvents);
@@ -450,9 +456,13 @@ const baseLayer: Layer.Layer<
             events: normalized,
           });
           yield* applyStoredEvents(storedEvents);
+          yield* effectOutbox.enqueue(input.effects ?? []);
           return { committed: true as const, storedEvents };
         }),
       );
+      if (result.committed && input.effects !== undefined && input.effects.length > 0) {
+        yield* effectOutbox.notifyAvailable(input.effects.length);
+      }
       if (result.committed) {
         yield* eventStore.publishCommitted(result.storedEvents);
         yield* publishLiveEvents(result.storedEvents);

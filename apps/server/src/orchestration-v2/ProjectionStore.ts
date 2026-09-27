@@ -4418,10 +4418,15 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
 
     const getThreadAttachmentIds: ProjectionStoreV2Shape["getThreadAttachmentIds"] = (threadId) =>
       sql<{ id: string }>`
-      SELECT DISTINCT json_extract(attachment.value, '$.id') AS id
+      SELECT json_extract(attachment.value, '$.id') AS id
       FROM orchestration_v2_projection_messages AS message,
         json_each(message.payload_json, '$.attachments') AS attachment
       WHERE message.thread_id = ${threadId}
+      UNION
+      SELECT json_extract(snapshot.value, '$.attachmentId') AS id
+      FROM orchestration_v2_projection_turn_items AS item,
+        json_each(item.payload_json, '$.mediaSnapshots') AS snapshot
+      WHERE item.thread_id = ${threadId} AND item.type = 'assistant_message'
     `.pipe(
         Effect.map((rows) => rows.map((row) => row.id)),
         Effect.mapError((cause) => new ProjectionStoreReadError({ threadId, cause })),
@@ -5684,11 +5689,16 @@ export const layerMemory: Layer.Layer<ProjectionStoreV2> = Layer.effect(
           .getThreadProjection(threadId)
           .pipe(
             Effect.map((projection) => [
-              ...new Set(
-                projection.messages.flatMap((message) =>
+              ...new Set([
+                ...projection.messages.flatMap((message) =>
                   message.attachments.map((attachment) => attachment.id),
                 ),
-              ),
+                ...projection.turnItems.flatMap((item) =>
+                  item.type === "assistant_message"
+                    ? (item.mediaSnapshots ?? []).map((snapshot) => snapshot.attachmentId)
+                    : [],
+                ),
+              ]),
             ]),
           ),
       getThreadRecords: (threadId, fields, filter) =>

@@ -209,6 +209,7 @@ import { fileChipMenu, resolveFileChipTarget, type FileChipAction } from "./file
 import { useFileChipShare } from "./useFileChipShare";
 import {
   MarkdownImageAvailableWidthContext,
+  MessageMediaSnapshotsContext,
   ThreadMarkdownImage,
   ThreadMarkdownImageUnavailable,
   ThreadMarkdownImageView,
@@ -1838,14 +1839,22 @@ function renderFeedEntry(
       >
         {renderedText.trim().length > 0 ? (
           <MarkdownImageAvailableWidthContext value={props.markdownContentWidth}>
-            <AssistantMarkdownContent
-              markdown={renderedText}
-              markdownStyles={styles}
-              linkHandlers={props.markdownLinkHandlers}
-              onUseArtifactTemplate={props.onUseArtifactTemplate}
-              renderImage={props.renderMarkdownImage}
-              skills={props.skills}
-            />
+            <MessageMediaSnapshotsContext
+              value={
+                message.projectedItem?.item.type === "assistant_message"
+                  ? message.projectedItem.item.mediaSnapshots
+                  : undefined
+              }
+            >
+              <AssistantMarkdownContent
+                markdown={renderedText}
+                markdownStyles={styles}
+                linkHandlers={props.markdownLinkHandlers}
+                onUseArtifactTemplate={props.onUseArtifactTemplate}
+                renderImage={props.renderMarkdownImage}
+                skills={props.skills}
+              />
+            </MessageMediaSnapshotsContext>
           </MarkdownImageAvailableWidthContext>
         ) : null}
         {attachments.map((attachment) => {

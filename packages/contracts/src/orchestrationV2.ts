@@ -30,7 +30,7 @@ import {
   TrimmedNonEmptyString,
   TurnItemId,
 } from "./baseSchemas.ts";
-import { ChatAttachment } from "./chatAttachment.ts";
+import { ChatAttachment, ChatAttachmentId } from "./chatAttachment.ts";
 import {
   OrchestrationGetFullThreadDiffInput,
   OrchestrationGetFullThreadDiffResult,
@@ -1083,6 +1083,13 @@ const OrchestrationV2TurnItemBaseFields = {
   updatedAt: Schema.DateTimeUtc,
 } as const;
 
+/** A local image an assistant message embedded, copied when the message completed. */
+export const OrchestrationV2MediaSnapshot = Schema.Struct({
+  path: Schema.String,
+  attachmentId: ChatAttachmentId,
+});
+export type OrchestrationV2MediaSnapshot = typeof OrchestrationV2MediaSnapshot.Type;
+
 export const OrchestrationV2FileSearchResult = Schema.Struct({
   fileName: TrimmedNonEmptyString,
   line: Schema.optional(PositiveInt),
@@ -1123,6 +1130,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
     text: Schema.String,
     attachments: Schema.optional(Schema.Array(ChatAttachment)),
     streaming: Schema.Boolean,
+    mediaSnapshots: Schema.optional(Schema.Array(OrchestrationV2MediaSnapshot)),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -1841,6 +1849,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     text: Schema.String,
     attachments: Schema.optional(Schema.Array(ChatAttachment)),
     streaming: Schema.Boolean,
+    mediaSnapshots: Schema.optional(Schema.Array(OrchestrationV2MediaSnapshot)),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,

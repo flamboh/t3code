@@ -6,6 +6,7 @@ import {
   type OrchestrationV2PlanArtifact,
   type OrchestrationV2Run,
   type OrchestrationV2ProviderTurn,
+  type OrchestrationV2TurnItem,
   type ModelSelection,
   type RuntimeMode,
   type ProviderInteractionMode,
@@ -30,6 +31,7 @@ import { EventSinkV2 } from "./EventSink.ts";
 import { ProjectionStoreV2 } from "./ProjectionStore.ts";
 import { IdAllocatorV2 } from "./IdAllocator.ts";
 import { ProviderAdapterV2Event } from "./ProviderAdapter.ts";
+import { localMarkdownImagePaths, messageMediaSnapshotEffects } from "./MessageMediaSnapshots.ts";
 import { makeProviderFailureTurnItem } from "./ProviderFailure.ts";
 
 export class ProviderEventNormalizeError extends Schema.TaggedError<ProviderEventNormalizeError>()(
@@ -293,6 +295,28 @@ export const layer: Layer.Layer<
         );
       });
 
+    /** Providers re-send whole items; a completed message keeps the image copies it already took. */
+    const keepMediaSnapshots = Effect.fn("ProviderEventIngestor.keepMediaSnapshots")(function* (
+      item: OrchestrationV2TurnItem,
+    ) {
+      if (
+        item.type !== "assistant_message" ||
+        item.streaming ||
+        item.mediaSnapshots !== undefined ||
+        localMarkdownImagePaths(item.text).length === 0
+      ) {
+        return item;
+      }
+      const { turnItems } = yield* projections.getThreadRecords(item.threadId, ["turnItems"], {
+        turnItemRunIds: [item.runId],
+        turnItemTypes: ["assistant_message"],
+      });
+      const recorded = turnItems.find((candidate) => candidate.id === item.id);
+      return recorded?.type === "assistant_message" && recorded.mediaSnapshots !== undefined
+        ? { ...item, mediaSnapshots: recorded.mediaSnapshots }
+        : item;
+    });
+
     const dismissNativeUserInputs = Effect.fn("ProviderEventIngestor.dismissNativeUserInputs")(
       function* (
         input: ProviderEventIngestInput,
@@ -417,7 +441,7 @@ export const layer: Layer.Layer<
               yield* makeDomainEvent(input, {
                 type: "turn-item.updated",
                 threadId: input.event.turnItem.threadId,
-                payload: input.event.turnItem,
+                payload: yield* keepMediaSnapshots(input.event.turnItem),
                 runId: input.event.turnItem.runId,
                 nodeId: input.event.turnItem.nodeId,
               }),
@@ -506,6 +530,7 @@ export const layer: Layer.Layer<
           if (events.length === 0) {
             return [];
           }
+          const effects = messageMediaSnapshotEffects(events);
           const mapWriteError = (cause: unknown) =>
             new ProviderEventPublishError({
               providerSessionId: input.providerSessionId,
@@ -519,18 +544,22 @@ export const layer: Layer.Layer<
                 ...(input.commandId === undefined ? {} : { commandId: input.commandId }),
                 ...input.writeIfProviderThreadOwner,
                 events,
+                effects,
               })
               .pipe(Effect.mapError(mapWriteError));
             return ownerResult.storedEvents;
           }
           if (input.writeIfRunCurrent === undefined) {
-            return yield* eventSink
-              .write({
-                guardPendingUserInputCancellations: true,
-                ...(input.commandId === undefined ? {} : { commandId: input.commandId }),
-                events,
-              })
-              .pipe(Effect.mapError(mapWriteError));
+            const write = {
+              guardPendingUserInputCancellations: true,
+              ...(input.commandId === undefined ? {} : { commandId: input.commandId }),
+              events,
+            };
+            return yield* (
+              effects.length === 0
+                ? eventSink.write(write)
+                : eventSink.writeWithEffects({ ...write, effects })
+            ).pipe(Effect.mapError(mapWriteError));
           }
           const result = yield* eventSink
             .writeIfRunCurrent({
@@ -539,6 +568,7 @@ export const layer: Layer.Layer<
               threadId: input.threadId,
               ...input.writeIfRunCurrent,
               events,
+              effects,
             })
             .pipe(Effect.mapError(mapWriteError));
           return result.storedEvents;

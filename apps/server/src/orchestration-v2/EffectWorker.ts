@@ -31,6 +31,7 @@ import { ProviderSessionManagerV2 } from "./ProviderSessionManager.ts";
 import { ProviderTurnControlServiceV2 } from "./ProviderTurnControlService.ts";
 import { ProviderTurnStartServiceV2 } from "./ProviderTurnStartService.ts";
 import { RuntimeRequestServiceV2 } from "./RuntimeRequestService.ts";
+import { MessageMediaSnapshotService } from "./MessageMediaSnapshots.ts";
 import { ThreadTitleRegenerationService } from "./ThreadTitleRegenerationService.ts";
 import { ThreadManagementService } from "./ThreadManagementService.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
@@ -102,6 +103,7 @@ export const executorLayer: Layer.Layer<
   Effect.gen(function* () {
     const runFinalization = yield* RunFinalizationService;
     const resourceCleanup = yield* ResourceCleanupService;
+    const messageMediaSnapshots = yield* MessageMediaSnapshotService;
     const checkpointRollback = yield* CheckpointRollbackServiceV2;
     const providerSessions = yield* ProviderSessionManagerV2;
     const providerTurnControl = yield* ProviderTurnControlServiceV2;
@@ -426,6 +428,12 @@ export const executorLayer: Layer.Layer<
                   }),
               ),
             );
+          case "message-media.snapshot":
+            return messageMediaSnapshots.snapshot({
+              threadId: effect.threadId,
+              runId: effect.request.runId,
+              turnItemId: effect.request.turnItemId,
+            });
           case "thread-title.generate":
             return threadTitleRegeneration
               .execute({

@@ -1,4 +1,9 @@
-import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
+import type {
+  AssetResource,
+  EnvironmentId,
+  OrchestrationV2MediaSnapshot,
+} from "@t3tools/contracts";
+import { mediaSnapshotAttachmentId } from "@t3tools/client-runtime/markdown-images";
 import { createContext, useContext, useEffect, useId, useState } from "react";
 import {
   ActivityIndicator,
@@ -30,6 +35,11 @@ import {
  * width takes over once it is known.
  */
 export const MarkdownImageAvailableWidthContext = createContext(0);
+
+/** Copies of local images the message took when it completed; they win over the live files. */
+export const MessageMediaSnapshotsContext = createContext<
+  ReadonlyArray<OrchestrationV2MediaSnapshot> | undefined
+>(undefined);
 
 export function ThreadMarkdownImageView(props: {
   readonly uri: string | null;
@@ -184,20 +194,33 @@ export function ThreadMarkdownImage(props: {
   readonly actionsSource?: MediaActionsSource;
   readonly onPressPreview: (source: FilePreviewSource) => void;
 }) {
-  const assetUrl = useAssetUrlState(props.environmentId, props.resource);
+  const snapshots = useContext(MessageMediaSnapshotsContext);
+  const snapshotId =
+    props.resource._tag === "media-file"
+      ? mediaSnapshotAttachmentId(snapshots, props.resource.path)
+      : undefined;
+  const resource =
+    snapshotId === undefined
+      ? props.resource
+      : { _tag: "attachment" as const, attachmentId: snapshotId };
+  const assetUrl = useAssetUrlState(props.environmentId, resource);
+  const actionsSource =
+    snapshotId !== undefined && props.actionsSource && "resource" in props.actionsSource
+      ? { ...props.actionsSource, resource }
+      : props.actionsSource;
 
   return (
     <ThreadMarkdownImageView
       uri={assetUrl._tag === "Success" ? assetUrl.url + (props.srcFragment ?? "") : null}
       sourceKey={
-        props.resource._tag === "attachment"
-          ? `attachment:${props.resource.attachmentId}`
-          : `workspace:${props.resource.path}`
+        resource._tag === "attachment"
+          ? `attachment:${resource.attachmentId}`
+          : `workspace:${resource.path}`
       }
       unavailable={assetUrl._tag === "Failure"}
       knownSize={assetUrl._tag === "Success" ? assetUrl.imageDimensions : undefined}
       alt={props.alt}
-      actionsSource={props.actionsSource}
+      actionsSource={actionsSource}
       onPressPreview={props.onPressPreview}
     />
   );

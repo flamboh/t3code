@@ -12,6 +12,7 @@ import {
   RunId,
   RuntimeRequestId,
   ThreadId,
+  TurnItemId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -96,6 +97,11 @@ export const OrchestrationEffectRequestV2 = Schema.Union([
     attachmentIds: Schema.Array(Schema.String),
   }),
   Schema.Struct({
+    type: Schema.Literal("message-media.snapshot"),
+    runId: Schema.NullOr(RunId),
+    turnItemId: TurnItemId,
+  }),
+  Schema.Struct({
     type: Schema.Literal("thread-title.generate"),
     kind: Schema.Union([
       Schema.Struct({ type: Schema.Literal("initial"), messageId: MessageId }),
@@ -113,6 +119,7 @@ export const REPLAY_SAFE_EFFECT_TYPES_AFTER_PROCESS_LOSS = [
   "terminal.cleanup",
   "attachment.cleanup",
   "thread-title.generate",
+  "message-media.snapshot",
 ] as const satisfies ReadonlyArray<OrchestrationEffectRequestV2["type"]>;
 
 export const PROCESS_BOUND_EFFECT_TYPES = [
@@ -278,8 +285,16 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
         available,
         Array.from({ length: Math.min(64, Math.max(0, Math.floor(count))) }, () => undefined),
       ).pipe(Effect.asVoid);
-    // Title generation is correlated metadata work, so it has its own
-    // per-thread lane and cannot delay provider lifecycle effects.
+    // Title generation and media snapshots are correlated metadata work, so
+    // each has its own per-thread lane and cannot delay provider lifecycle
+    // effects or each other.
+    const effectLane = (table: "candidate" | "active") => sql`
+      CASE
+        WHEN ${sql(table)}.effect_type IN ('thread-title.generate', 'message-media.snapshot')
+        THEN ${sql(table)}.effect_type
+        ELSE ''
+      END
+    `;
     const claimableCandidatePredicate = (availableBefore?: string) =>
       sql`
         ${
@@ -293,17 +308,7 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
           FROM orchestration_v2_effect_outbox AS active
           WHERE active.thread_id = candidate.thread_id
             AND active.status = 'running'
-            AND (
-              (
-                candidate.effect_type = 'thread-title.generate'
-                AND active.effect_type = 'thread-title.generate'
-              )
-              OR
-              (
-                candidate.effect_type != 'thread-title.generate'
-                AND active.effect_type != 'thread-title.generate'
-              )
-            )
+            AND ${effectLane("candidate")} = ${effectLane("active")}
         )
       `;
 

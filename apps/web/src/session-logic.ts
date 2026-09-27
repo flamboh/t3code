@@ -636,6 +636,9 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
               }),
             }
           : {}),
+        ...(item.type === "assistant_message" && item.mediaSnapshots
+          ? { mediaSnapshots: item.mediaSnapshots }
+          : {}),
         runId: item.runId,
         streaming: item.type === "assistant_message" && item.streaming,
         ...(item.type === "user_message"

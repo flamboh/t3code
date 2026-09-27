@@ -6,6 +6,7 @@ import type {
   MessageId,
   OrchestrationV2Actor,
   OrchestrationV2CreationSource,
+  OrchestrationV2MediaSnapshot,
   OrchestrationV2PlanArtifact,
   OrchestrationV2UserMessageInputIntent,
   PlanId,
@@ -94,6 +95,7 @@ export interface ChatMessage {
   readonly role: "user" | "assistant" | "system";
   readonly text: string;
   readonly attachments?: ReadonlyArray<ChatAttachment> | undefined;
+  readonly mediaSnapshots?: ReadonlyArray<OrchestrationV2MediaSnapshot> | undefined;
   readonly runId: RunId | null;
   readonly streaming: boolean;
   readonly createdBy?: OrchestrationV2Actor;

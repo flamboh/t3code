@@ -1,3 +1,4 @@
+import type { ChatAttachmentId, OrchestrationV2MediaSnapshot } from "@t3tools/contracts";
 import { isWindowsAbsolutePath } from "@t3tools/shared/path";
 
 import {
@@ -69,4 +70,14 @@ export function classifyMarkdownImageSource(
   if (!workspaceRoot) return { _tag: "Blocked" };
 
   return { _tag: "WorkspaceFile", path: joinWorkspacePath(workspaceRoot, path) };
+}
+
+/** The copy a message kept of a local image, so later edits to the file do not change it. */
+export function mediaSnapshotAttachmentId(
+  snapshots: ReadonlyArray<OrchestrationV2MediaSnapshot> | undefined,
+  path: string,
+): ChatAttachmentId | undefined {
+  if (snapshots === undefined || snapshots.length === 0) return undefined;
+  const key = path.replaceAll("\\", "/");
+  return snapshots.find((snapshot) => snapshot.path.replaceAll("\\", "/") === key)?.attachmentId;
 }

@@ -29,7 +29,9 @@ import {
 } from "lucide-react";
 import type {
   AssetResource,
+  ChatAttachmentId,
   EnvironmentId,
+  OrchestrationV2MediaSnapshot,
   ScopedThreadRef,
   ServerProviderSkill,
   ThreadPullRequestKey,
@@ -49,6 +51,7 @@ import {
 import {
   classifyMarkdownImageSource,
   markdownImageSourceFragment,
+  mediaSnapshotAttachmentId,
 } from "@t3tools/client-runtime/markdown-images";
 import { inlineCodeFilePathCandidate } from "@t3tools/client-runtime/markdown-links";
 import { mediaFileReference, mediaUrlReference } from "@t3tools/client-runtime/media-reference";
@@ -202,6 +205,8 @@ interface ChatMarkdownProps {
   text: string;
   cwd: string | undefined;
   threadRef?: ScopedThreadRef | undefined;
+  /** Copies of local images taken when the message completed; they win over the live files. */
+  mediaSnapshots?: ReadonlyArray<OrchestrationV2MediaSnapshot> | undefined;
   /** Panel that receives pull request links, including the standalone PR view. */
   pullRequestPanelRef?: ScopedThreadRef | undefined;
   /** Environment that owns non-thread markdown, such as a pull request panel. */
@@ -1653,11 +1658,17 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       too old to know this resource. Only safe when the client can reach it directly. */
   readonly fallbackSrc?: string | undefined;
   readonly workspaceRoot?: string | undefined;
+  /** Shown instead of the live file; file actions still point at `resource`. */
+  readonly snapshotAttachmentId?: ChatAttachmentId | undefined;
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
 }) {
-  const assetUrl = useAssetUrlState(props.environmentId, props.resource);
-  const refreshAssetUrl = useAssetUrlRefresh(props.environmentId, props.resource);
   const resource = props.resource;
+  const shownResource =
+    props.snapshotAttachmentId === undefined
+      ? resource
+      : { _tag: "attachment" as const, attachmentId: props.snapshotAttachmentId };
+  const assetUrl = useAssetUrlState(props.environmentId, shownResource);
+  const refreshAssetUrl = useAssetUrlRefresh(props.environmentId, shownResource);
   const path =
     resource._tag === "media-file"
       ? resource.path
@@ -1694,7 +1705,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
     name: props.alt || (props.kind ?? "image"),
     src,
     ...(fallbackSrc === undefined
-      ? { asset: { environmentId: props.environmentId, resource } }
+      ? { asset: { environmentId: props.environmentId, resource: shownResource } }
       : {}),
     ...(reference ? { reference } : {}),
     ...(relativePath && (resource._tag === "media-file" || resource._tag === "workspace-file")
@@ -1719,7 +1730,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
         copyMarkdown={props.copyMarkdown}
         originalUrl={props.originalUrl}
         style={props.style}
-        mediaIdentity={JSON.stringify([props.environmentId, props.resource, props.srcFragment])}
+        mediaIdentity={JSON.stringify([props.environmentId, shownResource, props.srcFragment])}
         onRetry={refreshAssetUrl}
         actionsSource={actionsSource}
       />
@@ -1728,7 +1739,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
 
   return (
     <ChatMarkdownImage
-      key={JSON.stringify([props.environmentId, props.resource, props.srcFragment])}
+      key={JSON.stringify([props.environmentId, shownResource, props.srcFragment])}
       src={src}
       sourceFailed={assetUrl._tag === "Failure" && fallbackSrc === undefined}
       alt={props.alt}
@@ -2302,6 +2313,7 @@ function useChatMarkdownState({
   renderContextReference,
   headingLevelOffset = 0,
   githubMedia = false,
+  mediaSnapshots,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
   const [localMediaPreview, setLocalMediaPreview] = useState<ExpandedImagePreview | null>(null);
@@ -2701,6 +2713,7 @@ function useChatMarkdownState({
       isStreaming,
       linkTargetPreference,
       markdownFileLinkMetaByHref,
+      mediaSnapshots,
       onTaskListChange,
       onUseArtifactTemplate,
       onRunShellCommand,
@@ -2732,6 +2745,7 @@ function useChatMarkdownState({
       isStreaming,
       linkTargetPreference,
       markdownFileLinkMetaByHref,
+      mediaSnapshots,
       onTaskListChange,
       onUseArtifactTemplate,
       onRunShellCommand,
@@ -3137,6 +3151,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
       environmentId,
       githubMedia,
       imageBaseDir,
+      mediaSnapshots,
       threadRef,
       renderContextReference,
     } = use(ChatMarkdownRendererContext);
@@ -3246,6 +3261,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
             threadId: threadRef.threadId,
             path: imageSource.path,
           }}
+          snapshotAttachmentId={mediaSnapshotAttachmentId(mediaSnapshots, imageSource.path)}
           alt={altText}
           kind={kind}
           copyMarkdown={copyMarkdown}
