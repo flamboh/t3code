@@ -35,6 +35,7 @@ import { RunFinalizationService } from "./RunFinalizationService.ts";
 import { ProviderSessionManagerV2 } from "./ProviderSessionManager.ts";
 import { ProviderTurnControlServiceV2 } from "./ProviderTurnControlService.ts";
 import { ProviderTurnStartError, ProviderTurnStartServiceV2 } from "./ProviderTurnStartService.ts";
+import * as MessageMediaSnapshots from "./MessageMediaSnapshots.ts";
 import { RuntimeRequestServiceV2 } from "./RuntimeRequestService.ts";
 import { ThreadTitleRegenerationService } from "./ThreadTitleRegenerationService.ts";
 import { ThreadManagementService } from "./ThreadManagementService.ts";
@@ -156,6 +157,7 @@ function makeExecutorLayer(input: {
       Layer.mergeAll(
         dependencies,
         Layer.mock(ThreadManagementService)({}),
+        Layer.mock(MessageMediaSnapshots.MessageMediaSnapshotService)({}),
         ServerSettings.layerTest(),
       ),
     ),

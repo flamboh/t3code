@@ -31,11 +31,7 @@ import { EffectOutboxV2, layer as effectOutboxLayer } from "./EffectOutbox.ts";
 import { EventSinkV2, layer as eventSinkLayer } from "./EventSink.ts";
 import { layer as eventStoreLayer } from "./EventStore.ts";
 import { IdAllocatorV2, layer as idAllocatorLayer } from "./IdAllocator.ts";
-import {
-  live as messageMediaSnapshotLayer,
-  localMarkdownImagePaths,
-  MessageMediaSnapshotService,
-} from "./MessageMediaSnapshots.ts";
+import * as MessageMediaSnapshots from "./MessageMediaSnapshots.ts";
 import { ProjectionStoreV2, layer as projectionStoreLayer } from "./ProjectionStore.ts";
 import {
   ProviderEventIngestorV2,
@@ -50,7 +46,7 @@ const DependenciesLayer = Layer.mergeAll(StoresLayer, EventSinkLayer, idAllocato
 const TestLayer = Layer.mergeAll(
   DependenciesLayer,
   providerEventIngestorLayer.pipe(Layer.provide(DependenciesLayer)),
-  messageMediaSnapshotLayer.pipe(Layer.provide(DependenciesLayer)),
+  MessageMediaSnapshots.layer.pipe(Layer.provide(DependenciesLayer)),
 ).pipe(
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-media-snapshot-" })),
   Layer.provideMerge(NodeServices.layer),
@@ -137,16 +133,17 @@ const ingest = (turnItem: OrchestrationV2TurnItem) =>
 
 it("finds the absolute local images a message embeds", () => {
   assert.deepEqual(
-    localMarkdownImagePaths(
+    MessageMediaSnapshots.localMarkdownImagePaths(
       [
         "![before](/tmp/before.png) and ![again](/tmp/before.png)",
         "![spaced](</tmp/with space.webp>)",
         "![url](file:///tmp/from%20url.jpg#frag)",
-        '<img src="/tmp/html.gif" width="200">',
+        '<img src="/tmp/html.gif" width="200"> <img alt=x src=/tmp/unquoted.png>',
         "![query](/tmp/query.png?v=2)",
         "![relative](shots/rel.png) ![remote](https://example.com/a.png)",
         "![notes](/tmp/notes.txt) ![protocol](//cdn.example.com/a.png)",
-        "![win](C:\\shots\\win.png)",
+        "![win](C:\\shots\\win.png) ![unc](file://server/share/unc.png)",
+        "![localhost](file://localhost/tmp/localhost.png)",
         '![parens](/tmp/shot(1).png) ![titled](/tmp/titled.png "Title")',
         "![escaped](/tmp/escaped\\).png)",
         "![shot][Capture] ![collapsed][] ![shortcut] ![undefined][nope]",
@@ -161,15 +158,18 @@ it("finds the absolute local images a message embeds", () => {
       "/tmp/before.png",
       "/tmp/with space.webp",
       "/tmp/from url.jpg",
+      "/tmp/html.gif",
+      "/tmp/unquoted.png",
       "/tmp/query.png",
       "C:\\shots\\win.png",
+      "\\\\server\\share\\unc.png",
+      "/tmp/localhost.png",
       "/tmp/shot(1).png",
       "/tmp/titled.png",
       "/tmp/escaped).png",
       "/tmp/reference.png",
       "/tmp/collapsed ref.jpg",
       "/tmp/shortcut.webp",
-      "/tmp/html.gif",
     ],
   );
 });
@@ -183,7 +183,7 @@ it.layer(TestLayer)("MessageMediaSnapshotService", (it) => {
       const eventSink = yield* EventSinkV2;
       const outbox = yield* EffectOutboxV2;
       const projections = yield* ProjectionStoreV2;
-      const snapshots = yield* MessageMediaSnapshotService;
+      const snapshots = yield* MessageMediaSnapshots.MessageMediaSnapshotService;
       const now = yield* DateTime.now;
       yield* eventSink.write({ events: [threadCreated(now)] });
 
@@ -260,7 +260,7 @@ it.layer(TestLayer)("MessageMediaSnapshotService", (it) => {
       const path = yield* Path.Path;
       const eventSink = yield* EventSinkV2;
       const projections = yield* ProjectionStoreV2;
-      const snapshots = yield* MessageMediaSnapshotService;
+      const snapshots = yield* MessageMediaSnapshots.MessageMediaSnapshotService;
       const now = yield* DateTime.now;
 
       const sourceDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-media-source-" });
@@ -303,6 +303,45 @@ it.layer(TestLayer)("MessageMediaSnapshotService", (it) => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("gives identical bytes under different extensions their own attachment", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const config = yield* ServerConfig.ServerConfig;
+      const projections = yield* ProjectionStoreV2;
+      const snapshots = yield* MessageMediaSnapshots.MessageMediaSnapshotService;
+      const now = yield* DateTime.now;
+
+      const sourceDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-media-source-" });
+      const png = path.join(sourceDir, "same.png");
+      const jpg = path.join(sourceDir, "same.JPG");
+      yield* fileSystem.writeFile(png, new Uint8Array([4, 5, 6]));
+      yield* fileSystem.writeFile(jpg, new Uint8Array([4, 5, 6]));
+      const completed = assistantMessage({
+        key: "extensions",
+        text: `![png](${png}) ![jpg](${jpg})`,
+        streaming: false,
+        now,
+      });
+      yield* ingest(completed);
+
+      yield* snapshots.snapshot({ threadId, runId, turnItemId: completed.id });
+
+      const { turnItems } = yield* projections.getThreadRecords(threadId, ["turnItems"]);
+      const recorded = turnItems.find((item) => item.id === completed.id);
+      const stored = (recorded?.type === "assistant_message" ? recorded.mediaSnapshots : [])?.map(
+        (snapshot) =>
+          path.extname(
+            resolveAttachmentPathById({
+              attachmentsDir: config.attachmentsDir,
+              attachmentId: snapshot.attachmentId,
+            }) ?? "",
+          ),
+      );
+      assert.deepEqual(stored, [".png", ".jpg"]);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("removes the copies it made when the snapshot is not committed", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -311,7 +350,7 @@ it.layer(TestLayer)("MessageMediaSnapshotService", (it) => {
       const eventSink = yield* EventSinkV2;
       const ids = yield* IdAllocatorV2;
       const projections = yield* ProjectionStoreV2;
-      const snapshots = yield* MessageMediaSnapshotService;
+      const snapshots = yield* MessageMediaSnapshots.MessageMediaSnapshotService;
       const now = yield* DateTime.now;
 
       const sourceDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-media-source-" });

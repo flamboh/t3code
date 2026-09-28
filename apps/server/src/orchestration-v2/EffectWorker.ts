@@ -31,7 +31,7 @@ import { ProviderSessionManagerV2 } from "./ProviderSessionManager.ts";
 import { ProviderTurnControlServiceV2 } from "./ProviderTurnControlService.ts";
 import { ProviderTurnStartServiceV2 } from "./ProviderTurnStartService.ts";
 import { RuntimeRequestServiceV2 } from "./RuntimeRequestService.ts";
-import { MessageMediaSnapshotService } from "./MessageMediaSnapshots.ts";
+import * as MessageMediaSnapshots from "./MessageMediaSnapshots.ts";
 import { ThreadTitleRegenerationService } from "./ThreadTitleRegenerationService.ts";
 import { ThreadManagementService } from "./ThreadManagementService.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
@@ -95,6 +95,7 @@ export const executorLayer: Layer.Layer<
   | ProviderTurnControlServiceV2
   | ProviderTurnStartServiceV2
   | RuntimeRequestServiceV2
+  | MessageMediaSnapshots.MessageMediaSnapshotService
   | ThreadTitleRegenerationService
   | ThreadManagementService
   | ServerSettingsService
@@ -103,7 +104,7 @@ export const executorLayer: Layer.Layer<
   Effect.gen(function* () {
     const runFinalization = yield* RunFinalizationService;
     const resourceCleanup = yield* ResourceCleanupService;
-    const messageMediaSnapshots = yield* MessageMediaSnapshotService;
+    const messageMediaSnapshots = yield* MessageMediaSnapshots.MessageMediaSnapshotService;
     const checkpointRollback = yield* CheckpointRollbackServiceV2;
     const providerSessions = yield* ProviderSessionManagerV2;
     const providerTurnControl = yield* ProviderTurnControlServiceV2;

@@ -36,6 +36,7 @@ import {
 import { EventSinkV2, layerFromStores as eventSinkLayer } from "../EventSink.ts";
 import { layer as eventStoreLayer } from "../EventStore.ts";
 import { layer as idAllocatorLayer } from "../IdAllocator.ts";
+import * as MessageMediaSnapshots from "../MessageMediaSnapshots.ts";
 import { layer as orchestratorLayer } from "../Orchestrator.ts";
 import { layer as projectionStoreLayer } from "../ProjectionStore.ts";
 import { OrchestratorV2, type OrchestratorV2Error } from "../Orchestrator.ts";
@@ -426,6 +427,17 @@ export function makeOrchestratorV2ReplayLayerWithRegistry<Error>(
           ),
         )
       : Layer.empty;
+  const messageMediaSnapshotProvided = MessageMediaSnapshots.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        storesLayer,
+        eventSinkProvided,
+        idAllocatorLayer,
+        databaseLayer,
+        serverConfigLayer,
+      ),
+    ),
+  );
   const effectExecutorProvided = effectExecutorLayer.pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -438,6 +450,7 @@ export function makeOrchestratorV2ReplayLayerWithRegistry<Error>(
         threadTitleRegenerationTestLayer,
         serverSettingsLayer,
         threadManagementProvided,
+        messageMediaSnapshotProvided,
       ),
     ),
   );

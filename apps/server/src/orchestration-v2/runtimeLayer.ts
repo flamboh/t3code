@@ -28,7 +28,7 @@ import { layerFromStores as eventSinkLayer } from "./EventSink.ts";
 import { layerFromOrchestrationEventStore as eventStoreLayer } from "./EventStore.ts";
 import { layer as idAllocatorLayer } from "./IdAllocator.ts";
 import { layer as legacyV1ThreadImporterLayer } from "./LegacyV1ThreadImporter.ts";
-import { live as messageMediaSnapshotLayer } from "./MessageMediaSnapshots.ts";
+import * as MessageMediaSnapshots from "./MessageMediaSnapshots.ts";
 import { layer as orchestratorLayer } from "./Orchestrator.ts";
 import { layer as projectionStoreLayer } from "./ProjectionStore.ts";
 import { layer as projectionMaintenanceLayer } from "./ProjectionMaintenance.ts";
@@ -252,7 +252,7 @@ const threadTitleRegenerationProvided = threadTitleRegenerationServiceLayer.pipe
     Layer.mergeAll(threadManagementProvided, ProjectionProjectRepositoryLive, TextGeneration.layer),
   ),
 );
-const messageMediaSnapshotProvided = messageMediaSnapshotLayer.pipe(
+const messageMediaSnapshotProvided = MessageMediaSnapshots.layer.pipe(
   Layer.provide(Layer.mergeAll(eventSinkProvided, idAllocatorLayer, projectionStoreLayer)),
 );
 const effectExecutorProvided = effectExecutorLayer.pipe(
