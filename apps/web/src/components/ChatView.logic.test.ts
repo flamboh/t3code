@@ -78,6 +78,7 @@ import {
   startNewThreadForProject,
   codexArtifactTemplatePromptToAppend,
   shouldDockDraftHeroForSubmission,
+  shouldQueueComposerSend,
   shouldReleaseTimelineAnchorForToolActivity,
   shouldOpenProactivePullRequest,
   shouldRetargetThreadPullRequestPanel,
@@ -461,6 +462,19 @@ describe("artifact template composer insertion", () => {
     const prompt = "Create a document using this $artifact-template-hello-world about…";
 
     expect(codexArtifactTemplatePromptToAppend(prompt, helloWorldTemplate)).toBeNull();
+  });
+});
+
+describe("shouldQueueComposerSend", () => {
+  it("steers a running turn with the alternate shortcut even while other messages are queued", () => {
+    expect(
+      shouldQueueComposerSend({
+        isRunning: true,
+        followUpBehavior: "queue",
+        submissionIntent: "alternate",
+        queueStillSending: true,
+      }),
+    ).toBe(false);
   });
 });
 

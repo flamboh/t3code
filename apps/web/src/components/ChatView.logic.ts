@@ -202,6 +202,16 @@ export function codexArtifactTemplatePromptToAppend(
     : codexArtifactTemplateUsePrompt(template);
 }
 
+export function shouldQueueComposerSend(input: {
+  isRunning: boolean;
+  followUpBehavior: "queue" | "steer";
+  submissionIntent: ComposerSubmissionIntent;
+  queueStillSending: boolean;
+}): boolean {
+  if (!input.isRunning) return input.queueStillSending;
+  return (input.followUpBehavior === "queue") !== (input.submissionIntent === "alternate");
+}
+
 export function shouldDockDraftHeroForSubmission(input: {
   isDraftHeroState: boolean;
   activeThreadKey: string | null;

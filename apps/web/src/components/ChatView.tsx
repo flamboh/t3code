@@ -439,6 +439,7 @@ import {
   shouldRetargetThreadPullRequestPanel,
   shouldOpenProactiveTurnDiff,
   shouldRenderPreviewMiniPlayer,
+  shouldQueueComposerSend,
   getStartedThreadModelChangeBlockReason,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
   LastInvokedScriptByProjectSchema,
@@ -7655,8 +7656,6 @@ export default function ChatView(props: ChatViewProps) {
       );
       return;
     }
-    // A queued message that will still leave on its own goes first, so a new
-    // send lines up behind it instead of overtaking it.
     const queueStillSending =
       activeThreadKey !== null &&
       (useQueuedMessageStore.getState().queuesByThreadKey[activeThreadKey] ?? []).some(
@@ -7665,9 +7664,12 @@ export default function ChatView(props: ChatViewProps) {
     if (
       !directAnnotation &&
       activeThreadKey &&
-      (queueStillSending ||
-        (phase === "running" &&
-          (settings.followUpBehavior === "queue") !== (submissionIntent === "alternate")))
+      shouldQueueComposerSend({
+        isRunning: phase === "running",
+        followUpBehavior: settings.followUpBehavior,
+        submissionIntent,
+        queueStillSending,
+      })
     ) {
       const sendSettings = readComposerSendSettings(sendCtx);
       if (
