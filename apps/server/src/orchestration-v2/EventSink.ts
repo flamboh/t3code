@@ -2,7 +2,9 @@ import {
   CommandId,
   type OrchestrationV2Run,
   OrchestrationV2DomainEvent,
+  OrchestrationV2MediaSnapshot,
   OrchestrationV2StoredEvent,
+  type OrchestrationV2TurnItem,
   ProviderThreadId,
   RunAttemptId,
   RunId,
@@ -178,6 +180,10 @@ export class EventSinkV2 extends Context.Service<EventSinkV2, EventSinkV2Shape>(
   "t3/orchestration-v2/EventSink/EventSinkV2",
 ) {}
 
+const decodeMediaSnapshots = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(Schema.Array(OrchestrationV2MediaSnapshot)),
+);
+
 /**
  * IMPLEMENTATIONS
  */
@@ -260,6 +266,28 @@ const baseLayer: Layer.Layer<
         });
       });
 
+    // Providers re-send whole completed messages without the image copies the
+    // snapshot effect added. Carry them inside the write so a re-send racing
+    // that effect cannot erase them.
+    const keepMediaSnapshots = Effect.fnUntraced(function* (item: OrchestrationV2TurnItem) {
+      if (
+        item.type !== "assistant_message" ||
+        item.streaming ||
+        item.mediaSnapshots !== undefined
+      ) {
+        return item;
+      }
+      const rows = yield* sql<{ readonly media_snapshots: string | null }>`
+        SELECT json_extract(payload_json, '$.mediaSnapshots') AS media_snapshots
+        FROM orchestration_v2_projection_turn_items
+        WHERE turn_item_id = ${item.id} AND thread_id = ${item.threadId}
+      `;
+      const stored = rows[0]?.media_snapshots;
+      return stored === undefined || stored === null
+        ? item
+        : { ...item, mediaSnapshots: yield* decodeMediaSnapshots(stored) };
+    });
+
     const normalizeEvents = (events: ReadonlyArray<OrchestrationV2DomainEvent>) => {
       const runOrdinals = new Map(
         events.flatMap((event) =>
@@ -277,7 +305,10 @@ const baseLayer: Layer.Layer<
                   event.payload,
                   event.payload.runId === null ? undefined : runOrdinals.get(event.payload.runId),
                 )
-                .pipe(Effect.map((payload) => ({ ...event, payload })))
+                .pipe(
+                  Effect.flatMap(keepMediaSnapshots),
+                  Effect.map((payload) => ({ ...event, payload })),
+                )
             : Effect.succeed(event),
         { concurrency: 1 },
       );

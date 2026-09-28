@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
+  CommandId,
   MessageId,
   NodeId,
   type OrchestrationV2DomainEvent,
@@ -29,7 +30,7 @@ import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import { EffectOutboxV2, layer as effectOutboxLayer } from "./EffectOutbox.ts";
 import { EventSinkV2, layer as eventSinkLayer } from "./EventSink.ts";
 import { layer as eventStoreLayer } from "./EventStore.ts";
-import { layer as idAllocatorLayer } from "./IdAllocator.ts";
+import { IdAllocatorV2, layer as idAllocatorLayer } from "./IdAllocator.ts";
 import {
   live as messageMediaSnapshotLayer,
   localMarkdownImagePaths,
@@ -146,6 +147,14 @@ it("finds the absolute local images a message embeds", () => {
         "![relative](shots/rel.png) ![remote](https://example.com/a.png)",
         "![notes](/tmp/notes.txt) ![protocol](//cdn.example.com/a.png)",
         "![win](C:\\shots\\win.png)",
+        '![parens](/tmp/shot(1).png) ![titled](/tmp/titled.png "Title")',
+        "![escaped](/tmp/escaped\\).png)",
+        "![shot][Capture] ![collapsed][] ![shortcut] ![undefined][nope]",
+        "",
+        "[capture]: /tmp/reference.png",
+        "[collapsed]: </tmp/collapsed ref.jpg>",
+        "[shortcut]: file:///tmp/shortcut.webp",
+        "[capture]: /tmp/shadowed.png",
       ].join("\n"),
     ),
     [
@@ -154,6 +163,12 @@ it("finds the absolute local images a message embeds", () => {
       "/tmp/from url.jpg",
       "/tmp/query.png",
       "C:\\shots\\win.png",
+      "/tmp/shot(1).png",
+      "/tmp/titled.png",
+      "/tmp/escaped).png",
+      "/tmp/reference.png",
+      "/tmp/collapsed ref.jpg",
+      "/tmp/shortcut.webp",
       "/tmp/html.gif",
     ],
   );
@@ -236,6 +251,113 @@ it.layer(TestLayer)("MessageMediaSnapshotService", (it) => {
         resent?.type === "assistant_message" ? resent.mediaSnapshots : undefined,
         recorded.mediaSnapshots,
       );
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("keeps snapshots when a re-send built before the snapshot commits after it", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const eventSink = yield* EventSinkV2;
+      const projections = yield* ProjectionStoreV2;
+      const snapshots = yield* MessageMediaSnapshotService;
+      const now = yield* DateTime.now;
+
+      const sourceDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-media-source-" });
+      const shot = path.join(sourceDir, "race.png");
+      yield* fileSystem.writeFile(shot, new Uint8Array([4, 5, 6]));
+      const completed = assistantMessage({
+        key: "race",
+        text: `![race](${shot})`,
+        streaming: false,
+        now,
+      });
+      yield* ingest(completed);
+
+      const staleResend: OrchestrationV2DomainEvent = {
+        id: "event:media-snapshot:race-resend" as OrchestrationV2DomainEvent["id"],
+        type: "turn-item.updated",
+        threadId,
+        runId,
+        nodeId: completed.nodeId,
+        occurredAt: now,
+        payload: completed,
+      };
+      yield* snapshots.snapshot({ threadId, runId, turnItemId: completed.id });
+      const [stored] = yield* eventSink.write({ events: [staleResend] });
+
+      const { turnItems } = yield* projections.getThreadRecords(threadId, ["turnItems"]);
+      const recorded = turnItems.find((item) => item.id === completed.id);
+      const kept = recorded?.type === "assistant_message" ? recorded.mediaSnapshots : undefined;
+      assert.deepEqual(
+        kept?.map((snapshot) => snapshot.path),
+        [shot],
+      );
+      assert.deepEqual(
+        stored?.event.type === "turn-item.updated" &&
+          stored.event.payload.type === "assistant_message"
+          ? stored.event.payload.mediaSnapshots
+          : undefined,
+        kept,
+      );
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("removes the copies it made when the snapshot is not committed", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const config = yield* ServerConfig.ServerConfig;
+      const eventSink = yield* EventSinkV2;
+      const ids = yield* IdAllocatorV2;
+      const projections = yield* ProjectionStoreV2;
+      const snapshots = yield* MessageMediaSnapshotService;
+      const now = yield* DateTime.now;
+
+      const sourceDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-media-source-" });
+      const shot = path.join(sourceDir, "orphan.png");
+      yield* fileSystem.writeFile(shot, new Uint8Array([7, 8, 9, 10]));
+      const completed = assistantMessage({
+        key: "orphan",
+        text: `![orphan](${shot})`,
+        streaming: false,
+        now,
+      });
+      yield* ingest(completed);
+
+      const commandId = CommandId.make(`command:effect:message-media.snapshot:${completed.id}`);
+      yield* eventSink.commitCommand({
+        commandId,
+        threadId,
+        commandType: "message-media.snapshot",
+        acceptedAt: now,
+        effects: [],
+        events: [
+          {
+            id: yield* ids.allocate.event({ threadId, commandId }),
+            type: "turn-item.updated",
+            threadId,
+            runId,
+            nodeId: completed.nodeId,
+            occurredAt: now,
+            payload: completed,
+          },
+        ],
+      });
+      const listAttachments = Effect.gen(function* () {
+        const exists = yield* fileSystem.exists(config.attachmentsDir);
+        return exists ? (yield* fileSystem.readDirectory(config.attachmentsDir)).toSorted() : [];
+      });
+      const attachmentsBefore = yield* listAttachments;
+
+      yield* snapshots.snapshot({ threadId, runId, turnItemId: completed.id });
+
+      const { turnItems } = yield* projections.getThreadRecords(threadId, ["turnItems"]);
+      const recorded = turnItems.find((item) => item.id === completed.id);
+      assert.isUndefined(
+        recorded?.type === "assistant_message" ? recorded.mediaSnapshots : undefined,
+      );
+      assert.deepEqual(yield* listAttachments, attachmentsBefore);
     }).pipe(Effect.scoped),
   );
 });

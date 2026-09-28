@@ -109,6 +109,32 @@ export const readMediaFileHeader = (filePath: string, file: OpenMediaFile, byteC
     catch: (cause) => new MediaFileReadError({ path: filePath, cause }),
   });
 
+/**
+ * Reads a whole validated media file, or null when it is larger than `maxBytes`
+ * or grew after it was opened. Never buffers more than one byte past the opened size.
+ */
+export const readMediaFileCapped = (filePath: string, file: OpenMediaFile, maxBytes: number) =>
+  Effect.tryPromise({
+    try: async () => {
+      const size = Number(file.info.size);
+      if (size > maxBytes) return null;
+      const buffer = new Uint8Array(size + 1);
+      let offset = 0;
+      while (offset < buffer.byteLength) {
+        const { bytesRead } = await file.handle.read(
+          buffer,
+          offset,
+          buffer.byteLength - offset,
+          offset,
+        );
+        if (bytesRead === 0) break;
+        offset += bytesRead;
+      }
+      return offset > size ? null : buffer.subarray(0, offset);
+    },
+    catch: (cause) => new MediaFileReadError({ path: filePath, cause }),
+  });
+
 export const statMediaFile = Effect.fn("statMediaFile")(function* (
   filePath: string,
   file: OpenMediaFile,

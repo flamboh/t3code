@@ -6,7 +6,6 @@ import {
   type OrchestrationV2PlanArtifact,
   type OrchestrationV2Run,
   type OrchestrationV2ProviderTurn,
-  type OrchestrationV2TurnItem,
   type ModelSelection,
   type RuntimeMode,
   type ProviderInteractionMode,
@@ -31,7 +30,7 @@ import { EventSinkV2 } from "./EventSink.ts";
 import { ProjectionStoreV2 } from "./ProjectionStore.ts";
 import { IdAllocatorV2 } from "./IdAllocator.ts";
 import { ProviderAdapterV2Event } from "./ProviderAdapter.ts";
-import { localMarkdownImagePaths, messageMediaSnapshotEffects } from "./MessageMediaSnapshots.ts";
+import { messageMediaSnapshotEffects } from "./MessageMediaSnapshots.ts";
 import { makeProviderFailureTurnItem } from "./ProviderFailure.ts";
 
 export class ProviderEventNormalizeError extends Schema.TaggedError<ProviderEventNormalizeError>()(
@@ -295,28 +294,6 @@ export const layer: Layer.Layer<
         );
       });
 
-    /** Providers re-send whole items; a completed message keeps the image copies it already took. */
-    const keepMediaSnapshots = Effect.fn("ProviderEventIngestor.keepMediaSnapshots")(function* (
-      item: OrchestrationV2TurnItem,
-    ) {
-      if (
-        item.type !== "assistant_message" ||
-        item.streaming ||
-        item.mediaSnapshots !== undefined ||
-        localMarkdownImagePaths(item.text).length === 0
-      ) {
-        return item;
-      }
-      const { turnItems } = yield* projections.getThreadRecords(item.threadId, ["turnItems"], {
-        turnItemRunIds: [item.runId],
-        turnItemTypes: ["assistant_message"],
-      });
-      const recorded = turnItems.find((candidate) => candidate.id === item.id);
-      return recorded?.type === "assistant_message" && recorded.mediaSnapshots !== undefined
-        ? { ...item, mediaSnapshots: recorded.mediaSnapshots }
-        : item;
-    });
-
     const dismissNativeUserInputs = Effect.fn("ProviderEventIngestor.dismissNativeUserInputs")(
       function* (
         input: ProviderEventIngestInput,
@@ -441,7 +418,7 @@ export const layer: Layer.Layer<
               yield* makeDomainEvent(input, {
                 type: "turn-item.updated",
                 threadId: input.event.turnItem.threadId,
-                payload: yield* keepMediaSnapshots(input.event.turnItem),
+                payload: input.event.turnItem,
                 runId: input.event.turnItem.runId,
                 nodeId: input.event.turnItem.nodeId,
               }),
