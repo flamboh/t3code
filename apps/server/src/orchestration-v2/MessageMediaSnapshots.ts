@@ -193,7 +193,7 @@ export class MessageMediaSnapshotService extends Context.Service<
   }
 >()("t3/orchestration-v2/MessageMediaSnapshots/MessageMediaSnapshotService") {}
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const crypto = yield* Crypto.Crypto;
   const eventSink = yield* EventSink.EventSinkV2;
