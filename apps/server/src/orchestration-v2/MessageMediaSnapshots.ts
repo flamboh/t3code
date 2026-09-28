@@ -19,6 +19,7 @@ import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { openMediaFile, readMediaFileCapped } from "../assets/MediaFile.ts";
 import { createDeterministicAttachmentId } from "../attachmentStore.ts";
@@ -186,6 +187,7 @@ export const live = Layer.effect(
     const ids = yield* IdAllocatorV2;
     const path = yield* Path.Path;
     const projections = yield* ProjectionStoreV2;
+    const sql = yield* SqlClient.SqlClient;
 
     const copyIntoAttachments = Effect.fnUntraced(function* (input: {
       readonly threadId: ThreadId;
@@ -281,29 +283,33 @@ export const live = Layer.effect(
             mediaSnapshots.push({ path: sourcePath, attachmentId: copied.attachmentId });
           }
           if (mediaSnapshots.length === 0) return false;
-          const latest = yield* unsnapshottedMessage(input);
-          if (latest === null) return false;
-          const commandId = CommandId.make(`command:effect:message-media.snapshot:${item.id}`);
-          const now = yield* DateTime.now;
-          const result = yield* eventSink.commitCommand({
-            commandId,
-            threadId: input.threadId,
-            commandType: "message-media.snapshot",
-            acceptedAt: now,
-            effects: [],
-            events: [
-              {
-                id: yield* ids.allocate.event({ threadId: input.threadId, commandId }),
-                type: "turn-item.updated",
+          return yield* sql.withTransaction(
+            Effect.gen(function* () {
+              const latest = yield* unsnapshottedMessage(input);
+              if (latest === null) return false;
+              const commandId = CommandId.make(`command:effect:message-media.snapshot:${item.id}`);
+              const now = yield* DateTime.now;
+              const result = yield* eventSink.commitCommand({
+                commandId,
                 threadId: input.threadId,
-                ...(latest.runId === null ? {} : { runId: latest.runId }),
-                ...(latest.nodeId === null ? {} : { nodeId: latest.nodeId }),
-                occurredAt: now,
-                payload: { ...latest, mediaSnapshots },
-              },
-            ],
-          });
-          return result.committed;
+                commandType: "message-media.snapshot",
+                acceptedAt: now,
+                effects: [],
+                events: [
+                  {
+                    id: yield* ids.allocate.event({ threadId: input.threadId, commandId }),
+                    type: "turn-item.updated",
+                    threadId: input.threadId,
+                    ...(latest.runId === null ? {} : { runId: latest.runId }),
+                    ...(latest.nodeId === null ? {} : { nodeId: latest.nodeId }),
+                    occurredAt: now,
+                    payload: { ...latest, mediaSnapshots },
+                  },
+                ],
+              });
+              return result.committed;
+            }),
+          );
         }).pipe(
           Effect.onExit((exit) =>
             Exit.isSuccess(exit) && exit.value
