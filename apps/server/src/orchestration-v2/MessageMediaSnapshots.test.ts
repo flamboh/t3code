@@ -46,7 +46,6 @@ const DependenciesLayer = Layer.mergeAll(StoresLayer, EventSinkLayer, idAllocato
 const TestLayer = Layer.mergeAll(
   DependenciesLayer,
   providerEventIngestorLayer.pipe(Layer.provide(DependenciesLayer)),
-  MessageMediaSnapshots.layer.pipe(Layer.provide(DependenciesLayer)),
 ).pipe(
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-media-snapshot-" })),
   Layer.provideMerge(NodeServices.layer),
@@ -183,7 +182,7 @@ it.layer(TestLayer)("MessageMediaSnapshotService", (it) => {
       const eventSink = yield* EventSinkV2;
       const outbox = yield* EffectOutboxV2;
       const projections = yield* ProjectionStoreV2;
-      const snapshots = yield* MessageMediaSnapshots.MessageMediaSnapshotService;
+      const snapshots = yield* MessageMediaSnapshots.make;
       const now = yield* DateTime.now;
       yield* eventSink.write({ events: [threadCreated(now)] });
 
@@ -260,7 +259,7 @@ it.layer(TestLayer)("MessageMediaSnapshotService", (it) => {
       const path = yield* Path.Path;
       const eventSink = yield* EventSinkV2;
       const projections = yield* ProjectionStoreV2;
-      const snapshots = yield* MessageMediaSnapshots.MessageMediaSnapshotService;
+      const snapshots = yield* MessageMediaSnapshots.make;
       const now = yield* DateTime.now;
 
       const sourceDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-media-source-" });
@@ -309,7 +308,7 @@ it.layer(TestLayer)("MessageMediaSnapshotService", (it) => {
       const path = yield* Path.Path;
       const config = yield* ServerConfig.ServerConfig;
       const projections = yield* ProjectionStoreV2;
-      const snapshots = yield* MessageMediaSnapshots.MessageMediaSnapshotService;
+      const snapshots = yield* MessageMediaSnapshots.make;
       const now = yield* DateTime.now;
 
       const sourceDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-media-source-" });
@@ -350,7 +349,7 @@ it.layer(TestLayer)("MessageMediaSnapshotService", (it) => {
       const eventSink = yield* EventSinkV2;
       const ids = yield* IdAllocatorV2;
       const projections = yield* ProjectionStoreV2;
-      const snapshots = yield* MessageMediaSnapshots.MessageMediaSnapshotService;
+      const snapshots = yield* MessageMediaSnapshots.make;
       const now = yield* DateTime.now;
 
       const sourceDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-media-source-" });
