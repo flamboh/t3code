@@ -144,6 +144,7 @@ import {
   handoffReviewComments,
   latestPullRequestReviewOutcomes,
   loadingPullRequestCheckoutCommand,
+  isPullRequestNotFound,
   isStackedPullRequestBase,
   pullRequestActionMenuHasGroup,
   pullRequestActionNeedsHostRefresh,
@@ -2710,7 +2711,13 @@ export function PullRequestDetailPanel({
           });
         }}
       >
-        {detailQuery.error && !detail ? (
+        {detailQuery.error && !detail && isPullRequestNotFound(detailQuery.failure) ? (
+          <PullRequestsUnavailableState
+            title={`Pull request #${reference.number} not found`}
+            error="It may be an issue rather than a pull request, or this account can't see it."
+            {...(unavailableGitHubUrl ? { gitHubUrl: unavailableGitHubUrl } : {})}
+          />
+        ) : detailQuery.error && !detail ? (
           <PullRequestsUnavailableState
             error={detailQuery.error}
             refreshing={detailQuery.isPending}

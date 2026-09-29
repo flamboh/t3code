@@ -82,6 +82,9 @@ export function bitbucketProviderFailure(
       ...(error.retryAt === undefined ? {} : { retryAt: error.retryAt }),
     };
   }
+  if (error._tag === "BitbucketResponseError" && error.status === 404) {
+    return { reason: "not-found" };
+  }
   return { reason: "failed" };
 }
 

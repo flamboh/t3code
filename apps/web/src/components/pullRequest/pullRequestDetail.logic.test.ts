@@ -3,6 +3,7 @@ import { serializeLegacyContextMessage } from "@t3tools/shared/composerContextLe
 import {
   ProjectId,
   PullRequestAction,
+  PullRequestOperationError,
   type PullRequestCheck,
   type PullRequestComment,
   type PullRequestDetail,
@@ -40,6 +41,7 @@ import {
   pullRequestCheckoutCommand,
   pullRequestFindingKey,
   pullRequestReviewOutcome,
+  isPullRequestNotFound,
   readableFailure,
   readPullRequestDetailSnapshot,
   resolveDisplayedPullRequestDetail,
@@ -1010,6 +1012,26 @@ describe("one finding handed over on its own", () => {
         check: { name: "typecheck", status: "failure", description: null, url: null },
       }),
     ).toBe("finding:check:typecheck:");
+  });
+});
+
+describe("a link to something that is not a pull request", () => {
+  it("is told apart from a request that merely failed", () => {
+    expect(
+      isPullRequestNotFound(
+        new PullRequestOperationError({
+          operation: "detail",
+          detail: "Pull request not found.",
+          reason: "not-found",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isPullRequestNotFound(
+        new PullRequestOperationError({ operation: "detail", detail: "HTTP 500" }),
+      ),
+    ).toBe(false);
+    expect(isPullRequestNotFound(new Error("Pull request not found."))).toBe(false);
   });
 });
 
