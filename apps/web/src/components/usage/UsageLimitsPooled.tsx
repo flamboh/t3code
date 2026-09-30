@@ -6,6 +6,7 @@ import {
   collectLimitPools,
   cursorUsageWindowDetails,
   displayLimitWindows,
+  formatDuration,
   formatPaceHeadroom,
   formatResetsIn,
   type LimitAccount,
@@ -29,6 +30,7 @@ import { Button } from "../ui/button";
 import { OpenAI } from "../Icons";
 import { Alert, AlertTitle } from "../ui/alert";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ResetCreditDialog, barColor, resetCreditsSummary, useResetCredit } from "./UsageLimits";
 
 /** `someone@example.com` → `SE`: enough to tell accounts apart, too little to identify one. */
@@ -497,7 +499,8 @@ function PoolBar({
 
 /**
  * Big pooled number and the segment bar. Accounts keep the same column across
- * windows; each segment's popover shows its own reset time and share restored.
+ * windows; each segment's popover shows its own reset time and share restored,
+ * and the number's tooltip says what the next reset hands back to the pool.
  */
 function PoolWindowCard({
   pool,
@@ -514,24 +517,41 @@ function PoolWindowCard({
 }) {
   // The soonest reset that hands anything back; an untouched account resets to no effect.
   const nextRefill = pool.resets.find((reset) => reset.restoresPercent > 0);
+  const remaining = (
+    <span className="flex items-baseline gap-2">
+      <span className="text-3xl font-semibold text-foreground tabular-nums">
+        {pool.remainingPercent}%
+      </span>
+      <span className="text-sm text-muted-foreground">left</span>
+    </span>
+  );
   return (
     <div className="grid items-center gap-x-6 gap-y-3 rounded-lg border border-border/60 p-4 md:grid-cols-[11rem_minmax(0,1fr)]">
       <div className="flex flex-col gap-1">
         <span className="text-sm font-medium text-foreground">{label ?? pool.label}</span>
-        <span className="flex items-baseline gap-2">
-          <span className="text-3xl font-semibold text-foreground tabular-nums">
-            {pool.remainingPercent}%
-          </span>
-          <span className="text-sm text-muted-foreground">left</span>
-        </span>
+        {nextRefill ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span
+                  tabIndex={0}
+                  className="w-fit rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                />
+              }
+            >
+              {remaining}
+            </TooltipTrigger>
+            <TooltipPopup side="top">
+              Next reset restores {nextRefill.restoresPercent}%{" "}
+              {nextRefill.at <= now ? "now" : `in ${formatDuration(nextRefill.at - now)}`}
+            </TooltipPopup>
+          </Tooltip>
+        ) : (
+          remaining
+        )}
         {pool.paceHeadroomPercent !== null ? (
           <span className="text-xs text-muted-foreground tabular-nums">
             {formatPaceHeadroom(pool.paceHeadroomPercent)}
-          </span>
-        ) : null}
-        {nextRefill && pool.columns.length > 1 ? (
-          <span className="text-xs font-medium text-foreground tabular-nums">
-            ↻ +{nextRefill.restoresPercent}%
           </span>
         ) : null}
       </div>
