@@ -565,10 +565,10 @@ function paceOfShares(usedPercent: number, elapsed: number): LimitPace {
   return "on";
 }
 
-/** Distance from even spending: `24% under pace`, `8% over pace`, or `On pace`. */
+/** Distance from even spending: `24% behind pace`, `8% ahead of pace`, or `On pace`. */
 export function formatPaceHeadroom(headroomPercent: number): string {
   if (headroomPercent === 0) return "On pace";
-  return `${Math.abs(headroomPercent)}% ${headroomPercent > 0 ? "under" : "over"} pace`;
+  return `${Math.abs(headroomPercent)}% ${headroomPercent > 0 ? "behind" : "ahead of"} pace`;
 }
 
 /** `2h 13m`, `3d 4h`, `12m`. */

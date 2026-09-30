@@ -77,8 +77,8 @@ describe("pace", () => {
   });
 
   it("phrases distance from even spending", () => {
-    expect(formatPaceHeadroom(24)).toBe("24% under pace");
-    expect(formatPaceHeadroom(-7)).toBe("7% over pace");
+    expect(formatPaceHeadroom(24)).toBe("24% behind pace");
+    expect(formatPaceHeadroom(-7)).toBe("7% ahead of pace");
     expect(formatPaceHeadroom(0)).toBe("On pace");
   });
 
