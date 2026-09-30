@@ -126,6 +126,14 @@ function PoolWindowCard({
               {pool.remainingPercent}%
             </Text>
             <Text className="text-sm text-foreground-muted">left</Text>
+            {nextRefill ? (
+              <Text
+                accessibilityLabel={`${nextRefill.restoresPercent}% back to the pool at the next reset, ${nextRefill.at <= now ? "now" : `in ${formatDuration(nextRefill.at - now)}`}`}
+                className="text-xs tabular-nums text-foreground-muted"
+              >
+                ↻ +{nextRefill.restoresPercent}%
+              </Text>
+            ) : null}
           </View>
         </View>
         {pool.paceHeadroomPercent !== null ? (
@@ -135,12 +143,6 @@ function PoolWindowCard({
         ) : null}
       </View>
       {description ? <Text className="text-xs text-foreground-muted">{description}</Text> : null}
-      {nextRefill && pool.columns.length > 1 ? (
-        <Text className="text-xs tabular-nums text-foreground-muted">
-          ↻ +{nextRefill.restoresPercent}%{" "}
-          {nextRefill.at <= now ? "now" : `in ${formatDuration(nextRefill.at - now)}`}
-        </Text>
-      ) : null}
       <View className="flex-row gap-1">
         {pool.columns.map(({ account, window }, index) => {
           if (!window) return <View key={account.key} className="h-7 min-w-0 flex-1" />;
