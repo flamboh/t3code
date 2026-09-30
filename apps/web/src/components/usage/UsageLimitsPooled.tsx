@@ -539,7 +539,7 @@ function PoolWindowCard({
                 ↻ +{nextRefill.restoresPercent}%
               </TooltipTrigger>
               <TooltipPopup side="top">
-                +{nextRefill.restoresPercent}% back to the pool at the next reset,{" "}
+                Pooled usage +{nextRefill.restoresPercent}%{" "}
                 {nextRefill.at <= now ? "now" : `in ${formatDuration(nextRefill.at - now)}`}
               </TooltipPopup>
             </Tooltip>

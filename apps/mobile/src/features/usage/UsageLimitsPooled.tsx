@@ -128,7 +128,7 @@ function PoolWindowCard({
             <Text className="text-sm text-foreground-muted">left</Text>
             {nextRefill ? (
               <Text
-                accessibilityLabel={`${nextRefill.restoresPercent}% back to the pool at the next reset, ${nextRefill.at <= now ? "now" : `in ${formatDuration(nextRefill.at - now)}`}`}
+                accessibilityLabel={`Pooled usage +${nextRefill.restoresPercent}% ${nextRefill.at <= now ? "now" : `in ${formatDuration(nextRefill.at - now)}`}`}
                 className="text-xs tabular-nums text-foreground-muted"
               >
                 ↻ +{nextRefill.restoresPercent}%
