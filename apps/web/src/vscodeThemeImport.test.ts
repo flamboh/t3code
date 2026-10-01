@@ -123,6 +123,25 @@ describe("VS Code theme import", () => {
     expect(darkPlus.id).toBe("dark-vscode");
   });
 
+  it("keeps Dark+ and Light+ as separate themes instead of pairing them as +", () => {
+    const themes = pairVsCodeThemes([
+      parseVsCodeThemeFile({
+        name: "Light+",
+        type: "light",
+        colors: { "editor.background": "#ffffff" },
+      }),
+      parseVsCodeThemeFile({
+        name: "Dark+",
+        type: "dark",
+        colors: { "editor.background": "#1e1e1e" },
+      }),
+    ]);
+    expect(themes.map((theme) => [theme.id, theme.label])).toEqual([
+      ["light-vscode", "Light+"],
+      ["dark-vscode", "Dark+"],
+    ]);
+  });
+
   it("fills every role the file omits with a readable derived value", () => {
     const theme = parseVsCodeThemeFile(VSCODE_DARK);
     const colors = getThemeColorsForMode(theme, "dark")!;
