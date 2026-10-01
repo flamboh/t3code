@@ -254,37 +254,35 @@ function PoolSegment({
             type="button"
             style={{ gridColumn: index, gridRow: 1 }}
             aria-label={`${account.displayName ?? (account.email ? accountInitials(account.email) : account.driver)}: ${remaining}% left${timeLeft === null ? "" : `, ${timeLeft}% of the window left`}${resetsIn ? `, ${resetsIn}` : ""}${credits ? `, ${credits} reset ${credits === 1 ? "credit" : "credits"} banked` : ""}`}
-            className="relative h-5 min-w-0 cursor-pointer overflow-hidden rounded-md bg-muted text-start outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[popup-open]:ring-1 data-[popup-open]:ring-border @2xl/pool:h-8"
+            className="relative h-5 min-w-0 cursor-pointer rounded-md bg-muted text-start outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[popup-open]:ring-1 data-[popup-open]:ring-border @2xl/pool:h-8"
           />
         }
       >
-        {/* Translucent so the label reads over the fill for any provider colour and theme. */}
-        <div
-          aria-hidden
-          className="absolute inset-y-0 left-0 rounded-md opacity-35"
-          style={{ width: `${remaining}%`, backgroundColor: color }}
-        />
-        {/* The spent share is hatched, not blank: it is what the countdown restores. */}
-        {remaining < 100 && reset ? (
+        <div aria-hidden className="absolute inset-0 overflow-hidden rounded-md">
+          {/* Translucent so the label reads over the fill for any provider colour and theme. */}
           <div
             aria-hidden
-            className="absolute inset-y-0 right-0 opacity-20"
-            style={{
-              width: `${100 - remaining}%`,
-              backgroundImage: `repeating-linear-gradient(135deg, ${color} 0 1px, transparent 1px 5px)`,
-            }}
+            className="absolute inset-y-0 left-0 rounded-md opacity-35"
+            style={{ width: `${remaining}%`, backgroundColor: color }}
           />
-        ) : null}
-        {/* Dashed so it reads as a reference, not a boundary. */}
+          {/* The spent share is hatched, not blank: it is what the countdown restores. */}
+          {remaining < 100 && reset ? (
+            <div
+              aria-hidden
+              className="absolute inset-y-0 right-0 opacity-20"
+              style={{
+                width: `${100 - remaining}%`,
+                backgroundImage: `repeating-linear-gradient(135deg, ${color} 0 1px, transparent 1px 5px)`,
+              }}
+            />
+          ) : null}
+        </div>
+        {/* A solid tick taller than the bar, so it reads as a target rather than the fill's edge. */}
         {timeLeft !== null ? (
           <span
             aria-hidden
-            className="absolute inset-y-0 w-px -translate-x-1/2 text-foreground opacity-50"
-            style={{
-              left: `${timeLeft}%`,
-              backgroundImage:
-                "repeating-linear-gradient(to bottom, currentColor 0 3px, transparent 3px 6px)",
-            }}
+            className="absolute -inset-y-1 w-0.5 -translate-x-1/2 rounded-full bg-muted-foreground"
+            style={{ left: `${timeLeft}%` }}
           />
         ) : null}
         <span

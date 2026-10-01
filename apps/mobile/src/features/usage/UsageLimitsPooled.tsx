@@ -38,18 +38,14 @@ function accountName(account: LimitAccount) {
   return `${local[0] ?? ""}${domain[0] ?? ""}`.toUpperCase() || "Account";
 }
 
-/** Where even spending would sit. Stacked dashes: React Native cannot dash a single border side on iOS. */
+/** Where even spending would sit: a solid tick taller than the bar, so it reads as a target rather than the fill's edge. */
 function PaceMark({ left }: { readonly left: number }) {
   return (
     <View
       pointerEvents="none"
-      className="absolute top-0 bottom-0 w-px justify-between py-px"
-      style={{ left: `${left}%`, opacity: 0.6 }}
-    >
-      {[0, 1, 2, 3, 4].map((dash) => (
-        <View key={dash} className="h-[3px] w-px bg-foreground" />
-      ))}
-    </View>
+      className="absolute -top-1 -bottom-1 w-0.5 -translate-x-px rounded-full bg-foreground-muted"
+      style={{ left: `${left}%` }}
+    />
   );
 }
 
@@ -154,13 +150,15 @@ function PoolWindowCard({
               accessibilityLabel={`Segment ${index + 1}, ${accountName(account)}, ${remainingPercent(window)}% left${timeLeft === null ? "" : `, ${timeLeft}% of the window left`}`}
               accessibilityHint="Show account details"
               onPress={() => openAccount(account)}
-              className="h-7 min-w-0 flex-1 overflow-hidden rounded-md bg-subtle"
+              className="h-7 min-w-0 flex-1 rounded-md bg-subtle"
             >
-              <AccountSegment
-                remaining={remainingPercent(window)}
-                color={color}
-                pending={Boolean(window.resetsAt)}
-              />
+              <View className="absolute inset-0 overflow-hidden rounded-md">
+                <AccountSegment
+                  remaining={remainingPercent(window)}
+                  color={color}
+                  pending={Boolean(window.resetsAt)}
+                />
+              </View>
               {timeLeft !== null ? <PaceMark left={timeLeft} /> : null}
               <View pointerEvents="none" className="absolute inset-0 items-center justify-center">
                 <Text className="text-xs font-t3-medium tabular-nums text-foreground">
