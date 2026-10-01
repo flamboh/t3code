@@ -112,6 +112,17 @@ describe("VS Code theme import", () => {
     );
   });
 
+  it("moves reserved VS Code names to a non-reserved id", () => {
+    const darkPlus = parseVsCodeThemeFile({
+      name: "Dark+",
+      type: "dark",
+      colors: { "editor.background": "#1e1e1e" },
+    });
+    expect(darkPlus.label).toBe("Dark+");
+    expect(darkPlus.id).not.toBe("dark");
+    expect(darkPlus.id).toBe("dark-vscode");
+  });
+
   it("fills every role the file omits with a readable derived value", () => {
     const theme = parseVsCodeThemeFile(VSCODE_DARK);
     const colors = getThemeColorsForMode(theme, "dark")!;
