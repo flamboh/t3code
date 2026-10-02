@@ -1,6 +1,7 @@
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
   CommandId,
+  type EnvironmentId,
   type OrchestrationV2DomainEvent,
   type ProviderThreadId,
   type OrchestrationV2RestartCancelledBackgroundWork,
@@ -11,6 +12,7 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as EffectOutbox from "./EffectOutbox.ts";
@@ -61,7 +63,9 @@ export class ProviderRuntimeRecoveryService extends Context.Service<
       trigger: "startup" | "shutdown",
     ) => Effect.Effect<ProviderRuntimeReconciliationSummary, ProviderRuntimeRecoveryError>;
     readonly prepareForShutdown: Effect.Effect<void, ProviderRuntimeRecoveryError>;
-    readonly recover: Effect.Effect<ProviderRuntimeRecoverySummary, ProviderRuntimeRecoveryError>;
+    readonly recover: (
+      environmentId: EnvironmentId,
+    ) => Effect.Effect<ProviderRuntimeRecoverySummary, ProviderRuntimeRecoveryError>;
   }
 >()("t3/orchestration-v2/ProviderRuntimeRecoveryService") {}
 
@@ -704,11 +708,11 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  const reconcile = (trigger: "startup" | "shutdown") =>
+  const reconcileThreads = (trigger: "startup" | "shutdown", continueRuns: boolean) =>
     Effect.gen(function* () {
-      const continueAfterRestart = yield* settings.getSettings.pipe(
-        Effect.orElseSucceed(() => null),
-      );
+      const continueAfterRestart = continueRuns
+        ? yield* settings.getSettings.pipe(Effect.orElseSucceed(() => null))
+        : null;
       const threadIds = yield* projections
         .getRecoveryThreadIds("runtime")
         .pipe(
@@ -754,6 +758,7 @@ export const make = Effect.gen(function* () {
         requeuedEffects: outboxReconciliation.requeued,
       } satisfies ProviderRuntimeReconciliationSummary;
     });
+  const reconcile = (trigger: "startup" | "shutdown") => reconcileThreads(trigger, true);
 
   // Snapshot intent only while providers are live. A provider may finish while
   // this commits; reconciliation reads fresh state after shutdown, and delivery
@@ -794,9 +799,32 @@ export const make = Effect.gen(function* () {
     Effect.mapError((cause) => new ProviderRuntimeRecoveryError({ operation: "reconcile", cause })),
   );
 
-  const recover = Effect.gen(function* () {
-    return (yield* reconcile("startup")) satisfies ProviderRuntimeRecoverySummary;
-  });
+  // A copied database boots under a new environment ID, while its provider
+  // threads still belong to the install that ran them. Only a recorded,
+  // matching owner may continue that work; an unowned database cannot prove it
+  // was not copied. The owner is written last, so a crash before then recovers
+  // the database as foreign again.
+  const recover = (environmentId: EnvironmentId) =>
+    Effect.gen(function* () {
+      const owner = yield* outbox.runtimeOwner;
+      const foreign = Option.getOrUndefined(owner) !== environmentId;
+      const preparedContinuations = foreign
+        ? yield* outbox.cancelUnsettled({
+            effectTypes: ["provider-runtime.continue"],
+            reason: "Cancelled because this database was last recovered by another environment.",
+          })
+        : [];
+      const summary = yield* reconcileThreads("startup", !foreign);
+      yield* outbox.setRuntimeOwner(environmentId);
+      return {
+        ...summary,
+        retiredEffects: summary.retiredEffects + preparedContinuations.length,
+      } satisfies ProviderRuntimeRecoverySummary;
+    }).pipe(
+      Effect.catchTag("EffectOutboxError", (cause) =>
+        Effect.fail(new ProviderRuntimeRecoveryError({ operation: "reconcile", cause })),
+      ),
+    );
 
   return ProviderRuntimeRecoveryService.of({ reconcile, prepareForShutdown, recover });
 });

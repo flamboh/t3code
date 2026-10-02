@@ -1,5 +1,6 @@
 import { assert, it, vi } from "@effect/vitest";
 import {
+  EnvironmentId,
   MessageId,
   NodeId,
   ProviderDriverKind,
@@ -16,6 +17,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 
 import * as EffectWorker from "./EffectWorker.ts";
@@ -25,6 +27,12 @@ import * as IdAllocator from "./IdAllocator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderRuntimeRecovery from "./ProviderRuntimeRecoveryService.ts";
 import * as ServerSettings from "../serverSettings.ts";
+
+const environmentId = EnvironmentId.make("environment:recovery-test");
+const ownedOutbox = {
+  runtimeOwner: Effect.succeedSome(environmentId),
+  setRuntimeOwner: () => Effect.void,
+};
 
 it.effect("leaves durable effects for the worker after runtime reconciliation", () =>
   Effect.gen(function* () {
@@ -44,13 +52,14 @@ it.effect("leaves durable effects for the worker after runtime reconciliation", 
             ),
           }),
           Layer.mock(EffectOutbox.EffectOutboxV2)({
+            ...ownedOutbox,
             reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
           }),
         ),
       ),
     );
     const summary = yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService.pipe(
-      Effect.flatMap((recovery) => recovery.recover),
+      Effect.flatMap((recovery) => recovery.recover(environmentId)),
       Effect.provide(layer),
     );
     assert.deepEqual(summary, {
@@ -106,6 +115,7 @@ it.effect("reads recovery projections only for threads that need runtime recover
           runRecoveryOnce: Effect.succeed(false),
         }),
         Layer.mock(EffectOutbox.EffectOutboxV2)({
+          ...ownedOutbox,
           cancelUnsettled: () => Effect.succeed([]),
           signalCancellations: () => Effect.void,
           reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
@@ -115,7 +125,7 @@ it.effect("reads recovery projections only for threads that need runtime recover
   );
 
   return Effect.gen(function* () {
-    yield* (yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService).recover;
+    yield* (yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService).recover(environmentId);
     assert.deepEqual(
       projectionReads.mock.calls.map(([threadId]) => threadId),
       [recoveryThreadId],
@@ -162,13 +172,14 @@ it.effect("expires orphaned runtime requests before command readiness", () => {
           runRecoveryOnce: Effect.succeed(false),
         }),
         Layer.mock(EffectOutbox.EffectOutboxV2)({
+          ...ownedOutbox,
           reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
         }),
       ),
     ),
   );
   return Effect.gen(function* () {
-    yield* (yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService).recover;
+    yield* (yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService).recover(environmentId);
     const command = committedInput;
     assert.isNotNull(command);
     if (command === null) return;
@@ -747,6 +758,7 @@ it.effect(
             runRecoveryOnce: Effect.succeed(false),
           }),
           Layer.mock(EffectOutbox.EffectOutboxV2)({
+            ...ownedOutbox,
             reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
           }),
         ),
@@ -754,8 +766,10 @@ it.effect(
     );
 
     return Effect.gen(function* () {
-      const summary = yield* (yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService)
-        .recover;
+      const summary =
+        yield* (yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService).recover(
+          environmentId,
+        );
       assert.equal(summary.terminalizedRuns, 1);
       assert.equal(summary.stoppedSessions, 1);
       assert.equal(summary.retiredEffects, 2);
@@ -1272,3 +1286,122 @@ it.effect(
     }).pipe(Effect.provide(layer));
   },
 );
+
+for (const ownership of [
+  { name: "an unowned database", owner: Option.none(), continues: false },
+  { name: "this environment's database", owner: Option.some(environmentId), continues: true },
+  {
+    name: "another environment's database",
+    owner: Option.some(EnvironmentId.make("environment:original")),
+    continues: false,
+  },
+]) {
+  it.effect(`recovers an interrupted run in ${ownership.name}`, () => {
+    const threadId = ThreadId.make("thread_restart_owner");
+    const runId = RunId.make("run_restart_owner");
+    const providerThreadId = ProviderThreadId.make("provider_thread_restart_owner");
+    const sessionId = ProviderSessionId.make("session_restart_owner");
+    const attemptId = RunAttemptId.make("attempt_restart_owner");
+    const providerInstanceId = ProviderInstanceId.make("codex");
+    const driver = ProviderDriverKind.make("codex");
+    const calls: Array<string> = [];
+    let committedInput: Parameters<EventSink.EventSinkV2["Service"]["commitCommand"]>[0] | null =
+      null;
+    const projection = {
+      thread: {
+        id: threadId,
+        projectId: null,
+        providerInstanceId,
+        archivedAt: null,
+        deletedAt: null,
+      },
+      runtimeRequests: [],
+      runs: [
+        {
+          id: runId,
+          ordinal: 1,
+          status: "running",
+          providerInstanceId,
+          providerThreadId,
+          activeAttemptId: attemptId,
+        },
+      ],
+      attempts: [],
+      nodes: [],
+      subagents: [],
+      messages: [],
+      turnItems: [],
+      providerThreads: [
+        {
+          id: providerThreadId,
+          appThreadId: threadId,
+          ownerNodeId: null,
+          driver,
+          providerInstanceId,
+          providerSessionId: sessionId,
+          status: "active",
+          nativeThreadRef: { driver, nativeId: "native_restart_owner", strength: "strong" },
+        },
+      ],
+      providerSessions: [{ id: sessionId, driver, providerInstanceId, status: "running" }],
+      providerTurns: [{ providerThreadId, runAttemptId: attemptId, status: "running" }],
+    } as unknown as OrchestrationV2ThreadProjection;
+    const layer = ProviderRuntimeRecovery.layer.pipe(
+      Layer.provide(ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true })),
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.mock(ProjectionStore.ProjectionStoreV2)({
+            getRecoveryThreadIds: () => Effect.succeed([threadId]),
+            getRuntimeRecoveryProjection: () => Effect.succeed(projection),
+          }),
+          Layer.mock(EventSink.EventSinkV2)({
+            commitCommand: (input) => {
+              calls.push("commit");
+              committedInput = input;
+              return Effect.succeed({ committed: true, cancelledEffectCount: 0 } as never);
+            },
+          }),
+          IdAllocator.layer,
+          Layer.mock(EffectOutbox.EffectOutboxV2)({
+            runtimeOwner: Effect.succeed(ownership.owner),
+            setRuntimeOwner: (owner) => Effect.sync(() => calls.push(`owner:${owner}`)),
+            cancelUnsettled: (input) => {
+              calls.push(`cancel:${input.effectTypes.join()}:${input.threadId ?? "all"}`);
+              return Effect.succeed(["effect:prepared-continuation"]);
+            },
+            reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
+          }),
+        ),
+      ),
+    );
+
+    return Effect.gen(function* () {
+      const summary =
+        yield* (yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService).recover(
+          environmentId,
+        );
+      const command = committedInput;
+      assert.isNotNull(command);
+      if (command === null) return;
+      assert.isTrue(
+        command.events.some(
+          (event) =>
+            event.type === "run.updated" &&
+            event.runId === runId &&
+            event.payload.status === "cancelled",
+        ),
+      );
+      assert.deepEqual(
+        command.effects?.map((effect) => effect.request),
+        ownership.continues ? [{ type: "provider-runtime.continue", sourceRunId: runId }] : [],
+      );
+      // The owner flips only after the reconcile decision commits.
+      assert.deepEqual(calls, [
+        ...(ownership.continues ? [] : ["cancel:provider-runtime.continue:all"]),
+        "commit",
+        `owner:${environmentId}`,
+      ]);
+      assert.equal(summary.retiredEffects, ownership.continues ? 0 : 1);
+    }).pipe(Effect.provide(layer));
+  });
+}

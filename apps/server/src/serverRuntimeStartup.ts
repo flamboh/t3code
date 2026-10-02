@@ -508,7 +508,10 @@ const make = (options?: StartupOptions) =>
             ),
           ),
         ),
-        recover: runStartupPhase("orchestration-v2.recovery", providerRuntimeRecovery.recover),
+        recover: runStartupPhase(
+          "orchestration-v2.recovery",
+          serverEnvironment.getEnvironmentId.pipe(Effect.flatMap(providerRuntimeRecovery.recover)),
+        ),
         startEffectWorker: runStartupPhase(
           "orchestration-v2.effect-worker.start",
           startEffectWorkerWithRelay({

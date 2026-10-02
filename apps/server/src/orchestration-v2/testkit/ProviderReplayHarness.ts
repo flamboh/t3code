@@ -1,7 +1,11 @@
 import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
 import { DEFAULT_SIGNAL_EXPORT } from "@t3tools/shared/observability";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import type { ProviderDriverKind, ProviderReplayTranscript } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  type ProviderDriverKind,
+  type ProviderReplayTranscript,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -475,8 +479,8 @@ export function makeOrchestratorV2ReplayLayerWithRegistry<Error>(
   > =
     options.recoverOnStartup === true
       ? Layer.effectDiscard(
-          ProviderRuntimeRecoveryService.ProviderRuntimeRecoveryService.use(
-            (recovery) => recovery.recover,
+          ProviderRuntimeRecoveryService.ProviderRuntimeRecoveryService.use((recovery) =>
+            recovery.recover(EnvironmentId.make("environment:replay-harness")),
           ).pipe(Effect.orDie),
         ).pipe(
           Layer.provide(ProviderRuntimeRecoveryService.layer),
