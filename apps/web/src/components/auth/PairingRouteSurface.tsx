@@ -101,6 +101,8 @@ export function PairingRouteSurface({
           </label>
           <Input
             id="pairing-token"
+            aria-invalid={errorMessage.length > 0}
+            aria-describedby={errorMessage ? "pairing-token-error" : undefined}
             autoCapitalize="none"
             autoComplete="off"
             autoCorrect="off"
@@ -114,7 +116,7 @@ export function PairingRouteSurface({
         </div>
 
         {errorMessage ? (
-          <Alert variant="error">
+          <Alert id="pairing-token-error" variant="error">
             <AlertDescription>{errorMessage}</AlertDescription>
           </Alert>
         ) : null}
