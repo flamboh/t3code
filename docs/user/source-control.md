@@ -188,6 +188,12 @@ Comments from your own account do not wake it. Watching ends when the pull reque
 after 10 wakes in a row that bring only comments, or when the server cannot read the pull request for
 15 minutes. To start or stop it yourself, use the row menu in the **Linked pull requests** panel.
 
+Enable **Snooze green pull requests** in **Settings → General** on web and desktop, or **Settings →
+Thread behavior** on mobile, to snooze a watched thread for up to a week once its checks pass and the
+agent is done. A failed check, a new comment or review, or a conflict wakes it early. Merging or
+closing the pull request settles the snoozed thread. A thread you wake yourself is not snoozed again
+until the checks pass on a new result, and follows the usual auto-settle rules.
+
 Cross-repository links use a project on the same host. Azure DevOps reviews require a project checked
 out from the matching organization and repository.
 

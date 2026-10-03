@@ -113,6 +113,11 @@ export const ThreadPullRequestWatch = Schema.Struct({
   conflicting: Schema.Boolean,
   /** Comment-only wakes in a row. Watching stops at a limit, so bots cannot loop it. */
   wakes: NonNegativeInt,
+  /**
+   * Set when the server snoozed the thread for these passing checks, until this time. Kept while
+   * they keep passing, so a thread the user woke is not snoozed again for the same result.
+   */
+  snoozedUntil: Schema.optional(IsoDateTime),
 });
 export type ThreadPullRequestWatch = typeof ThreadPullRequestWatch.Type;
 

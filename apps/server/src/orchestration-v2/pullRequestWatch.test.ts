@@ -9,6 +9,7 @@ import { assert, describe, it } from "@effect/vitest";
 import {
   PULL_REQUEST_WATCH_WAKE_LIMIT,
   evaluatePullRequestWatch,
+  pullRequestGreenSnoozeDue,
   pullRequestWatchMessage,
 } from "./pullRequestWatch.ts";
 
@@ -179,6 +180,40 @@ describe("evaluatePullRequestWatch", () => {
     );
     assert.isFalse(result.exhausted);
     assert.equal(result.next.wakes, 0);
+  });
+
+  it("snoozes once per green result, again after a push or a failure", () => {
+    const green = detail({ checks: [check("lint", "success"), check("test", "success")] });
+    const passed = evaluatePullRequestWatch(watch(), green, noRemarks);
+    assert.isTrue(pullRequestGreenSnoozeDue(passed.next));
+    const snoozed = { ...passed.next, snoozedUntil: "2026-10-09T12:00:00.000Z" };
+    const still = evaluatePullRequestWatch(snoozed, green, noRemarks);
+    assert.equal(still.next.snoozedUntil, snoozed.snoozedUntil);
+    assert.isFalse(pullRequestGreenSnoozeDue(still.next));
+
+    const pushed = evaluatePullRequestWatch(
+      snoozed,
+      { ...green, headSha: "bbbbbbbbbb" },
+      noRemarks,
+    );
+    assert.isUndefined(pushed.next.snoozedUntil);
+    assert.isTrue(pullRequestGreenSnoozeDue(pushed.next));
+
+    const failed = detail({ checks: [check("lint", "success"), check("test", "failure")] });
+    const red = evaluatePullRequestWatch(snoozed, failed, noRemarks);
+    assert.isUndefined(red.next.snoozedUntil);
+    assert.isFalse(pullRequestGreenSnoozeDue(red.next));
+    assert.isTrue(
+      pullRequestGreenSnoozeDue(evaluatePullRequestWatch(red.next, green, noRemarks).next),
+    );
+
+    // A conflicting branch is not green, even with every check passing.
+    const conflicting = evaluatePullRequestWatch(
+      passed.next,
+      { ...green, mergeability: "conflicting" },
+      noRemarks,
+    );
+    assert.isFalse(pullRequestGreenSnoozeDue(conflicting.next));
   });
 
   it("stops after the wake limit unless the head moves", () => {

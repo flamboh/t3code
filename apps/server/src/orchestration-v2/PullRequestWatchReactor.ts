@@ -21,9 +21,15 @@ import type * as Scope from "effect/Scope";
 
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import { forkParked } from "../serverActivation.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
-import { evaluatePullRequestWatch, pullRequestWatchMessage } from "./pullRequestWatch.ts";
+import {
+  evaluatePullRequestWatch,
+  pullRequestGreenSnoozeDue,
+  pullRequestWatchMessage,
+  threadIdleForSnooze,
+} from "./pullRequestWatch.ts";
 
 /** Passes in a row that could not read a pull request before its watch ends (one a minute). */
 const READ_FAILURE_LIMIT = 15;
@@ -53,7 +59,8 @@ function watchesEqual(left: ThreadPullRequestWatch, right: ThreadPullRequestWatc
     left.remarksThrough === right.remarksThrough &&
     left.remarkIds.join("\n") === right.remarkIds.join("\n") &&
     left.conflicting === right.conflicting &&
-    left.wakes === right.wakes
+    left.wakes === right.wakes &&
+    left.snoozedUntil === right.snoozedUntil
   );
 }
 
@@ -61,7 +68,8 @@ function watchesEqual(left: ThreadPullRequestWatch, right: ThreadPullRequestWatc
  * Wakes a thread's agent when a pull request it watches (`watch_pull_request`) needs a look:
  * checks finished on the head commit, someone else commented, or the branch started to
  * conflict. One pass a minute reads each watched pull request; settled threads wait until
- * they are active again, and a merged or closed pull request ends its watch.
+ * they are active again, and a merged or closed pull request ends its watch. With
+ * `snoozeGreenPullRequests` on, a thread is snoozed once its agent is done with the green wake.
  */
 export class PullRequestWatchReactor extends Context.Service<
   PullRequestWatchReactor,
@@ -77,6 +85,7 @@ export const make = Effect.gen(function* () {
   const engine = yield* Orchestrator.OrchestratorV2;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const pullRequests = yield* PullRequestService.PullRequestService;
+  const settings = yield* ServerSettings.ServerSettingsService;
   const crypto = yield* Crypto.Crypto;
 
   // Passes in a row that failed, per watch. Kept in memory: a restart only delays the stop.
@@ -90,13 +99,18 @@ export const make = Effect.gen(function* () {
   });
 
   /**
-   * Records what a pass saw, and wakes the agent with it. The orchestrator applies this only
-   * while the same watch is on, so a stop or restart that lands during the host read wins.
+   * Records what a pass saw, and wakes the agent with it or snoozes the thread. The orchestrator
+   * applies this only while the same watch is on, so a stop or restart that lands during the
+   * host read wins.
    */
   const record = (
     target: WatchTarget,
     next: ThreadPullRequestWatch | null,
-    wake?: { readonly text: string; readonly notification: OrchestrationV2Notification },
+    options: {
+      readonly wake?: { readonly text: string; readonly notification: OrchestrationV2Notification };
+      readonly snooze?: boolean;
+      readonly ended?: "merged" | "closed";
+    } = {},
   ) =>
     Effect.gen(function* () {
       const uuid = yield* crypto.randomUUIDv4;
@@ -107,9 +121,11 @@ export const make = Effect.gen(function* () {
         ...identityOf(target.link),
         startedAt: target.watch.startedAt,
         watch: next,
-        ...(wake === undefined
+        ...(options.snooze ? { snooze: true } : {}),
+        ...(options.ended === undefined ? {} : { ended: options.ended }),
+        ...(options.wake === undefined
           ? {}
-          : { wake: { ...wake, messageId: MessageId.make(`message:pr-watch:${uuid}`) } }),
+          : { wake: { ...options.wake, messageId: MessageId.make(`message:pr-watch:${uuid}`) } }),
       });
     });
 
@@ -117,20 +133,27 @@ export const make = Effect.gen(function* () {
   // "Watching" while it learns nothing.
   const giveUp = (target: WatchTarget) =>
     record(target, null, {
-      text: `T3 Code stopped watching pull request #${target.link.number} (${target.link.url}) because it could not read it from the host for ${READ_FAILURE_LIMIT} minutes. Check it yourself, and call watch_pull_request to watch it again.`,
-      notification: {
-        source: { kind: "monitor" },
-        outcome: "failed",
-        summary: `#${target.link.number}: stopped watching, could not read it`,
+      wake: {
+        text: `T3 Code stopped watching pull request #${target.link.number} (${target.link.url}) because it could not read it from the host for ${READ_FAILURE_LIMIT} minutes. Check it yourself, and call watch_pull_request to watch it again.`,
+        notification: {
+          source: { kind: "monitor" },
+          outcome: "failed",
+          summary: `#${target.link.number}: stopped watching, could not read it`,
+        },
       },
     }).pipe(Effect.catch(() => record(target, null)));
 
-  const check = Effect.fn("PullRequestWatchReactor.check")(function* (target: WatchTarget) {
+  const check = Effect.fn("PullRequestWatchReactor.check")(function* (
+    target: WatchTarget,
+    snoozeGreen: boolean,
+  ) {
     const { thread, link, watch } = target;
     const pullRequest = identityOf(link);
     // A merged pull request cannot reopen, so its watch ends without a host read, even on a
     // settled thread. A closed one can, so the host decides below.
-    if (link.snapshot?.state === "merged") return yield* record(target, null);
+    if (link.snapshot?.state === "merged") {
+      return yield* record(target, null, { ended: "merged" });
+    }
     if (thread.settledOverride === "settled" || thread.settledAt !== null) return;
 
     const reference = { projectId: thread.projectId, ...pullRequest };
@@ -158,7 +181,7 @@ export const make = Effect.gen(function* () {
     }
     readFailures.delete(key);
     const [detail, activity] = read.value;
-    if (detail.state !== "open") return yield* record(target, null);
+    if (detail.state !== "open") return yield* record(target, null, { ended: detail.state });
 
     // A degraded read (GitHub's review thread query failed) is truncated with no long thread to
     // explain it, and would skip review comments, so remarks wait for a later pass. Replies past
@@ -168,17 +191,20 @@ export const make = Effect.gen(function* () {
       !activity.reviewThreads.some((reviewThread) => reviewThread.nextCommentsCursor !== undefined);
     const report = evaluatePullRequestWatch(watch, detail, degraded ? null : activity.comments);
     if (report.changes.length > 0) {
-      return yield* record(
-        target,
-        report.exhausted ? null : report.next,
-        pullRequestWatchMessage({
+      return yield* record(target, report.exhausted ? null : report.next, {
+        wake: pullRequestWatchMessage({
           number: link.number,
           url: link.url,
           baseBranch: detail.baseBranch,
           headSha: report.next.headSha,
           report,
         }),
-      );
+      });
+    }
+    // Green and idle means the agent already ended its turn for the green wake.
+    if (snoozeGreen && pullRequestGreenSnoozeDue(report.next)) {
+      const records = yield* projections.getThreadRecords(thread.id, ["runs", "runtimeRequests"]);
+      if (threadIdleForSnooze(records)) return yield* record(target, report.next, { snooze: true });
     }
     if (!watchesEqual(report.next, watch)) yield* record(target, report.next);
   });
@@ -192,10 +218,11 @@ export const make = Effect.gen(function* () {
     );
     const keys = new Set(targets.map(failureKey));
     for (const key of readFailures.keys()) if (!keys.has(key)) readFailures.delete(key);
+    const { snoozeGreenPullRequests } = yield* settings.getSettings;
     yield* Effect.forEach(
       targets,
       (target) =>
-        check(target).pipe(
+        check(target, snoozeGreenPullRequests).pipe(
           Effect.catchCause(
             logFailure("pull request watch check failed", {
               threadId: target.thread.id,

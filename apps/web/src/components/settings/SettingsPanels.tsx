@@ -581,6 +581,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.snoozeLimitedThreads !== DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads
         ? ["Snooze limited threads"]
         : []),
+      ...(settings.snoozeGreenPullRequests !== DEFAULT_UNIFIED_SETTINGS.snoozeGreenPullRequests
+        ? ["Snooze green pull requests"]
+        : []),
       ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? ["Word wrap"] : []),
       ...(settings.persistComposerContextStrip !==
       DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip
@@ -701,6 +704,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.sidebarAutoSettleOnMerge,
       settings.autoResumeLimitedThreads,
       settings.snoozeLimitedThreads,
+      settings.snoozeGreenPullRequests,
       settings.sidebarProjectGroupingMode,
       settings.sidebarProjectSortOrder,
       settings.sidebarWorkingShelfEnabled,
@@ -808,6 +812,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
+      snoozeGreenPullRequests: DEFAULT_UNIFIED_SETTINGS.snoozeGreenPullRequests,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
@@ -2354,6 +2359,22 @@ export function GeneralSettingsPanel() {
                 updateSettings({ snoozeLimitedThreads: Boolean(checked) })
               }
               aria-label="Snooze limited threads"
+            />
+          }
+        />
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("snooze-green-pull-requests")}
+          description="Snooze a thread once the pull request it watches passes its checks. It wakes when a check fails, someone comments, or the branch conflicts."
+          settingKeys={["snoozeGreenPullRequests"]}
+          control={
+            <ScopedSwitch
+              settingKeys={["snoozeGreenPullRequests"]}
+              checked={settings.snoozeGreenPullRequests}
+              onCheckedChange={(checked) =>
+                updateSettings({ snoozeGreenPullRequests: Boolean(checked) })
+              }
+              aria-label="Snooze green pull requests"
             />
           }
         />

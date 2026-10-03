@@ -2876,6 +2876,8 @@ const OrchestrationV2InternalCommand = Schema.Union([
    * Records what a pull request watch saw, and wakes the agent in the same transaction when
    * `wake` is set. Rejected once the watch started at `startedAt` has ended, and a wake is
    * rejected on a settled or archived thread, so a read that raced either changes nothing.
+   * `snooze` snoozes the idle thread for the passing checks in `watch`, and `ended` says the
+   * watch ends because its pull request merged or closed.
    */
   Schema.Struct({
     type: Schema.Literal("thread.pull-request-watch.sync"),
@@ -2885,6 +2887,8 @@ const OrchestrationV2InternalCommand = Schema.Union([
     startedAt: IsoDateTime,
     /** The watch to record, or null to end it. */
     watch: Schema.NullOr(ThreadPullRequestWatch),
+    snooze: Schema.optional(Schema.Boolean),
+    ended: Schema.optional(Schema.Literals(["merged", "closed"])),
     wake: Schema.optional(
       Schema.Struct({
         messageId: MessageId,

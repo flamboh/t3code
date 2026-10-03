@@ -115,6 +115,11 @@ import {
   ThreadForkServiceV2,
 } from "./ThreadForkService.ts";
 import { planThreadDeletion } from "./ThreadDeletion.ts";
+import {
+  PULL_REQUEST_GREEN_SNOOZE_DAYS,
+  pullRequestGreenSnoozeDue,
+  threadIdleForSnooze,
+} from "./pullRequestWatch.ts";
 
 export class OrchestratorDispatchError extends Schema.TaggedError<OrchestratorDispatchError>()(
   "OrchestratorDispatchError",
@@ -2222,7 +2227,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   });
 
   // Checked under the thread lock: the watch or the thread can change while the host is read.
-  // The watch is recorded first so the wake's own thread events carry it.
+  // The watch is recorded first so the wake's own thread events carry it. A snooze for passing
+  // checks needs the agent done with its wake, and ending the watch lifts that snooze or, for a
+  // merged or closed pull request, settles the thread.
   const dispatchPullRequestWatchSync = Effect.fn("orchestrationV2.dispatch.pullRequestWatchSync")(
     function* (
       command: Extract<
@@ -2250,14 +2257,104 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         thread.settledOverride === "settled" ||
         thread.settledAt !== null ||
         isProviderNativeSubagentThread(thread);
-      if (link?.watch?.startedAt !== command.startedAt || (command.wake && inactive)) {
+      if (
+        link?.watch?.startedAt !== command.startedAt ||
+        ((command.wake || command.snooze) && inactive)
+      ) {
         return yield* new OrchestratorDispatchError({
           commandId: command.commandId,
           commandType: command.type,
           cause: "The pull request watch ended or its thread settled while it was read.",
         });
       }
+      if (command.snooze) {
+        const records = yield* projectionStore
+          .getThreadRecords(command.threadId, ["runs", "runtimeRequests"])
+          .pipe(mapDispatchError(command));
+        if (
+          command.watch === null ||
+          command.wake !== undefined ||
+          !pullRequestGreenSnoozeDue(command.watch) ||
+          !threadIdleForSnooze(records)
+        ) {
+          return yield* new OrchestratorDispatchError({
+            commandId: command.commandId,
+            commandType: command.type,
+            cause: "The thread is busy or its pull request is no longer green.",
+          });
+        }
+        const now = yield* DateTime.now;
+        const snoozedUntil = DateTime.add(now, { days: PULL_REQUEST_GREEN_SNOOZE_DAYS });
+        yield* dispatchThreadMutation(
+          {
+            ...command,
+            watch: { ...command.watch, snoozedUntil: DateTime.formatIso(snoozedUntil) },
+          },
+          events,
+          effects,
+        );
+        // A snooze the user already chose stands; the marker alone keeps this one from repeating.
+        if (
+          thread.snoozedUntil != null &&
+          DateTime.toEpochMillis(thread.snoozedUntil) > DateTime.toEpochMillis(now)
+        ) {
+          return;
+        }
+        const { thread: recorded } = yield* getProjectionWithPendingEvents(
+          command.threadId,
+          events,
+        );
+        yield* emit(
+          events,
+          command,
+        )({
+          type: "thread.snoozed",
+          threadId: command.threadId,
+          providerInstanceId: recorded.providerInstanceId,
+          occurredAt: now,
+          payload: { ...recorded, snoozedUntil, snoozedAt: now, updatedAt: now },
+        });
+        return;
+      }
       yield* dispatchThreadMutation(command, events, effects);
+      // A watch that ends lifts the snooze it placed. The user left the thread to the watch, so a
+      // merged or closed pull request also settles it; any other ending leaves it to the user.
+      const placed = link.watch.snoozedUntil;
+      const now = yield* DateTime.now;
+      if (
+        command.watch === null &&
+        placed !== undefined &&
+        thread.snoozedUntil != null &&
+        DateTime.toEpochMillis(thread.snoozedUntil) === Date.parse(placed) &&
+        DateTime.toEpochMillis(thread.snoozedUntil) > DateTime.toEpochMillis(now)
+      ) {
+        const { thread: recorded } = yield* getProjectionWithPendingEvents(
+          command.threadId,
+          events,
+        );
+        yield* emit(
+          events,
+          command,
+        )({
+          type: "thread.unsnoozed",
+          threadId: command.threadId,
+          providerInstanceId: recorded.providerInstanceId,
+          occurredAt: now,
+          payload: { ...recorded, snoozedUntil: null, snoozedAt: null, updatedAt: now },
+        });
+        if (command.ended !== undefined && thread.archivedAt === null) {
+          const records = yield* projectionStore
+            .getThreadRecords(command.threadId, ["runs", "runtimeRequests"])
+            .pipe(mapDispatchError(command));
+          if (threadIdleForSnooze(records)) {
+            yield* dispatchThreadMutation(
+              { type: "thread.settle", commandId: command.commandId, threadId: command.threadId },
+              events,
+              effects,
+            );
+          }
+        }
+      }
       if (command.wake === undefined) return;
       yield* dispatchMessage(
         {
@@ -2312,15 +2409,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
     effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
   ) {
-    const thread = yield* projectionStore.getThread(command.threadId).pipe(
-      Effect.mapError(
-        (cause) =>
-          new OrchestratorProjectionError({
-            threadId: command.threadId,
-            cause,
-          }),
-      ),
-    );
+    // A mutation that follows another in the same command builds on its events.
+    const thread = (yield* Ref.get(events)).some((event) => event.threadId === command.threadId)
+      ? (yield* getProjectionWithPendingEvents(command.threadId, events)).thread
+      : yield* projectionStore.getThread(command.threadId).pipe(
+          Effect.mapError(
+            (cause) =>
+              new OrchestratorProjectionError({
+                threadId: command.threadId,
+                cause,
+              }),
+          ),
+        );
     if (thread.deletedAt !== null) {
       return yield* new OrchestratorDispatchError({
         commandId: command.commandId,

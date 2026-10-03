@@ -293,6 +293,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["usage quota rate limit reset wake recover continue"],
   },
   {
+    id: "snooze-green-pull-requests",
+    title: "Snooze green pull requests",
+    to: "/settings/general",
+    searchTerms: ["watch pr checks passed ci green wake review comment conflict"],
+  },
+  {
     id: "auto-resume-limited-threads",
     title: "Auto-resume limited threads",
     to: "/settings/general",

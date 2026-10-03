@@ -17,6 +17,7 @@ import {
   type ModelSelection,
   type OrchestrationV2Run,
   ProjectId,
+  type PullRequestComment,
   type PullRequestDetail,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -161,6 +162,58 @@ const TestProviderInstanceRegistry = Layer.succeed(
     subscribeChanges: Effect.never,
   },
 );
+
+/** Pull request #7 as the watch reads it from the host. */
+const watchedPullRequestDetail = (
+  projectId: ProjectId,
+  overrides: Partial<PullRequestDetail> = {},
+): PullRequestDetail => ({
+  provider: "github",
+  capabilities: {
+    diff: true,
+    comment: true,
+    actions: [],
+    mergeMethods: [],
+    search: false,
+    review: { inlineComment: false, reply: false, resolve: false, verdicts: [] },
+    reviewers: { request: false, listCandidates: false },
+  },
+  viewerPermissions: {
+    actions: [],
+    comment: true,
+    resolve: true,
+    verdicts: [],
+    requestReviewers: false,
+  },
+  projectId,
+  projectTitle: "Watch wake",
+  workspaceRoot: "/workspace/watch",
+  repository: "pingdotgg/t3code",
+  number: 7,
+  title: "Watched pull request",
+  body: "",
+  url: "https://github.com/pingdotgg/t3code/pull/7",
+  author: { login: "agent-user", name: null, avatarUrl: null },
+  state: "open",
+  isDraft: false,
+  mergeability: "mergeable",
+  additions: 1,
+  deletions: 0,
+  changedFiles: 1,
+  headBranch: "feature",
+  headSha: "abc1234def",
+  baseBranch: "main",
+  createdAt: "2026-10-02T12:00:00.000Z",
+  updatedAt: "2026-10-02T12:00:00.000Z",
+  mergedAt: null,
+  closedAt: null,
+  reviewers: [],
+  labels: [],
+  checks: [],
+  mergeCapabilities: { merge: true, squash: true, rebase: true },
+  viewer: "agent-user",
+  ...overrides,
+});
 
 /** Seed a project row the way a committed `project.created` event folds into it. */
 const seedProject = (input: {
@@ -2288,6 +2341,7 @@ it.layer(TestLayer)("OrchestrationV2LayerLive lifecycle", (it) => {
         Effect.provide(
           Layer.mergeAll(
             NodeServices.layer,
+            ServerSettings.layerTest(),
             Layer.mock(PullRequestService.PullRequestService)({
               detail: () => Effect.die("host unreachable"),
               activity: () => Effect.die("host unreachable"),
@@ -2351,57 +2405,14 @@ it.layer(TestLayer)("OrchestrationV2LayerLive lifecycle", (it) => {
         watching: true,
       });
 
-      const at = "2026-10-02T12:00:00.000Z";
-      const detail: PullRequestDetail = {
-        provider: "github",
-        capabilities: {
-          diff: true,
-          comment: true,
-          actions: [],
-          mergeMethods: [],
-          search: false,
-          review: { inlineComment: false, reply: false, resolve: false, verdicts: [] },
-          reviewers: { request: false, listCandidates: false },
-        },
-        viewerPermissions: {
-          actions: [],
-          comment: true,
-          resolve: true,
-          verdicts: [],
-          requestReviewers: false,
-        },
-        projectId,
-        projectTitle: "Watch wake",
-        workspaceRoot: "/workspace/watch",
-        repository: key.repository,
-        number: key.number,
-        title: "Watched pull request",
-        body: "",
-        url,
-        author: { login: "agent-user", name: null, avatarUrl: null },
-        state: "open",
-        isDraft: false,
-        mergeability: "mergeable",
-        additions: 1,
-        deletions: 0,
-        changedFiles: 1,
-        headBranch: "feature",
-        headSha: "abc1234def",
-        baseBranch: "main",
-        createdAt: at,
-        updatedAt: at,
-        mergedAt: null,
-        closedAt: null,
-        reviewers: [],
-        labels: [],
+      const detail = watchedPullRequestDetail(projectId, {
         checks: [{ name: "lint", status: "failure", description: null, url: null }],
-        mergeCapabilities: { merge: true, squash: true, rebase: true },
-        viewer: "agent-user",
-      };
+      });
       const reactor = yield* PullRequestWatchReactor.make.pipe(
         Effect.provide(
           Layer.mergeAll(
             NodeServices.layer,
+            ServerSettings.layerTest(),
             Layer.mock(PullRequestService.PullRequestService)({
               detail: () => Effect.succeed(detail),
               activity: () =>
@@ -2442,6 +2453,242 @@ it.layer(TestLayer)("OrchestrationV2LayerLive lifecycle", (it) => {
         { headSha: watch?.headSha, failedChecks: watch?.failedChecks, wakes: watch?.wakes },
         { headSha: "abc1234def", failedChecks: ["lint"], wakes: 0 },
       );
+    }),
+  );
+
+  const greenSnoozeThread = (name: string, told = true) =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const threadId = ThreadId.make(`runtime-pr-green-${name}`);
+      const projectId = ProjectId.make(`pr-green-${name}-project`);
+      yield* seedProject({
+        projectId,
+        title: "Watch green",
+        workspaceRoot: "/workspace/watch",
+        defaultModelSelection: null,
+        createdAt: "2026-10-01T00:00:00.000Z",
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make(`pr-green-${name}-create`),
+        threadId,
+        projectId,
+        title: "Watch green",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+      });
+      const key = { host: "github.com", repository: "pingdotgg/t3code", number: 7 };
+      yield* orchestrator.dispatch({
+        type: "thread.pull-request.watch",
+        commandId: CommandId.make(`pr-green-${name}-watch`),
+        threadId,
+        ...key,
+        watching: true,
+        link: { url: "https://github.com/pingdotgg/t3code/pull/7", source: "agent" },
+      });
+      const green = watchedPullRequestDetail(projectId, {
+        checks: [{ name: "lint", status: "success", description: null, url: null }],
+      });
+      // By default the agent was already told the checks passed and finished that turn.
+      const started = (yield* orchestrator.getThreadShell(threadId))?.pullRequests?.[0]?.watch;
+      assert.isDefined(started);
+      if (told) {
+        yield* orchestrator.dispatch({
+          type: "thread.pull-request-watch.sync",
+          commandId: CommandId.make(`pr-green-${name}-told`),
+          threadId,
+          ...key,
+          startedAt: started!.startedAt,
+          watch: { ...started!, headSha: green.headSha ?? null, passed: true },
+        });
+      }
+      const host = {
+        detail: green,
+        comments: [] as Array<PullRequestComment>,
+      };
+      const reactor = (snoozeGreenPullRequests: boolean, sidebarAutoSettleOnMerge = true) =>
+        PullRequestWatchReactor.make.pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              NodeServices.layer,
+              ServerSettings.layerTest({ snoozeGreenPullRequests, sidebarAutoSettleOnMerge }),
+              Layer.mock(PullRequestService.PullRequestService)({
+                detail: () => Effect.sync(() => host.detail),
+                activity: () =>
+                  Effect.sync(() => ({
+                    comments: host.comments,
+                    commentCount: host.comments.length,
+                    commentsTruncated: false,
+                    reviewThreads: [],
+                    commits: [],
+                  })),
+              }),
+            ),
+          ),
+        );
+      const shell = orchestrator
+        .getThreadShell(threadId)
+        .pipe(Effect.map((thread) => ({ thread, watch: thread?.pullRequests?.[0]?.watch })));
+      return { threadId, host, reactor, shell };
+    });
+
+  it.effect("snoozes an idle thread once its watched pull request is green", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { threadId, reactor, shell } = yield* greenSnoozeThread("snooze");
+
+      // Off, the watch behaves as before.
+      yield* (yield* reactor(false)).sweep;
+      assert.isNull((yield* shell).thread?.snoozedUntil ?? null);
+
+      const sweeper = yield* reactor(true);
+      yield* sweeper.sweep;
+      const snoozed = yield* shell;
+      assert.isDefined(snoozed.watch?.snoozedUntil);
+      assert.equal(DateTime.formatIso(snoozed.thread!.snoozedUntil!), snoozed.watch!.snoozedUntil);
+      assert.equal(
+        DateTime.toEpochMillis(snoozed.thread!.snoozedUntil!) -
+          DateTime.toEpochMillis(snoozed.thread!.snoozedAt!),
+        7 * 24 * 60 * 60 * 1000,
+      );
+
+      // A thread the user woke stays awake for the same green result.
+      yield* orchestrator.dispatch({
+        type: "thread.unsnooze",
+        commandId: CommandId.make("pr-green-snooze-user-wake"),
+        threadId,
+        reason: "user",
+      });
+      yield* sweeper.sweep;
+      const woken = yield* shell;
+      assert.isNull(woken.thread?.snoozedUntil ?? null);
+      assert.equal(woken.watch?.snoozedUntil, snoozed.watch?.snoozedUntil);
+    }),
+  );
+
+  it.effect("wakes a green-snoozed thread for review feedback", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { threadId, host, reactor, shell } = yield* greenSnoozeThread("feedback");
+      const sweeper = yield* reactor(true);
+      yield* sweeper.sweep;
+      assert.isNotNull((yield* shell).thread?.snoozedUntil ?? null);
+
+      host.comments = [
+        {
+          id: "review-1",
+          kind: "review-comment",
+          author: { login: "reviewer", name: null, avatarUrl: null },
+          body: "One more thing.",
+          createdAt: "2999-01-01T00:00:00.000Z",
+          url: null,
+          path: "src/index.ts",
+          reviewState: null,
+        },
+      ];
+      yield* sweeper.sweep;
+      assert.isNull((yield* shell).thread?.snoozedUntil ?? null);
+      const { messages } = yield* orchestrator.getThreadRecords(threadId, ["messages"]);
+      assert.deepEqual(
+        messages.flatMap((message) => message.notification?.summary ?? []),
+        ["#7: new comments"],
+      );
+    }),
+  );
+
+  it.effect("waits for the agent to finish its green wake before snoozing", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { threadId, reactor, shell } = yield* greenSnoozeThread("busy", false);
+      const sweeper = yield* reactor(true);
+      yield* sweeper.sweep;
+      const { runs } = yield* orchestrator.getThreadRecords(threadId, ["runs"]);
+      assert.equal(runs.length, 1);
+      assert.notInclude(["completed", "failed", "interrupted", "cancelled"], runs[0]!.status);
+
+      yield* sweeper.sweep;
+      const busy = yield* shell;
+      assert.isTrue(busy.watch?.passed);
+      assert.isUndefined(busy.watch?.snoozedUntil);
+      assert.isNull(busy.thread?.snoozedUntil ?? null);
+    }),
+  );
+
+  it.effect("wakes a green-snoozed thread for a failed check", () =>
+    Effect.gen(function* () {
+      const { host, reactor, shell } = yield* greenSnoozeThread("failure");
+      const sweeper = yield* reactor(true);
+      yield* sweeper.sweep;
+      assert.isNotNull((yield* shell).thread?.snoozedUntil ?? null);
+      const green = host.detail;
+
+      host.detail = {
+        ...green,
+        checks: [{ name: "lint", status: "failure", description: null, url: null }],
+      };
+      yield* sweeper.sweep;
+      const failed = yield* shell;
+      assert.isNull(failed.thread?.snoozedUntil ?? null);
+      assert.isUndefined(failed.watch?.snoozedUntil);
+    }),
+  );
+
+  it.effect("settles a green-snoozed thread when its pull request closes", () =>
+    Effect.gen(function* () {
+      const { host, reactor, shell } = yield* greenSnoozeThread("closed");
+      const sweeper = yield* reactor(true);
+      yield* sweeper.sweep;
+      assert.isNotNull((yield* shell).thread?.snoozedUntil ?? null);
+
+      host.detail = { ...host.detail, state: "closed", closedAt: "2026-10-03T00:00:00.000Z" };
+      yield* sweeper.sweep;
+      const closed = yield* shell;
+      assert.isUndefined(closed.watch);
+      assert.isNull(closed.thread?.snoozedUntil ?? null);
+      assert.equal(closed.thread?.settledOverride, "settled");
+      assert.isNotNull(closed.thread?.settledAt ?? null);
+    }),
+  );
+
+  it.effect("settles a green-snoozed thread on merge without auto-settle on merge", () =>
+    Effect.gen(function* () {
+      const { host, reactor, shell } = yield* greenSnoozeThread("merged");
+      const sweeper = yield* reactor(true, false);
+      yield* sweeper.sweep;
+      assert.isNotNull((yield* shell).thread?.snoozedUntil ?? null);
+
+      host.detail = { ...host.detail, state: "merged", mergedAt: "2026-10-03T00:00:00.000Z" };
+      yield* sweeper.sweep;
+      const merged = yield* shell;
+      assert.isUndefined(merged.watch);
+      assert.isNull(merged.thread?.snoozedUntil ?? null);
+      assert.equal(merged.thread?.settledOverride, "settled");
+    }),
+  );
+
+  it.effect("leaves a thread the user woke to normal settlement when its pull request closes", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { threadId, host, reactor, shell } = yield* greenSnoozeThread("woken-closed");
+      const sweeper = yield* reactor(true);
+      yield* sweeper.sweep;
+      yield* orchestrator.dispatch({
+        type: "thread.unsnooze",
+        commandId: CommandId.make("pr-green-woken-closed-user-wake"),
+        threadId,
+        reason: "user",
+      });
+
+      host.detail = { ...host.detail, state: "closed", closedAt: "2026-10-03T00:00:00.000Z" };
+      yield* sweeper.sweep;
+      const closed = yield* shell;
+      assert.isUndefined(closed.watch);
+      assert.isNull(closed.thread?.settledOverride ?? null);
     }),
   );
 

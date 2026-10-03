@@ -89,6 +89,7 @@ function AutoSettleSettingsRows() {
     patch: Partial<AutoSettleSettings> & {
       autoResumeLimitedThreads?: boolean;
       snoozeLimitedThreads?: boolean;
+      snoozeGreenPullRequests?: boolean;
     },
   ) => {
     if (writeInFlight.current) return;
@@ -183,6 +184,17 @@ function AutoSettleSettingsRows() {
             value={uniformMobileSetting(displayTargets, "snoozeLimitedThreads")}
             disabled={disabled}
             onValueChange={(value) => writeToAll({ snoozeLimitedThreads: value })}
+          />
+        </SettingsSection>
+      ) : null}
+      {!projectSelected ? (
+        <SettingsSection title="Pull requests">
+          <SettingsSwitchRow
+            icon="checkmark.circle"
+            label="Snooze green pull requests"
+            value={uniformMobileSetting(displayTargets, "snoozeGreenPullRequests")}
+            disabled={disabled}
+            onValueChange={(value) => writeToAll({ snoozeGreenPullRequests: value })}
           />
         </SettingsSection>
       ) : null}

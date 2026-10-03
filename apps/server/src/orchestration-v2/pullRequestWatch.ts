@@ -1,5 +1,7 @@
 import type {
   OrchestrationV2Notification,
+  OrchestrationV2Run,
+  OrchestrationV2RuntimeRequest,
   PullRequestCheck,
   PullRequestComment,
   PullRequestDetail,
@@ -11,6 +13,8 @@ import type {
  * this only stops a chatty bot looping an agent that is replying to it.
  */
 export const PULL_REQUEST_WATCH_WAKE_LIMIT = 10;
+/** How long a thread stays snoozed for passing checks when nothing else wakes it. */
+export const PULL_REQUEST_GREEN_SNOOZE_DAYS = 7;
 const LISTED_ITEMS = 10;
 const SNIPPET_LENGTH = 200;
 
@@ -109,9 +113,43 @@ export function evaluatePullRequestWatch(
       remarkIds,
       conflicting,
       wakes,
+      // A green snooze holds for one result: a push or a check that stops passing ends it.
+      ...(!headMoved && passed && watch.snoozedUntil !== undefined
+        ? { snoozedUntil: watch.snoozedUntil }
+        : {}),
     },
     exhausted: commentsOnly && wakes >= PULL_REQUEST_WATCH_WAKE_LIMIT,
   };
+}
+
+/**
+ * The watched pull request is green (its checks passed, none failed, no conflict) and its thread
+ * was not yet snoozed for it.
+ */
+export function pullRequestGreenSnoozeDue(watch: ThreadPullRequestWatch): boolean {
+  return (
+    watch.passed &&
+    watch.failedChecks.length === 0 &&
+    !watch.conflicting &&
+    watch.snoozedUntil === undefined
+  );
+}
+
+/** Nothing runs, waits to run, or waits on the user, so the agent finished with the last wake. */
+export function threadIdleForSnooze(records: {
+  readonly runs: ReadonlyArray<Pick<OrchestrationV2Run, "status">>;
+  readonly runtimeRequests: ReadonlyArray<Pick<OrchestrationV2RuntimeRequest, "status">>;
+}): boolean {
+  return (
+    records.runs.every(
+      (run) =>
+        run.status !== "queued" &&
+        run.status !== "preparing" &&
+        run.status !== "starting" &&
+        run.status !== "running" &&
+        run.status !== "waiting",
+    ) && records.runtimeRequests.every((request) => request.status !== "pending")
+  );
 }
 
 function snippet(body: string): string {
