@@ -45,6 +45,21 @@ describe("t3code/no-unscoped-has", () => {
     `const className = "[&:not(.collapsed):not(:has(>[data-slot=icon]))]:ps-2";`,
   );
 
+  rule.valid(
+    "allows :has() on a group or peer element",
+    `const className = "group-[:has(input)]:p-2 peer-[:has(input)]:p-2 group-[&:has(input)]/row:p-2";`,
+  );
+
+  rule.valid(
+    "allows a selector list whose own branch is anchored",
+    `const className = "[:is(.a,.b):has(x)_&]:p-2 [&:not(.a,:has(x))]:p-2";`,
+  );
+
+  rule.valid(
+    "ignores :has() text in quoted attribute values",
+    `const className = "data-[foo='_:has(x)']:p-2 [&_[data-query='_:has(foo)']]:p-2";`,
+  );
+
   rule.invalid(
     "reports a sibling :has() with nothing anchoring it",
     `const className = "[&+:has([data-chat-composer-form])_[data-chat-composer-form]]:before:rounded-none";`,
@@ -69,6 +84,16 @@ describe("t3code/no-unscoped-has", () => {
   );
 
   rule.invalid("reports uppercase :HAS()", `const className = "[*:HAS([data-open])_&]:hidden";`);
+
+  rule.invalid(
+    "reports a selector-list branch borrowing another branch's anchor",
+    `const className = "[.safe,:has(input)_&]:p-2";`,
+  );
+
+  rule.invalid(
+    "reports an unanchored branch inside :is()",
+    `const className = "[&_:is(.safe,:has(input))]:p-2";`,
+  );
 
   rule.invalid(
     "reports :has() anchored to the document root",

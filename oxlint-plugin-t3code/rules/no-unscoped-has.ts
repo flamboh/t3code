@@ -6,9 +6,15 @@ const COMBINATOR_PATTERN = /[\s>+~]/u;
 const NARROWING_PATTERN = /[.#[]|^[a-z]/iu;
 const ROOT_COMPOUND_PATTERN = /^(?:html|body|:root)(?![\w-])/iu;
 
+// group-[...] and peer-[...] match the .group/.peer element; data-[...] and
+// aria-[...] hold attribute values, not selectors.
+const GROUP_PREFIX_PATTERN = /(?:^|:)(?:group|peer)-$/u;
+const ATTRIBUTE_PREFIX_PATTERN = /(?:^|:)(?:data|aria)-$/u;
+const QUOTED_PATTERN = /(["'])(?:\\.|(?!\1).)*\1/gu;
+
 /** Tailwind arbitrary variants in a class token: top-level `[...]` groups followed by `:`. */
-function variantGroups(token: string): string[] {
-  const groups: string[] = [];
+function variantGroups(token: string): { prefix: string; group: string }[] {
+  const groups: { prefix: string; group: string }[] = [];
   let depth = 0;
   let start = -1;
   for (let index = 0; index < token.length; index++) {
@@ -18,7 +24,9 @@ function variantGroups(token: string): string[] {
       depth++;
     } else if (char === "]" && depth > 0) {
       depth--;
-      if (depth === 0 && token[index + 1] === ":") groups.push(token.slice(start, index));
+      if (depth === 0 && token[index + 1] === ":") {
+        groups.push({ prefix: token.slice(0, start - 1), group: token.slice(start, index) });
+      }
     }
   }
   return groups;
@@ -29,18 +37,25 @@ function hasCompounds(selector: string): string[] {
   const compounds: string[] = [];
   let index = selector.indexOf(":has(");
   while (index !== -1) {
-    let start = index - 1;
+    let compound = "";
     let depth = 0;
-    // An unbalanced "(" means the :has() sits inside :not()/:is()/:where(),
-    // so the compound outside that wrapper still applies.
-    for (; start >= 0; start--) {
-      const char = selector[start];
+    // Other branches of a selector list are skipped until the wrapper that holds
+    // them opens. An unbalanced "(" means the :has() sits inside :not()/:is()/
+    // :where(), so the compound outside that wrapper still applies.
+    let skippingBranch = false;
+    for (let position = index - 1; position >= 0; position--) {
+      const char = selector[position] ?? "";
       if (char === ")") depth++;
       else if (char === "(") {
         if (depth > 0) depth--;
-      } else if (depth === 0 && COMBINATOR_PATTERN.test(char ?? "")) break;
+        else skippingBranch = false;
+      } else if (depth === 0 && char === ",") {
+        skippingBranch = true;
+        continue;
+      } else if (depth === 0 && !skippingBranch && COMBINATOR_PATTERN.test(char)) break;
+      if (!skippingBranch) compound = char + compound;
     }
-    compounds.push(selector.slice(start + 1, index));
+    compounds.push(compound);
     index = selector.indexOf(":has(", index + 1);
   }
   return compounds;
@@ -72,9 +87,16 @@ function findUnscopedHasVariants(text: string): string[] {
   if (!text.toLowerCase().includes(":has(")) return [];
   const offenders: string[] = [];
   for (const token of text.split(/\s+/u)) {
-    for (const group of variantGroups(token)) {
+    for (const { prefix, group } of variantGroups(token)) {
+      if (ATTRIBUTE_PREFIX_PATTERN.test(prefix)) continue;
       // Tailwind writes spaces as "_", and "&" is the element carrying the class.
-      const selector = group.toLowerCase().replaceAll("_", " ").replaceAll("&", ".self");
+      const relative = group.toLowerCase().replace(QUOTED_PATTERN, '""').replaceAll("_", " ");
+      const owner = GROUP_PREFIX_PATTERN.test(prefix) ? ".group" : ".self";
+      const selector = relative.includes("&")
+        ? relative.replaceAll("&", owner)
+        : owner === ".self"
+          ? relative
+          : `${owner}:is(${relative})`;
       const unscoped = hasCompounds(selector).some((compound) => {
         const anchor = withoutNegations(compound);
         return !NARROWING_PATTERN.test(anchor) || ROOT_COMPOUND_PATTERN.test(anchor);
