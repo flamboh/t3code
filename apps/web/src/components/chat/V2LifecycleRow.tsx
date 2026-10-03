@@ -415,23 +415,28 @@ function SubagentTimelineLink(props: {
     (thread) => thread?.projection.subagents.find((agent) => agent.id === props.subagentId) ?? null,
   );
   const threadId = props.threadId;
-  const status = props.event?.status ?? agent?.status ?? props.status;
-  const statusLabel = props.event?.label ?? subagentStatusVisual(status).label;
+  const liveStatus = agent?.status ?? props.status;
+  const status = props.event ? props.event.status : liveStatus;
+  const statusLabel = props.event?.label ?? subagentStatusVisual(liveStatus).label;
   const result = (agent?.result ?? props.result)?.trim();
   const progress = (agent?.progress ?? props.progress)?.trim();
-  const settled = SETTLED_SUBAGENT_STATUSES.has(status);
+  const settled = SETTLED_SUBAGENT_STATUSES.has(status ?? liveStatus);
   const rawDetail = settled ? result || progress : progress || result;
   const detail =
     rawDetail && !GENERIC_CHILD_END.test(rawDetail) ? plainDetail(rawDetail) || null : null;
   const failed = status === "failed";
   const timing = {
-    status,
+    status: liveStatus,
     startedAt: isoOrNull(agent?.startedAt ?? props.startedAt),
     completedAt: isoOrNull(agent?.completedAt ?? props.completedAt),
   };
   const content = (
     <>
-      <SubagentAvatar driver={props.driver} provider={props.provider} status={status} />
+      <SubagentAvatar
+        driver={props.driver}
+        provider={props.provider}
+        status={status ?? undefined}
+      />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline gap-2">
           <span className="min-w-0 truncate text-xs font-medium text-foreground">
@@ -507,7 +512,7 @@ function SubagentTimelineLink(props: {
           {...props}
           elapsed={agent ? <AgentElapsed agent={projectedSubagentsToRuntime([agent])[0]!} /> : null}
           model={agent?.model ?? null}
-          status={status}
+          status={status ?? liveStatus}
           result={agent?.result ?? props.result}
           progress={agent?.progress ?? props.progress}
         />
