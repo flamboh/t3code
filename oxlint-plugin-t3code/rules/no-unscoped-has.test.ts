@@ -35,6 +35,16 @@ describe("t3code/no-unscoped-has", () => {
 
   rule.valid("ignores prose mentioning :has()", `const note = "uses :has( for styling";`);
 
+  rule.valid(
+    "ignores :has() inside an arbitrary value",
+    `const className = "before:content-[':has(foo)']";`,
+  );
+
+  rule.valid(
+    "allows a negated :has() on the element itself",
+    `const className = "[&:not(.collapsed):not(:has(>[data-slot=icon]))]:ps-2";`,
+  );
+
   rule.invalid(
     "reports a sibling :has() with nothing anchoring it",
     `const className = "[&+:has([data-chat-composer-form])_[data-chat-composer-form]]:before:rounded-none";`,
@@ -52,6 +62,13 @@ describe("t3code/no-unscoped-has", () => {
     "reports a universal :has() ancestor",
     "const className = `flex [*:has([data-open])_&]:hidden`;",
   );
+
+  rule.invalid(
+    "reports :has() whose only anchor is negated",
+    `const className = "[*:not(.safe):has([data-open])_&]:hidden";`,
+  );
+
+  rule.invalid("reports uppercase :HAS()", `const className = "[*:HAS([data-open])_&]:hidden";`);
 
   rule.invalid(
     "reports :has() anchored to the document root",

@@ -1,12 +1,13 @@
 import { defineRule } from "@oxlint/plugins";
 
 const COMBINATOR_PATTERN = /[\s>+~]/u;
-// A class, id, attribute, or tag at the start of the compound narrows it.
+// A class, id, attribute, or leading tag narrows a compound. Negated ones don't,
+// so `:not(...)` is removed before this check.
 const NARROWING_PATTERN = /[.#[]|^[a-z]/iu;
 const ROOT_COMPOUND_PATTERN = /^(?:html|body|:root)(?![\w-])/iu;
 
-/** Top-level `[...]` groups in a class token, i.e. Tailwind arbitrary variants and values. */
-function bracketGroups(token: string): string[] {
+/** Tailwind arbitrary variants in a class token: top-level `[...]` groups followed by `:`. */
+function variantGroups(token: string): string[] {
   const groups: string[] = [];
   let depth = 0;
   let start = -1;
@@ -17,7 +18,7 @@ function bracketGroups(token: string): string[] {
       depth++;
     } else if (char === "]" && depth > 0) {
       depth--;
-      if (depth === 0) groups.push(token.slice(start, index));
+      if (depth === 0 && token[index + 1] === ":") groups.push(token.slice(start, index));
     }
   }
   return groups;
@@ -45,18 +46,39 @@ function hasCompounds(selector: string): string[] {
   return compounds;
 }
 
+/** `compound` without any `:not(...)`, including one left open around the `:has()`. */
+function withoutNegations(compound: string): string {
+  let result = "";
+  let index = 0;
+  while (index < compound.length) {
+    if (!compound.startsWith(":not(", index)) {
+      result += compound[index];
+      index++;
+      continue;
+    }
+    let depth = 0;
+    for (index += ":not".length; index < compound.length; index++) {
+      if (compound[index] === "(") depth++;
+      else if (compound[index] === ")" && --depth === 0) break;
+    }
+    index++;
+  }
+  return result;
+}
+
 /** Arbitrary variants in `text` whose `:has()` is unanchored or anchored to the document root. */
 function findUnscopedHasVariants(text: string): string[] {
-  if (!text.includes(":has(")) return [];
+  // Selectors are ASCII case-insensitive.
+  if (!text.toLowerCase().includes(":has(")) return [];
   const offenders: string[] = [];
   for (const token of text.split(/\s+/u)) {
-    for (const group of bracketGroups(token)) {
-      if (!group.includes(":has(")) continue;
+    for (const group of variantGroups(token)) {
       // Tailwind writes spaces as "_", and "&" is the element carrying the class.
-      const selector = group.replaceAll("_", " ").replaceAll("&", ".self");
-      const unscoped = hasCompounds(selector).some(
-        (compound) => !NARROWING_PATTERN.test(compound) || ROOT_COMPOUND_PATTERN.test(compound),
-      );
+      const selector = group.toLowerCase().replaceAll("_", " ").replaceAll("&", ".self");
+      const unscoped = hasCompounds(selector).some((compound) => {
+        const anchor = withoutNegations(compound);
+        return !NARROWING_PATTERN.test(anchor) || ROOT_COMPOUND_PATTERN.test(anchor);
+      });
       if (unscoped) offenders.push(`[${group}]`);
     }
   }
