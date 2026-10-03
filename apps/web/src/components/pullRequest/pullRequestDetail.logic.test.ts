@@ -1570,6 +1570,23 @@ describe("pull request panel context beside a thread", () => {
       expect(threadPullRequestPanelTarget(thread)).toBe(thread.linkedPullRequest);
     });
 
+    it("does not reuse the legacy reference for the same number on another host", () => {
+      const thread = {
+        projectId: "proj-a",
+        pullRequests: [
+          link(15046, {
+            host: "github.example.com",
+            url: "https://github.example.com/pingdotgg/t3code/pull/15046",
+          }),
+        ],
+        linkedPullRequest: legacy(15046),
+      };
+      expect(threadPullRequestPanelTarget(thread)).toMatchObject({
+        host: "github.example.com",
+        number: 15046,
+      });
+    });
+
     it("prefers the link list over a branch pull request", () => {
       const thread = {
         projectId: "proj-a",

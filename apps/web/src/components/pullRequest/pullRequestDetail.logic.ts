@@ -26,6 +26,7 @@ import {
   type VcsRef,
 } from "@t3tools/contracts";
 import {
+  legacyThreadPullRequestKey,
   resolveThreadCurrentPullRequestLink,
   threadPullRequestKeysEqual,
   visibleThreadPullRequests,
@@ -248,8 +249,7 @@ export function threadPullRequestPanelTarget(thread: {
   if (
     current !== null &&
     legacy != null &&
-    legacy.number === current.number &&
-    legacy.repository.toLowerCase() === current.repository.toLowerCase()
+    threadPullRequestKeysEqual(current, legacyThreadPullRequestKey(legacy))
   ) {
     return legacy;
   }
