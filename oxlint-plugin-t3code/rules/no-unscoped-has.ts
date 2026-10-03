@@ -12,7 +12,10 @@ const GROUP_PREFIX_PATTERN = /(?:^|:)(?:group|peer)-$/u;
 const ATTRIBUTE_PREFIX_PATTERN = /(?:^|:)(?:data|aria)-$/u;
 const QUOTED_PATTERN = /(["'])(?:\\.|(?!\1).)*\1/gu;
 
-/** Tailwind arbitrary variants in a class token: top-level `[...]` groups followed by `:`. */
+// A variant's closing bracket is followed by ":" or a group/peer name like "/row:".
+const VARIANT_END_PATTERN = /^(?:\/[\w-]+)?:/u;
+
+/** Tailwind arbitrary variants in a class token: top-level `[...]` groups used as variants. */
 function variantGroups(token: string): { prefix: string; group: string }[] {
   const groups: { prefix: string; group: string }[] = [];
   let depth = 0;
@@ -24,7 +27,7 @@ function variantGroups(token: string): { prefix: string; group: string }[] {
       depth++;
     } else if (char === "]" && depth > 0) {
       depth--;
-      if (depth === 0 && token[index + 1] === ":") {
+      if (depth === 0 && VARIANT_END_PATTERN.test(token.slice(index + 1))) {
         groups.push({ prefix: token.slice(0, start - 1), group: token.slice(start, index) });
       }
     }

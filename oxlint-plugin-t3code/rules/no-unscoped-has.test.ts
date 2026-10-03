@@ -96,6 +96,11 @@ describe("t3code/no-unscoped-has", () => {
   );
 
   rule.invalid(
+    "reports an unanchored :has() inside a named group variant",
+    `const className = "group-[&_:has(x)]/row:p-2";`,
+  );
+
+  rule.invalid(
     "reports :has() anchored to the document root",
     `const className = "[body:has([data-dialog-open])_&]:overflow-hidden";`,
   );
