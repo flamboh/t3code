@@ -344,7 +344,7 @@ const NOTIFICATION_OUTCOME_LABEL: Record<OrchestrationV2Notification["outcome"],
   failed: "Failed",
   cancelled: "Stopped",
   updated: "Updated",
-  unknown: "Updated",
+  unknown: "Finished",
 };
 
 /** A notification about one subagent, drawn as that subagent's card. Renders `fallback` when the parent has no record of it. */
