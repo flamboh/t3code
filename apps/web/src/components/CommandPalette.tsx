@@ -701,8 +701,9 @@ function OpenCommandPaletteDialog(props: {
   const isActionsOnly = deferredQuery.startsWith(">");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
   const resultListRef = useRef<LegendListRef | null>(null);
-  // Typing clears the highlight. Base UI keeps its own on the first row, but the
-  // palette shows none until the user navigates, and the first ArrowDown lands on it.
+  // Typing or entering a submenu clears the highlight. Base UI keeps its own on the
+  // first row, but the palette shows none until the user navigates, and the first
+  // ArrowDown lands on it.
   const highlightClearedRef = useRef(false);
   function clearTypedHighlight(): void {
     highlightClearedRef.current = true;
@@ -1477,6 +1478,7 @@ function OpenCommandPaletteDialog(props: {
           ...(view.initialQuery ? { initialQuery: view.initialQuery } : {}),
         },
       ]);
+      highlightClearedRef.current = true;
       setHighlightedItemValue(null);
       setQuery(view.initialQuery ?? "");
     },
@@ -2953,6 +2955,8 @@ function OpenCommandPaletteDialog(props: {
     displayedGroups = relativePathNeedsActiveProject ? [] : browseGroups;
   }
   const resultRows = buildCommandPaletteRows(displayedGroups);
+  const autoHighlightsFirstRow =
+    !isBrowsing && !isRemoteProjectCloneFlow && newProjectFlow === null;
 
   const inputPlaceholder =
     newProjectFlow !== null
@@ -3101,8 +3105,16 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
-    const firstItemValue = resultRows.itemValues[0];
-    if (event.key === "ArrowDown" && highlightClearedRef.current && firstItemValue) {
+    // Base UI ignores navigation keys with modifiers, so these fallbacks do too.
+    if (event.ctrlKey || event.shiftKey || event.altKey || event.metaKey) return;
+    // Base UI only keeps a hidden highlight on the first row when it auto-highlights.
+    const firstItemValue = autoHighlightsFirstRow ? resultRows.itemValues[0] : undefined;
+    if (
+      event.key === "ArrowDown" &&
+      highlightClearedRef.current &&
+      firstItemValue &&
+      !event.nativeEvent.isComposing
+    ) {
       (event as typeof event & { preventBaseUIHandler?: () => void }).preventBaseUIHandler?.();
       event.preventDefault();
       highlightClearedRef.current = false;
@@ -3393,9 +3405,7 @@ function OpenCommandPaletteDialog(props: {
     <CommandPaletteContent
       key={`${viewStack.length}-${browseGeneration}-${isBrowsing}-${newProjectFlow ? "new-project" : (addProjectCloneFlow?.step ?? "none")}`}
       aria-label="Command palette"
-      autoHighlight={
-        isBrowsing || isRemoteProjectCloneFlow || newProjectFlow !== null ? false : "always"
-      }
+      autoHighlight={autoHighlightsFirstRow ? "always" : false}
       footerActionLabel={footerActionLabel}
       footerTrailing={footerTrailing}
       inputAccessory={inputAccessory}
