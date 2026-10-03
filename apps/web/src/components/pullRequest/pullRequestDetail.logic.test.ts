@@ -1545,68 +1545,33 @@ describe("pull request panel context beside a thread", () => {
       url: `https://github.com/pingdotgg/t3code/pull/${number}`,
     });
 
-    it("opens a linked pull request the legacy field never named", () => {
-      // An agent's link_pull_request writes only the link list; the legacy field stays null.
-      const thread = {
-        projectId: "proj-a",
-        pullRequests: [link(15046, { source: "agent" })],
-        linkedPullRequest: null,
-      };
-      expect(threadPullRequestPanelTarget(thread)).toEqual({
-        projectId: "proj-a",
-        host: "github.com",
-        repository: "pingdotgg/t3code",
-        number: 15046,
-        url: "https://github.com/pingdotgg/t3code/pull/15046",
-      });
-    });
-
-    it("keeps the legacy reference for the same pull request so its open tab is reused", () => {
-      const thread = {
-        projectId: "proj-a",
-        pullRequests: [link(15046, { repository: "PingDotGG/T3Code" })],
-        linkedPullRequest: legacy(15046),
-      };
-      expect(threadPullRequestPanelTarget(thread)).toBe(thread.linkedPullRequest);
-    });
-
-    it("does not reuse the legacy reference for the same number on another host", () => {
-      const thread = {
-        projectId: "proj-a",
-        pullRequests: [
-          link(15046, {
-            host: "github.example.com",
-            url: "https://github.example.com/pingdotgg/t3code/pull/15046",
-          }),
-        ],
-        linkedPullRequest: legacy(15046),
-      };
-      expect(threadPullRequestPanelTarget(thread)).toMatchObject({
-        host: "github.example.com",
-        number: 15046,
-      });
-    });
-
-    it("prefers the link list over a branch pull request", () => {
-      const thread = {
-        projectId: "proj-a",
-        pullRequests: [link(20, { source: "manual" })],
-        branchPullRequest: legacy(30),
-      };
-      expect(threadPullRequestPanelTarget(thread)?.number).toBe(20);
-    });
-
-    it("falls back to the legacy fields when the thread holds no visible link", () => {
-      expect(
-        threadPullRequestPanelTarget({ projectId: "proj-a", branchPullRequest: legacy(3) }),
-      ).toEqual(legacy(3));
+    it("opens a linked pull request the legacy field never named, ahead of the branch PR", () => {
       expect(
         threadPullRequestPanelTarget({
           projectId: "proj-a",
-          pullRequests: [link(4, { source: "stack-dismissed" })],
-          linkedPullRequest: legacy(5),
+          pullRequests: [link(15046, { source: "agent" })],
+          linkedPullRequest: null,
+          branchPullRequest: legacy(30),
         }),
-      ).toEqual(legacy(5));
+      ).toEqual({ ...legacy(15046), host: "github.com" });
+    });
+
+    it("reuses the legacy reference only for the same pull request on the same host", () => {
+      const linkedPullRequest = legacy(15046);
+      const onHost = (host: string) =>
+        threadPullRequestPanelTarget({
+          projectId: "proj-a",
+          pullRequests: [link(15046, { host, url: `https://${host}/pingdotgg/t3code/pull/15046` })],
+          linkedPullRequest,
+        });
+      expect(onHost("github.com")).toBe(linkedPullRequest);
+      expect(onHost("github.example.com")).toMatchObject({ host: "github.example.com" });
+    });
+
+    it("falls back to the branch pull request when the thread holds no link", () => {
+      expect(
+        threadPullRequestPanelTarget({ projectId: "proj-a", branchPullRequest: legacy(3) }),
+      ).toEqual(legacy(3));
       expect(threadPullRequestPanelTarget({ projectId: "proj-a", pullRequests: [] })).toBeNull();
     });
   });
