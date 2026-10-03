@@ -1561,6 +1561,15 @@ describe("pull request panel context beside a thread", () => {
       });
     });
 
+    it("keeps the legacy reference for the same pull request so its open tab is reused", () => {
+      const thread = {
+        projectId: "proj-a",
+        pullRequests: [link(15046, { repository: "PingDotGG/T3Code" })],
+        linkedPullRequest: legacy(15046),
+      };
+      expect(threadPullRequestPanelTarget(thread)).toBe(thread.linkedPullRequest);
+    });
+
     it("prefers the link list over a branch pull request", () => {
       const thread = {
         projectId: "proj-a",

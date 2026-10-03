@@ -237,12 +237,6 @@ export function pullRequestPanelContext(
     : "page";
 }
 
-/**
- * The pull request the right panel's "Pull request" entry opens for a thread, or null when the
- * thread has none. Like `pullRequestPanelContext`, the link list decides when there is one, so a
- * PR linked by an agent or the user enables the entry without the legacy field. The legacy
- * fields answer only for servers that predate link lists, or a thread with only a branch PR.
- */
 export function threadPullRequestPanelTarget(thread: {
   readonly projectId: string;
   readonly pullRequests?: ReadonlyArray<ThreadPullRequestLink> | undefined;
@@ -250,6 +244,15 @@ export function threadPullRequestPanelTarget(thread: {
   readonly branchPullRequest?: ThreadLinkedPullRequest | null | undefined;
 }) {
   const current = resolveThreadCurrentPullRequestLink(thread.pullRequests ?? []);
+  const legacy = thread.linkedPullRequest;
+  if (
+    current !== null &&
+    legacy != null &&
+    legacy.number === current.number &&
+    legacy.repository.toLowerCase() === current.repository.toLowerCase()
+  ) {
+    return legacy;
+  }
   if (current !== null) {
     return {
       projectId: thread.projectId,
@@ -259,7 +262,7 @@ export function threadPullRequestPanelTarget(thread: {
       url: current.url,
     };
   }
-  return thread.linkedPullRequest ?? thread.branchPullRequest ?? null;
+  return legacy ?? thread.branchPullRequest ?? null;
 }
 
 /** Names where a pull-request task will land, without letting each surface guess independently. */
