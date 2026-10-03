@@ -35,6 +35,7 @@ import {
   isStackedPullRequestBase,
   loadingPullRequestCheckoutCommand,
   pullRequestPanelContext,
+  threadPullRequestPanelTarget,
   latestPullRequestReviewOutcomes,
   newestPullRequestCommitAt,
   mergePullRequestThreadComments,
@@ -1534,6 +1535,54 @@ describe("pull request panel context beside a thread", () => {
       "page",
     );
     expect(pullRequestPanelContext({ projectId: null }, surface(3))).toBe("page");
+  });
+
+  describe("the Pull request entry's target", () => {
+    const legacy = (number: number) => ({
+      projectId: ProjectId.make("proj-a"),
+      repository: "pingdotgg/t3code",
+      number,
+      url: `https://github.com/pingdotgg/t3code/pull/${number}`,
+    });
+
+    it("opens a linked pull request the legacy field never named", () => {
+      // An agent's link_pull_request writes only the link list; the legacy field stays null.
+      const thread = {
+        projectId: "proj-a",
+        pullRequests: [link(15046, { source: "agent" })],
+        linkedPullRequest: null,
+      };
+      expect(threadPullRequestPanelTarget(thread)).toEqual({
+        projectId: "proj-a",
+        host: "github.com",
+        repository: "pingdotgg/t3code",
+        number: 15046,
+        url: "https://github.com/pingdotgg/t3code/pull/15046",
+      });
+    });
+
+    it("prefers the link list over a branch pull request", () => {
+      const thread = {
+        projectId: "proj-a",
+        pullRequests: [link(20, { source: "manual" })],
+        branchPullRequest: legacy(30),
+      };
+      expect(threadPullRequestPanelTarget(thread)?.number).toBe(20);
+    });
+
+    it("falls back to the legacy fields when the thread holds no visible link", () => {
+      expect(
+        threadPullRequestPanelTarget({ projectId: "proj-a", branchPullRequest: legacy(3) }),
+      ).toEqual(legacy(3));
+      expect(
+        threadPullRequestPanelTarget({
+          projectId: "proj-a",
+          pullRequests: [link(4, { source: "stack-dismissed" })],
+          linkedPullRequest: legacy(5),
+        }),
+      ).toEqual(legacy(5));
+      expect(threadPullRequestPanelTarget({ projectId: "proj-a", pullRequests: [] })).toBeNull();
+    });
   });
 });
 

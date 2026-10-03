@@ -26,6 +26,7 @@ import {
   type VcsRef,
 } from "@t3tools/contracts";
 import {
+  resolveThreadCurrentPullRequestLink,
   threadPullRequestKeysEqual,
   visibleThreadPullRequests,
 } from "@t3tools/shared/threadPullRequests";
@@ -234,6 +235,31 @@ export function pullRequestPanelContext(
     legacy.number === surface.number
     ? "thread"
     : "page";
+}
+
+/**
+ * The pull request the right panel's "Pull request" entry opens for a thread, or null when the
+ * thread has none. Like `pullRequestPanelContext`, the link list decides when there is one, so a
+ * PR linked by an agent or the user enables the entry without the legacy field. The legacy
+ * fields answer only for servers that predate link lists, or a thread with only a branch PR.
+ */
+export function threadPullRequestPanelTarget(thread: {
+  readonly projectId: string;
+  readonly pullRequests?: ReadonlyArray<ThreadPullRequestLink> | undefined;
+  readonly linkedPullRequest?: ThreadLinkedPullRequest | null | undefined;
+  readonly branchPullRequest?: ThreadLinkedPullRequest | null | undefined;
+}) {
+  const current = resolveThreadCurrentPullRequestLink(thread.pullRequests ?? []);
+  if (current !== null) {
+    return {
+      projectId: thread.projectId,
+      host: current.host,
+      repository: current.repository,
+      number: current.number,
+      url: current.url,
+    };
+  }
+  return thread.linkedPullRequest ?? thread.branchPullRequest ?? null;
 }
 
 /** Names where a pull-request task will land, without letting each surface guess independently. */
