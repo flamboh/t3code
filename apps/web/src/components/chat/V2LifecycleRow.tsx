@@ -512,7 +512,7 @@ function SubagentTimelineLink(props: {
           {...props}
           elapsed={agent ? <AgentElapsed agent={projectedSubagentsToRuntime([agent])[0]!} /> : null}
           model={agent?.model ?? null}
-          status={status ?? liveStatus}
+          status={liveStatus}
           result={agent?.result ?? props.result}
           progress={agent?.progress ?? props.progress}
         />
