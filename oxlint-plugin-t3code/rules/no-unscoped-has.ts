@@ -6,9 +6,10 @@ const COMBINATOR_PATTERN = /[\s>+~]/u;
 const NARROWING_PATTERN = /[.#[]|^[a-z]/iu;
 const ROOT_COMPOUND_PATTERN = /^(?:html|body|:root)(?![\w-])/iu;
 
-// group-[...] and peer-[...] match the .group/.peer element; data-[...] and
-// aria-[...] hold attribute values, not selectors.
+// group-[...] and peer-[...] match the .group/.peer element, in-[...] matches an
+// ancestor, and data-[...] and aria-[...] hold attribute values, not selectors.
 const GROUP_PREFIX_PATTERN = /(?:^|:)(?:group|peer)-$/u;
+const ANCESTOR_PREFIX_PATTERN = /(?:^|:)in-$/u;
 const ATTRIBUTE_PREFIX_PATTERN = /(?:^|:)(?:data|aria)-$/u;
 const QUOTED_PATTERN = /(["'])(?:\\.|(?!\1).)*\1/gu;
 
@@ -35,6 +36,39 @@ function variantGroups(token: string): { prefix: string; group: string }[] {
   return groups;
 }
 
+/** Index of the ")" closing the "(" at `open`, or the selector's length. */
+function closingParen(selector: string, open: number): number {
+  let depth = 0;
+  for (let index = open; index < selector.length; index++) {
+    if (selector[index] === "(") depth++;
+    else if (selector[index] === ")" && --depth === 0) return index;
+  }
+  return selector.length;
+}
+
+/**
+ * Whether nothing after `from` in the enclosing branch is joined by a combinator,
+ * i.e. the element ending at `from` is the subject that its wrapper matches.
+ */
+function isWrapperSubject(selector: string, from: number): boolean {
+  let depth = 0;
+  for (let index = from; index < selector.length; index++) {
+    const char = selector[index] ?? "";
+    if (char === "(") depth++;
+    else if (char === ")") {
+      if (depth === 0) return true;
+      depth--;
+    } else if (depth > 0) continue;
+    else if (char === ",") return true;
+    else if (COMBINATOR_PATTERN.test(char)) {
+      const next = selector.slice(index).trimStart()[0];
+      if (/\s/u.test(char) && (next === undefined || next === ")" || next === ",")) continue;
+      return false;
+    }
+  }
+  return true;
+}
+
 /** The compound selector each `:has(` in `selector` is attached to. */
 function hasCompounds(selector: string): string[] {
   const compounds: string[] = [];
@@ -42,16 +76,22 @@ function hasCompounds(selector: string): string[] {
   while (index !== -1) {
     let compound = "";
     let depth = 0;
+    let subjectEnd = closingParen(selector, index + ":has".length) + 1;
     // Other branches of a selector list are skipped until the wrapper that holds
     // them opens. An unbalanced "(" means the :has() sits inside :not()/:is()/
-    // :where(), so the compound outside that wrapper still applies.
+    // :where(); the compound outside that wrapper applies only when the :has()
+    // is in the wrapper's subject position.
     let skippingBranch = false;
     for (let position = index - 1; position >= 0; position--) {
       const char = selector[position] ?? "";
       if (char === ")") depth++;
       else if (char === "(") {
         if (depth > 0) depth--;
-        else skippingBranch = false;
+        else {
+          if (!isWrapperSubject(selector, subjectEnd)) break;
+          skippingBranch = false;
+          subjectEnd = closingParen(selector, position) + 1;
+        }
       } else if (depth === 0 && char === ",") {
         skippingBranch = true;
         continue;
@@ -93,12 +133,13 @@ function findUnscopedHasVariants(text: string): string[] {
     for (const { prefix, group } of variantGroups(token)) {
       if (ATTRIBUTE_PREFIX_PATTERN.test(prefix)) continue;
       // Tailwind writes spaces as "_", and "&" is the element carrying the class.
+      // A selector without "&" applies to that element, as `&:is(...)`.
       const relative = group.toLowerCase().replace(QUOTED_PATTERN, '""').replaceAll("_", " ");
       const owner = GROUP_PREFIX_PATTERN.test(prefix) ? ".group" : ".self";
-      const selector = relative.includes("&")
-        ? relative.replaceAll("&", owner)
-        : owner === ".self"
-          ? relative
+      const selector = ANCESTOR_PREFIX_PATTERN.test(prefix)
+        ? `:is(${relative.replaceAll("&", "*")}) .self`
+        : relative.includes("&")
+          ? relative.replaceAll("&", owner)
           : `${owner}:is(${relative})`;
       const unscoped = hasCompounds(selector).some((compound) => {
         const anchor = withoutNegations(compound);

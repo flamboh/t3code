@@ -60,6 +60,11 @@ describe("t3code/no-unscoped-has", () => {
     `const className = "data-[foo='_:has(x)']:p-2 [&_[data-query='_:has(foo)']]:p-2";`,
   );
 
+  rule.valid(
+    "allows a selector without & on the element itself",
+    `const className = "[:has(>input)]:p-2 not-[:has(>[data-slot=icon])]:ps-2";`,
+  );
+
   rule.invalid(
     "reports a sibling :has() with nothing anchoring it",
     `const className = "[&+:has([data-chat-composer-form])_[data-chat-composer-form]]:before:rounded-none";`,
@@ -99,6 +104,18 @@ describe("t3code/no-unscoped-has", () => {
     "reports an unanchored :has() inside a named group variant",
     `const className = "group-[&_:has(x)]/row:p-2";`,
   );
+
+  rule.invalid(
+    "reports a :has() on an ancestor of a selector without &",
+    `const className = "[:has(x)_.foo]:p-2";`,
+  );
+
+  rule.invalid(
+    "reports a :has() on an ancestor of a group",
+    `const className = "group-[:has(x)_.y]:p-2";`,
+  );
+
+  rule.invalid("reports an in-* ancestor :has()", `const className = "in-[:has(x)]:p-2";`);
 
   rule.invalid(
     "reports :has() anchored to the document root",
