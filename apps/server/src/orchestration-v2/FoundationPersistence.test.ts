@@ -29,6 +29,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -55,6 +56,8 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as ProviderRuntimeRecovery from "./ProviderRuntimeRecoveryService.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
+import { continueRestartedRun } from "./RestartContinuation.ts";
+import * as ThreadManagementService from "./ThreadManagementService.ts";
 
 const isLiveStreamBufferError = Schema.is(LiveStreamBufferError);
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
@@ -2880,6 +2883,133 @@ it.layer(TestLayer)("orchestration V2 foundation persistence", (it) => {
       const second = yield* recovery.recover(environmentId);
       assert.equal(second.terminalizedRuns, 0);
       assert.equal(second.retiredEffects, 0);
+    }),
+  );
+
+  it.effect.each([
+    {
+      name: "another environment's",
+      owner: Option.some(EnvironmentId.make("environment:original")),
+    },
+    { name: "an unowned", owner: Option.none<EnvironmentId>() },
+  ])("does not continue interrupted runs in $name database", (ownership) =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const eventSink = yield* EventSink.EventSinkV2;
+      const outbox = yield* EffectOutbox.EffectOutboxV2;
+      const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+      const now = yield* DateTime.now;
+      const key = `foreign-continuation:${Option.isSome(ownership.owner) ? "foreign" : "unowned"}`;
+      const threadId = ThreadId.make(`thread:${key}`);
+      const runId = RunId.make(`run:${key}`);
+      const commandId = CommandId.make(`command:${key}`);
+      yield* eventSink.commitCommand({
+        commandId,
+        threadId,
+        commandType: "foundation.foreign-continuation",
+        acceptedAt: now,
+        events: [
+          threadCreatedEvent({
+            id: `event:${key}:thread`,
+            thread: makeThread(threadId, now),
+            now,
+          }),
+          {
+            id: EventId.make(`event:${key}:run`),
+            type: "run.created",
+            threadId,
+            runId,
+            providerInstanceId,
+            occurredAt: now,
+            payload: {
+              id: runId,
+              threadId,
+              ordinal: 1,
+              providerInstanceId,
+              modelSelection,
+              providerThreadId: null,
+              userMessageId: MessageId.make(`message:${key}`),
+              rootNodeId: null,
+              activeAttemptId: null,
+              status: "running",
+              queuePosition: null,
+              requestedAt: now,
+              startedAt: now,
+              completedAt: null,
+              checkpointId: null,
+              contextHandoffId: null,
+            },
+          },
+        ],
+        // Continuations the original install prepared; one was mid-flight.
+        effects: ["a-running", "b-pending"].map((suffix) => ({
+          id: `effect:${key}:${suffix}`,
+          commandId,
+          threadId,
+          request: { type: "provider-runtime.continue" as const, sourceRunId: runId },
+        })),
+      });
+      const claimed = yield* outbox.claimNext({
+        workerId: "crashed-worker",
+        leaseDurationMs: 30_000,
+      });
+      assert.equal(Option.getOrUndefined(claimed)?.id, `effect:${key}:a-running`);
+      yield* sql`DELETE FROM orchestration_v2_runtime_owner`;
+      if (Option.isSome(ownership.owner)) yield* outbox.setRuntimeOwner(ownership.owner.value);
+
+      const settings = ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true });
+      const recovery = yield* ProviderRuntimeRecovery.make.pipe(Effect.provide(settings));
+      // A boot that dies before recording the owner leaves the database foreign.
+      yield* sql`
+          CREATE TRIGGER fail_runtime_owner BEFORE INSERT ON orchestration_v2_runtime_owner
+          BEGIN SELECT RAISE(ABORT, 'injected owner write failure'); END
+        `;
+      yield* sql`
+          CREATE TRIGGER fail_runtime_owner_update BEFORE UPDATE ON orchestration_v2_runtime_owner
+          BEGIN SELECT RAISE(ABORT, 'injected owner write failure'); END
+        `;
+      assert.isTrue(Exit.isFailure(yield* Effect.exit(recovery.recover(environmentId))));
+      assert.deepEqual(yield* outbox.runtimeOwner, ownership.owner);
+      yield* sql`DROP TRIGGER fail_runtime_owner`;
+      yield* sql`DROP TRIGGER fail_runtime_owner_update`;
+      yield* recovery.recover(environmentId);
+      assert.deepEqual(yield* outbox.runtimeOwner, Option.some(environmentId));
+
+      const dispatched = yield* Ref.make<ReadonlyArray<string>>([]);
+      const threads = Layer.mock(ThreadManagementService.ThreadManagementService)({
+        getThreadRecords: (id) => projectionStore.getThreadProjection(id) as never,
+        dispatch: (command) =>
+          Ref.update(dispatched, (all) => [...all, command.type]).pipe(Effect.as({} as never)),
+      });
+      const executor = Layer.succeed(
+        EffectWorker.OrchestrationEffectExecutorV2,
+        EffectWorker.OrchestrationEffectExecutorV2.of({
+          execute: (effect) =>
+            effect.request.type === "provider-runtime.continue"
+              ? continueRestartedRun({
+                  threadId: effect.threadId,
+                  sourceRunId: effect.request.sourceRunId,
+                }).pipe(Effect.provide(Layer.merge(threads, settings)), Effect.orDie)
+              : Effect.void,
+        }),
+      );
+      yield* EffectWorker.OrchestrationEffectWorkerV2.use((worker) => worker.drain()).pipe(
+        Effect.provide(
+          EffectWorker.layerWithOptions({ workerId: `worker:${key}` }).pipe(
+            Layer.provide(
+              Layer.merge(Layer.succeed(EffectOutbox.EffectOutboxV2, outbox), executor),
+            ),
+          ),
+        ),
+      );
+
+      assert.deepEqual(yield* Ref.get(dispatched), []);
+      const projection = yield* projectionStore.getThreadProjection(threadId);
+      assert.equal(projection.runs[0]?.status, "cancelled");
+      for (const suffix of ["a-running", "b-pending"]) {
+        const effect = yield* outbox.get(`effect:${key}:${suffix}`);
+        assert.equal(Option.getOrUndefined(effect)?.status, "cancelled");
+      }
     }),
   );
 

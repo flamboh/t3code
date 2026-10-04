@@ -185,8 +185,9 @@ export interface EffectOutboxV2Shape {
   readonly listByCommandId: (
     commandId: CommandId,
   ) => Effect.Effect<ReadonlyArray<OrchestrationEffectV2>, EffectOutboxError>;
+  /** Cancels across every thread when `threadId` is omitted. */
   readonly cancelUnsettled: (input: {
-    readonly threadId: ThreadId;
+    readonly threadId?: ThreadId;
     readonly effectTypes: ReadonlyArray<OrchestrationEffectRequestV2["type"]>;
     readonly reason: string;
   }) => Effect.Effect<ReadonlyArray<string>, EffectOutboxError>;
@@ -431,7 +432,7 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
               completed_at = ${now},
               updated_at = ${now},
               last_error = ${reason}
-            WHERE thread_id = ${threadId}
+            WHERE ${threadId === undefined ? sql`1 = 1` : sql`thread_id = ${threadId}`}
               AND status IN ('pending', 'running')
               AND effect_type IN ${sql.in(effectTypes)}
             RETURNING effect_id

@@ -406,6 +406,7 @@ const environmentId = EnvironmentId.make("environment:recovery-performance");
 /** A graceful restart: prepare intent, reconcile on shutdown, recover on boot. */
 const measureGraceful = Effect.fn(function* (scenario: Scenario) {
   const [seeded, seedMs] = yield* timed(seedScenario(scenario));
+  yield* EffectOutbox.EffectOutboxV2.use((outbox) => outbox.setRuntimeOwner(environmentId));
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const recovery = yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService;
   const [candidates, selectMs] = yield* timed(projections.getRecoveryThreadIds("runtime"));
@@ -432,6 +433,7 @@ const measureGraceful = Effect.fn(function* (scenario: Scenario) {
 /** A crash: no shutdown hook ran, so boot recovery records the continuations. */
 const measureCrash = Effect.fn(function* (scenario: Scenario) {
   yield* seedScenario(scenario);
+  yield* EffectOutbox.EffectOutboxV2.use((outbox) => outbox.setRuntimeOwner(environmentId));
   const recovery = yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService;
   const [summary, crashRecoverMs] = yield* timed(recovery.recover(environmentId));
   assert.equal(summary.terminalizedRuns, scenario.active, "terminalized active runs");
