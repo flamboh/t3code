@@ -312,19 +312,22 @@ export function PullRequestDetailGhost({
               </Toggle>
             ))}
           </ToggleGroup>
-          <span className="ml-auto flex min-w-0 flex-1 items-center justify-end">
+          <span
+            className={cn(
+              "ml-auto flex h-4 min-w-0 flex-1 flex-wrap content-start items-center justify-end gap-x-1.5 overflow-hidden text-xs",
+              checksPresentation?.toneClassName,
+            )}
+          >
             {checksPresentation ? (
-              <span
-                className={cn(
-                  "flex h-4 min-w-0 flex-wrap content-start items-center justify-end gap-x-1.5 overflow-hidden text-xs",
-                  checksPresentation.toneClassName,
-                )}
-              >
+              <>
                 <checksPresentation.Icon aria-hidden className="size-3.5" />
                 <span className="whitespace-nowrap">{checksPresentation.label}</span>
-              </span>
+              </>
             ) : (
-              <GhostBar className="h-3 w-32" />
+              <>
+                <GhostBar className="my-px size-3.5 rounded-full" />
+                <GhostBar className="w-28" />
+              </>
             )}
           </span>
         </nav>
