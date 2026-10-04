@@ -842,11 +842,103 @@ export const make = Effect.gen(function* () {
     Effect.mapError((cause) => new ProviderRuntimeRecoveryError({ operation: "reconcile", cause })),
   );
 
+  // Delegated tasks report back by waking their parent with a new provider
+  // turn. A foreign database stops those wakes as a user stop would, so
+  // delegation recovery records each child's result without waking a parent.
+  const stopDelegatedCompletions = Effect.gen(function* () {
+    const childThreadIds = yield* projections.getRecoveryThreadIds("subagent-results");
+    const parentThreadIds = yield* Effect.forEach(childThreadIds, (childThreadId) =>
+      projections
+        .getThreadShell(childThreadId)
+        .pipe(Effect.map((child) => child?.lineage.parentThreadId ?? null)),
+    );
+    const threadIds = new Set([
+      ...(yield* projections.getRecoveryThreadIds("delegated-completions")),
+      ...parentThreadIds.filter((threadId) => threadId !== null),
+    ]);
+    for (const threadId of threadIds) {
+      const { runs, subagents } = yield* projections.getThreadRecords(threadId, [
+        "runs",
+        "subagents",
+      ]);
+      const delegatedTasks = subagents.filter(
+        (task) => task.origin === "app_owned" && task.runId !== null,
+      );
+      const stoppedRuns = runs.filter(
+        (run) =>
+          (run.delegatedCompletion?.disposition ?? "open") === "open" &&
+          (run.delegatedCompletion !== undefined ||
+            delegatedTasks.some((task) => task.runId === run.id)),
+      );
+      if (stoppedRuns.length === 0) continue;
+      const stoppedRunIds = new Set(stoppedRuns.map((run) => run.id));
+      const now = yield* DateTime.now;
+      const commandId = CommandId.make(
+        `command:runtime-reconcile:foreign:${threadId}:${DateTime.formatIso(now)}`,
+      );
+      const events: Array<Omit<OrchestrationV2DomainEvent, "id">> = [
+        ...stoppedRuns.map((run) => ({
+          type: "run.updated" as const,
+          threadId,
+          runId: run.id,
+          ...(run.rootNodeId === null ? {} : { nodeId: run.rootNodeId }),
+          providerInstanceId: run.providerInstanceId,
+          occurredAt: now,
+          payload: {
+            ...run,
+            delegatedCompletion: {
+              disposition: "stopped" as const,
+              nextGeneration: run.delegatedCompletion?.nextGeneration ?? 1,
+              delivery: null,
+            },
+          },
+        })),
+        ...delegatedTasks
+          .filter(
+            (task) =>
+              stoppedRunIds.has(task.runId!) &&
+              task.completionDelivery?.state !== "acknowledged" &&
+              task.completionDelivery?.state !== "delivered" &&
+              task.completionDelivery?.state !== "disposed",
+          )
+          .map((task) => ({
+            type: "subagent.updated" as const,
+            threadId,
+            runId: task.runId!,
+            nodeId: task.id,
+            driver: task.driver,
+            providerInstanceId: task.providerInstanceId,
+            occurredAt: now,
+            payload: {
+              ...task,
+              completionDelivery: { state: "disposed" as const, observedByRunId: null },
+              updatedAt: now,
+            },
+          })),
+      ];
+      yield* eventSink.commitCommand({
+        commandId,
+        threadId,
+        commandType: "provider-runtime.reconcile",
+        acceptedAt: now,
+        effects: [],
+        events: yield* Effect.forEach(events, (event) =>
+          ids.allocate
+            .event({ threadId, commandId })
+            .pipe(Effect.map((id) => ({ ...event, id }) as OrchestrationV2DomainEvent)),
+        ),
+      });
+    }
+  }).pipe(
+    Effect.mapError((cause) => new ProviderRuntimeRecoveryError({ operation: "reconcile", cause })),
+  );
+
   // A copied database boots under a new environment ID, while its provider
   // threads still belong to the install that ran them. Only a recorded,
   // matching owner may continue that work; an unowned database cannot prove it
-  // was not copied. The owner is written last, so a crash before then recovers
-  // the database as foreign again.
+  // was not copied. The owner is written after every continuation and parent
+  // wake is cancelled, so a crash before then recovers the database as foreign
+  // again, and delegation recovery afterwards finds nothing left to wake.
   const recover = (environmentId: EnvironmentId) =>
     Effect.gen(function* () {
       const owner = yield* outbox.runtimeOwner;
@@ -859,6 +951,7 @@ export const make = Effect.gen(function* () {
         : [];
       const summary = yield* reconcileThreads("startup", !foreign);
       if (foreign) {
+        yield* stopDelegatedCompletions;
         yield* Effect.logInfo("Recovered a database last owned by another environment", {
           previousEnvironmentId: Option.getOrNull(owner),
         });

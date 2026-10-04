@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
   CommandId,
+  EnvironmentId,
   EventId,
   MessageId,
   type ModelSelection,
@@ -33,9 +34,11 @@ import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
+import * as EffectOutbox from "./EffectOutbox.ts";
 import * as EventSink from "./EventSink.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import type { ProviderAdapterV2Shape } from "./ProviderAdapter.ts";
+import * as ProviderRuntimeRecovery from "./ProviderRuntimeRecoveryService.ts";
 import { continueRestartedRun } from "./RestartContinuation.ts";
 import {
   OrchestrationV2EventSinkLayerLive,
@@ -133,7 +136,7 @@ const TestLayer = Layer.mergeAll(OrchestrationV2LayerLive, OrchestrationV2EventS
     }),
   ),
   Layer.provide(McpSessionRegistryTestkit.layer),
-  Layer.provide(SqlitePersistenceMemory),
+  Layer.provideMerge(SqlitePersistenceMemory),
   Layer.provide(CheckpointStoreTestLayer),
   Layer.provide(ServerConfigLayer),
   Layer.provide(ServerSettings.layerTest()),
@@ -802,7 +805,7 @@ const seedRestartCancelledChild = (input: {
   readonly completionWake: "always" | "settled_only";
   readonly continuationPending: boolean;
   /** "completed" seeds a settled turn whose background work the restart cancelled. */
-  readonly runStatus?: "cancelled" | "completed";
+  readonly runStatus?: "cancelled" | "completed" | "interrupted";
   readonly now: DateTime.Utc;
 }) =>
   Effect.gen(function* () {
@@ -1273,6 +1276,129 @@ it.layer(TestLayer)("delegated tasks across a server restart", (it) => {
         projection.runs.find((row) => row.id === runId)?.delegatedCompletion?.delivery?.taskIds,
         [child.taskId],
       );
+    }),
+  );
+
+  it.effect("records child results without waking parents in another environment's database", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const eventSink = yield* EventSink.EventSinkV2;
+      const recovery = yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService;
+      const now = yield* DateTime.now;
+      const threadId = ThreadId.make("thread:foreign-parent");
+      const projectId = ProjectId.make("project:foreign-parent");
+      const runId = RunId.make("run:foreign-parent");
+      const rootNodeId = NodeId.make("node:foreign-parent-root");
+      yield* seedParentWithTerminalTask({
+        threadId,
+        projectId,
+        runId,
+        rootNodeId,
+        taskId: NodeId.make("node:foreign-parent-settled"),
+        deliveryState: "delivered",
+        now,
+      });
+      const child = (
+        name: string,
+        continuationPending: boolean,
+        runStatus: "cancelled" | "interrupted" = "cancelled",
+      ) =>
+        seedRestartCancelledChild({
+          parentThreadId: threadId,
+          projectId,
+          parentRunId: runId,
+          rootNodeId,
+          name,
+          completionWake: "always",
+          continuationPending,
+          runStatus,
+          now,
+        });
+      const children = [
+        yield* child("foreign-stopped-child", false),
+        yield* child("foreign-resumable-child", true),
+        yield* child("foreign-interrupted-child", false, "interrupted"),
+      ];
+      // The original install reserved this parent's wake, then lost its turn.
+      const cutThreadId = ThreadId.make("thread:foreign-cut-delivery");
+      const cutRunId = RunId.make("run:foreign-cut-delivery");
+      const cutTaskId = NodeId.make("node:foreign-cut-delivery-task");
+      const cutMessageId = MessageId.make(`message:delegated-delivery:${cutThreadId}`);
+      const cutDeliveryRunId = RunId.make("run:foreign-cut-delivery:delivery");
+      yield* seedParentWithTerminalTask({
+        threadId: cutThreadId,
+        projectId: ProjectId.make("project:foreign-cut-delivery"),
+        runId: cutRunId,
+        rootNodeId: NodeId.make("node:foreign-cut-delivery-root"),
+        taskId: cutTaskId,
+        deliveryState: "claimed",
+        completionWake: "always",
+        deliveryTaskIds: [cutTaskId],
+        now,
+      });
+      yield* eventSink.write({
+        commandId: reconcileCommandId("foreign-cut-delivery"),
+        events: [
+          {
+            id: EventId.make("event:foreign-cut-delivery:message"),
+            type: "message.updated",
+            threadId: cutThreadId,
+            runId: cutDeliveryRunId,
+            occurredAt: now,
+            payload: {
+              id: cutMessageId,
+              threadId: cutThreadId,
+              runId: cutDeliveryRunId,
+              nodeId: null,
+              role: "user",
+              text: `Delegated task ${cutTaskId} reached a terminal state.`,
+              attachments: [],
+              streaming: false,
+              createdBy: "agent",
+              creationSource: "server",
+              createdAt: now,
+              updatedAt: now,
+              delegatedCompletion: { parentRunId: cutRunId, generation: 1, taskIds: [cutTaskId] },
+            },
+          },
+          runEvent({
+            threadId: cutThreadId,
+            runId: cutDeliveryRunId,
+            ordinal: 2,
+            status: "cancelled",
+            now,
+            providerThreadId: parentProviderThreadId(cutThreadId),
+            userMessageId: cutMessageId,
+          }),
+        ],
+      });
+      yield* EffectOutbox.EffectOutboxV2.use((outbox) =>
+        outbox.setRuntimeOwner(EnvironmentId.make("environment:original")),
+      ).pipe(Effect.provide(EffectOutbox.layer));
+
+      yield* recovery.recover(EnvironmentId.make("environment:copy"));
+      yield* orchestrator.recoverDelegatedTasks;
+
+      const parent = yield* orchestrator.getThreadProjection(threadId);
+      for (const seeded of children) {
+        const task = parent.subagents.find((row) => row.id === seeded.taskId);
+        assert.notInclude(["pending", "running", "waiting"], task?.status);
+        assert.equal(task?.completionDelivery?.state, "disposed");
+      }
+      const cut = yield* orchestrator.getThreadProjection(cutThreadId);
+      assert.equal(
+        cut.subagents.find((row) => row.id === cutTaskId)?.completionDelivery?.state,
+        "disposed",
+      );
+      for (const [projection, parentRunId] of [
+        [parent, runId],
+        [cut, cutRunId],
+      ] as const) {
+        assert.deepEqual(
+          projection.runs.find((row) => row.id === parentRunId)?.delegatedCompletion,
+          { disposition: "stopped", nextGeneration: 2, delivery: null },
+        );
+      }
     }),
   );
 });

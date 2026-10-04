@@ -1525,7 +1525,7 @@ it.effect.each([
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
-          getRecoveryThreadIds: () => Effect.succeed([threadId]),
+          getRecoveryThreadIds: (kind) => Effect.succeed(kind === "runtime" ? [threadId] : []),
           getRuntimeRecoveryProjection: () => Effect.succeed(projection),
         }),
         Layer.mock(EventSink.EventSinkV2)({
