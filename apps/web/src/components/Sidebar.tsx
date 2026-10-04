@@ -7,7 +7,7 @@ import {
   endThreadContextDrag,
   moveThreadContextDrag as moveThreadContextDragGhost,
 } from "./chat/threadContextDrag";
-import { releaseComposerDraftUploads } from "../lib/composerDraftUploads";
+import { discardComposerDraft } from "../lib/discardComposerDraft";
 import { requestCustomSnooze } from "./CustomSnoozeDialog";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
 import { resolveThreadCurrentPullRequestLink } from "@t3tools/shared/threadPullRequests";
@@ -915,7 +915,6 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
 }) {
   const draftThreadsByThreadKey = useComposerDraftStore((store) => store.draftThreadsByThreadKey);
   const draftsByThreadKey = useComposerDraftStore((store) => store.draftsByThreadKey);
-  const clearDraftThread = useComposerDraftStore((store) => store.clearDraftThread);
   // The open draft's row is FROZEN at the moment the draft became the route:
   // it stays visible (like a thread row) but never repaints while the user
   // types. A draft that was never navigated away from has no snapshot to
@@ -979,16 +978,6 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
     props.routeDraftId,
     props.scopedProjectKeys,
   ]);
-  const handleDiscard = useCallback(
-    (draftId: DraftId) => {
-      // The /draft/$draftId route redirects home on its own when the draft
-      // it renders disappears, so discarding the open draft needs no
-      // special-casing here.
-      releaseComposerDraftUploads(draftId);
-      clearDraftThread(draftId);
-    },
-    [clearDraftThread],
-  );
   if (drafts.length === 0) {
     return null;
   }
@@ -1005,7 +994,10 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
             projectDisplayName={props.projectDisplayNameByKey.get(projectKey) ?? null}
             isActive={draftId === props.routeDraftId}
             onNavigate={props.onNavigateToDraft}
-            onDiscard={handleDiscard}
+            // The /draft/$draftId route redirects home on its own when the
+            // draft it renders disappears, so discarding the open draft needs
+            // no special-casing here.
+            onDiscard={discardComposerDraft}
           />
         );
       })}
@@ -1164,15 +1156,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // Unsent composer text on this thread. The open thread shows its own
   // composer, so the marker only decorates rows you have navigated away from.
   const hasUnsentDraft = useThreadHasUnsentDraft(threadRef) && !props.isActive;
-  const clearComposerContent = useComposerDraftStore((store) => store.clearComposerContent);
   const handleDiscardDraftClick = useCallback(
     (event: ReactMouseEvent) => {
       event.preventDefault();
       event.stopPropagation();
-      releaseComposerDraftUploads(threadRef);
-      clearComposerContent(threadRef);
+      discardComposerDraft(threadRef);
     },
-    [clearComposerContent, threadRef],
+    [threadRef],
   );
 
   const gitCwd = thread.worktreePath ?? props.project?.workspaceRoot ?? null;
