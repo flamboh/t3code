@@ -4,7 +4,7 @@ import {
   serializeAssistantCitation,
 } from "@t3tools/shared/assistantCitations";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { PencilIcon, QuoteIcon } from "lucide-react";
+import { ArrowUpRightIcon, PencilIcon, QuoteIcon } from "lucide-react";
 import {
   useEffect,
   useEffectEvent,
@@ -21,8 +21,9 @@ import {
   assistantCitationNavigation,
 } from "../../lib/assistantCitationNavigation";
 import { ContextChip, ContextChipAction, ContextChipLabel } from "../ContextChip";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { ContextChipPopover } from "../contextChipParts";
+import { Button } from "../ui/button";
+import { Popover, PopoverClose, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { AssistantCitationCommentEditor } from "./AssistantCitationCommentEditor";
 import { resolveAssistantCitationCommentDismissal } from "./assistantCitationCommentDismissal";
 import { observeAssistantCitationCommentSource } from "./AssistantCitationSource";
@@ -122,16 +123,30 @@ export function AssistantCitationChip({
       <ContextChipLabel className="max-w-[16em]">{label}</ContextChipLabel>
     </Link>
   );
-  const chatSourceLink = (
-    <Link
-      {...sourceLinkProps}
-      className="inline-flex h-full min-w-0 items-center gap-[0.33em] rounded-sm text-inherit no-underline hover:bg-(--context-chip-accent)/17 focus-visible:outline-2 focus-visible:outline-foreground"
-      aria-label={`View cited assistant text: ${label}`}
-    >
-      <QuoteIcon aria-hidden="true" />
-      <ContextChipLabel className="max-w-[16em]">{label}</ContextChipLabel>
-    </Link>
-  );
+  if (!composer) {
+    return (
+      <ContextChipPopover
+        kind="citation"
+        icon={<QuoteIcon />}
+        label={label}
+        accessibleLabel={`Quoted assistant text: ${label}`}
+        copyMarkdown={serializeAssistantCitation(citation)}
+      >
+        <div className="space-y-3 p-1 text-sm">
+          <blockquote className="max-h-40 overflow-y-auto whitespace-pre-wrap border-l-2 border-border pl-3 text-muted-foreground">
+            {citation.text}
+          </blockquote>
+          {citation.comment ? <p className="whitespace-pre-wrap">{citation.comment}</p> : null}
+          <PopoverClose
+            render={<Button variant="outline" size="sm" render={<Link {...sourceLinkProps} />} />}
+          >
+            <ArrowUpRightIcon aria-hidden="true" />
+            Go to source
+          </PopoverClose>
+        </div>
+      </ContextChipPopover>
+    );
+  }
   return (
     <ContextChip
       kind="citation"
@@ -139,14 +154,7 @@ export function AssistantCitationChip({
       data-assistant-citation-chip="true"
       data-markdown-copy={serializeAssistantCitation(citation)}
     >
-      {composer ? (
-        composerSourceLink
-      ) : (
-        <Tooltip>
-          <TooltipTrigger render={chatSourceLink} />
-          <TooltipPopup side="top">View source</TooltipPopup>
-        </Tooltip>
-      )}
+      {composerSourceLink}
       {commentEditor ? (
         <Popover
           open={commentEditor.open}
