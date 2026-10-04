@@ -6,6 +6,7 @@ import {
   CheckpointScopeId,
   CommandId,
   ContextTransferId,
+  EnvironmentId,
   EventId,
   MessageId,
   type ModelSelection,
@@ -83,6 +84,7 @@ const modelSelection = {
   instanceId: providerInstanceId,
   model: "gpt-5.4",
 } satisfies ModelSelection;
+const environmentId = EnvironmentId.make("environment:foundation");
 
 function makeThread(threadId: ThreadId, now: DateTime.Utc): OrchestrationV2AppThread {
   return {
@@ -2866,7 +2868,7 @@ it.layer(TestLayer)("orchestration V2 foundation persistence", (it) => {
           }),
         ),
       );
-      const first = yield* recovery.recover;
+      const first = yield* recovery.recover(environmentId);
       assert.equal(first.terminalizedRuns, 1);
       assert.equal(first.retiredEffects, 1);
       const projection = yield* projectionStore.getThreadProjection(threadId);
@@ -2875,9 +2877,23 @@ it.layer(TestLayer)("orchestration V2 foundation persistence", (it) => {
       assert.isTrue(Option.isSome(effect));
       if (Option.isSome(effect)) assert.equal(effect.value.status, "cancelled");
 
-      const second = yield* recovery.recover;
+      const second = yield* recovery.recover(environmentId);
       assert.equal(second.terminalizedRuns, 0);
       assert.equal(second.retiredEffects, 0);
+    }),
+  );
+
+  it.effect("keeps one runtime owner per database", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const outbox = yield* EffectOutbox.EffectOutboxV2;
+      yield* sql`DELETE FROM orchestration_v2_runtime_owner`;
+      assert.deepEqual(yield* outbox.runtimeOwner, Option.none());
+      yield* outbox.setRuntimeOwner(EnvironmentId.make("environment:original"));
+      yield* outbox.setRuntimeOwner(environmentId);
+      assert.deepEqual(yield* outbox.runtimeOwner, Option.some(environmentId));
+      const rows = yield* sql`SELECT environment_id FROM orchestration_v2_runtime_owner`;
+      assert.equal(rows.length, 1);
     }),
   );
 
@@ -3089,7 +3105,7 @@ it.layer(TestLayer)("orchestration V2 foundation persistence", (it) => {
         ),
       );
       assert.include(yield* projectionStore.getRecoveryThreadIds("runtime"), childId);
-      yield* recovery.recover;
+      yield* recovery.recover(environmentId);
 
       const parentProjection = yield* projectionStore.getThreadProjection(parentId);
       assert.equal(parentProjection.subagents[0]?.status, "cancelled");

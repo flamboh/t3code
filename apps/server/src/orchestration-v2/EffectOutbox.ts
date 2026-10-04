@@ -2,6 +2,7 @@ import {
   CheckpointId,
   CheckpointScopeId,
   CommandId,
+  EnvironmentId,
   MessageId,
   ProviderSessionId,
   RunAttemptId,
@@ -217,6 +218,14 @@ export interface EffectOutboxV2Shape {
     readonly workerId: string;
     readonly error: string;
   }) => Effect.Effect<boolean, EffectOutboxError>;
+  /**
+   * The environment whose server last recovered this database. Continuation
+   * effects resume provider threads that only that environment's install owns.
+   */
+  readonly runtimeOwner: Effect.Effect<Option.Option<EnvironmentId>, EffectOutboxError>;
+  readonly setRuntimeOwner: (
+    environmentId: EnvironmentId,
+  ) => Effect.Effect<void, EffectOutboxError>;
 }
 
 export class EffectOutboxV2 extends Context.Service<EffectOutboxV2, EffectOutboxV2Shape>()(
@@ -628,6 +637,31 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
           return rows.length === 1;
         }).pipe(
           Effect.mapError((cause) => new EffectOutboxError({ operation: "fail", effectId, cause })),
+        ),
+      runtimeOwner: sql<{ readonly environment_id: string }>`
+        SELECT environment_id FROM orchestration_v2_runtime_owner WHERE singleton = 1
+      `.pipe(
+        Effect.map((rows) =>
+          Option.fromNullishOr(rows[0]).pipe(
+            Option.map((row) => EnvironmentId.make(row.environment_id)),
+          ),
+        ),
+        Effect.mapError((cause) => new EffectOutboxError({ operation: "runtime-owner", cause })),
+      ),
+      setRuntimeOwner: (environmentId) =>
+        Effect.gen(function* () {
+          const now = DateTime.formatIso(yield* DateTime.now);
+          yield* sql`
+            INSERT INTO orchestration_v2_runtime_owner (singleton, environment_id, updated_at)
+            VALUES (1, ${environmentId}, ${now})
+            ON CONFLICT (singleton) DO UPDATE SET
+              environment_id = excluded.environment_id,
+              updated_at = excluded.updated_at
+          `;
+        }).pipe(
+          Effect.mapError(
+            (cause) => new EffectOutboxError({ operation: "set-runtime-owner", cause }),
+          ),
         ),
     };
 

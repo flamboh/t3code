@@ -2,6 +2,7 @@ import { runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
   CommandId,
+  type EnvironmentId,
   type OrchestrationV2DomainEvent,
   type ProviderThreadId,
   type OrchestrationV2RestartCancelledBackgroundWork,
@@ -64,7 +65,9 @@ export class ProviderRuntimeRecoveryService extends Context.Service<
       trigger: "startup" | "shutdown",
     ) => Effect.Effect<ProviderRuntimeReconciliationSummary, ProviderRuntimeRecoveryError>;
     readonly prepareForShutdown: Effect.Effect<void, ProviderRuntimeRecoveryError>;
-    readonly recover: Effect.Effect<ProviderRuntimeRecoverySummary, ProviderRuntimeRecoveryError>;
+    readonly recover: (
+      environmentId: EnvironmentId,
+    ) => Effect.Effect<ProviderRuntimeRecoverySummary, ProviderRuntimeRecoveryError>;
   }
 >()("t3/orchestration-v2/ProviderRuntimeRecoveryService") {}
 
@@ -837,9 +840,20 @@ export const make = Effect.gen(function* () {
     Effect.mapError((cause) => new ProviderRuntimeRecoveryError({ operation: "reconcile", cause })),
   );
 
-  const recover = Effect.gen(function* () {
-    return (yield* reconcile("startup")) satisfies ProviderRuntimeRecoverySummary;
-  });
+  // The environment ID lives beside the database, not in it, so a copied
+  // database boots under a new ID. Recording which environment recovered it
+  // lets startup tell its own work from a copy's. Written last, so a crash
+  // before then leaves the previous owner in place.
+  const recover = (environmentId: EnvironmentId) =>
+    Effect.gen(function* () {
+      const summary = yield* reconcile("startup");
+      yield* outbox.setRuntimeOwner(environmentId);
+      return summary satisfies ProviderRuntimeRecoverySummary;
+    }).pipe(
+      Effect.catchTag("EffectOutboxError", (cause) =>
+        Effect.fail(new ProviderRuntimeRecoveryError({ operation: "reconcile", cause })),
+      ),
+    );
 
   return ProviderRuntimeRecoveryService.of({ reconcile, prepareForShutdown, recover });
 });

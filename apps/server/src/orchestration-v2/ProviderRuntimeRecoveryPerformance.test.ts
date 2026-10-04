@@ -2,6 +2,7 @@ import { assert, it } from "@effect/vitest";
 import {
   CheckpointScopeId,
   CommandId,
+  EnvironmentId,
   EventId,
   MessageId,
   NodeId,
@@ -400,6 +401,8 @@ interface Measurement {
   readonly secondRecoverMs: number;
 }
 
+const environmentId = EnvironmentId.make("environment:recovery-performance");
+
 /** A graceful restart: prepare intent, reconcile on shutdown, recover on boot. */
 const measureGraceful = Effect.fn(function* (scenario: Scenario) {
   const [seeded, seedMs] = yield* timed(seedScenario(scenario));
@@ -414,7 +417,7 @@ const measureGraceful = Effect.fn(function* (scenario: Scenario) {
   const [, prepareMs] = yield* timed(recovery.prepareForShutdown);
   assert.equal(yield* continuationEffectCount, scenario.active, "prepared continuations");
   const [, shutdownMs] = yield* timed(recovery.reconcile("shutdown"));
-  const [, startupAfterShutdownMs] = yield* timed(recovery.recover);
+  const [, startupAfterShutdownMs] = yield* timed(recovery.recover(environmentId));
   assert.equal(yield* continuationEffectCount, scenario.active, "continuations after boot");
   return {
     seedMs,
@@ -430,11 +433,11 @@ const measureGraceful = Effect.fn(function* (scenario: Scenario) {
 const measureCrash = Effect.fn(function* (scenario: Scenario) {
   yield* seedScenario(scenario);
   const recovery = yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService;
-  const [summary, crashRecoverMs] = yield* timed(recovery.recover);
+  const [summary, crashRecoverMs] = yield* timed(recovery.recover(environmentId));
   assert.equal(summary.terminalizedRuns, scenario.active, "terminalized active runs");
   assert.equal(summary.stoppedSessions, scenario.active, "stopped active sessions");
   assert.equal(yield* continuationEffectCount, scenario.active, "recorded continuations");
-  const [, secondRecoverMs] = yield* timed(recovery.recover);
+  const [, secondRecoverMs] = yield* timed(recovery.recover(environmentId));
   assert.equal(yield* continuationEffectCount, scenario.active, "second recover is idempotent");
   return { crashRecoverMs, secondRecoverMs };
 });

@@ -515,7 +515,10 @@ const make = (options?: StartupOptions) =>
             ),
           ),
         ),
-        recover: runStartupPhase("orchestration-v2.recovery", providerRuntimeRecovery.recover),
+        recover: runStartupPhase(
+          "orchestration-v2.recovery",
+          serverEnvironment.getEnvironmentId.pipe(Effect.flatMap(providerRuntimeRecovery.recover)),
+        ),
         recoverDelegatedTasks: runStartupPhase(
           "orchestration-v2.delegated-tasks.recover",
           orchestrator.recoverDelegatedTasks,

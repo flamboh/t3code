@@ -1,5 +1,6 @@
 import { assert, it, vi } from "@effect/vitest";
 import {
+  EnvironmentId,
   MessageId,
   NodeId,
   ProviderDriverKind,
@@ -26,6 +27,11 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderRuntimeRecovery from "./ProviderRuntimeRecoveryService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 
+const environmentId = EnvironmentId.make("environment:recovery-test");
+const ownedOutbox = {
+  setRuntimeOwner: () => Effect.void,
+};
+
 it.effect("leaves durable effects for the worker after runtime reconciliation", () =>
   Effect.gen(function* () {
     const runs = yield* Ref.make(0);
@@ -44,13 +50,14 @@ it.effect("leaves durable effects for the worker after runtime reconciliation", 
             ),
           }),
           Layer.mock(EffectOutbox.EffectOutboxV2)({
+            ...ownedOutbox,
             reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
           }),
         ),
       ),
     );
     const summary = yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService.pipe(
-      Effect.flatMap((recovery) => recovery.recover),
+      Effect.flatMap((recovery) => recovery.recover(environmentId)),
       Effect.provide(layer),
     );
     assert.deepEqual(summary, {
@@ -106,6 +113,7 @@ it.effect("reads recovery projections only for threads that need runtime recover
           runRecoveryOnce: Effect.succeed(false),
         }),
         Layer.mock(EffectOutbox.EffectOutboxV2)({
+          ...ownedOutbox,
           cancelUnsettled: () => Effect.succeed([]),
           signalCancellations: () => Effect.void,
           reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
@@ -115,7 +123,7 @@ it.effect("reads recovery projections only for threads that need runtime recover
   );
 
   return Effect.gen(function* () {
-    yield* (yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService).recover;
+    yield* (yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService).recover(environmentId);
     assert.deepEqual(
       projectionReads.mock.calls.map(([threadId]) => threadId),
       [recoveryThreadId],
@@ -162,13 +170,14 @@ it.effect("expires orphaned runtime requests before command readiness", () => {
           runRecoveryOnce: Effect.succeed(false),
         }),
         Layer.mock(EffectOutbox.EffectOutboxV2)({
+          ...ownedOutbox,
           reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
         }),
       ),
     ),
   );
   return Effect.gen(function* () {
-    yield* (yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService).recover;
+    yield* (yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService).recover(environmentId);
     const command = committedInput;
     assert.isNotNull(command);
     if (command === null) return;
@@ -747,6 +756,7 @@ it.effect(
             runRecoveryOnce: Effect.succeed(false),
           }),
           Layer.mock(EffectOutbox.EffectOutboxV2)({
+            ...ownedOutbox,
             reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
           }),
         ),
@@ -754,8 +764,10 @@ it.effect(
     );
 
     return Effect.gen(function* () {
-      const summary = yield* (yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService)
-        .recover;
+      const summary =
+        yield* (yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService).recover(
+          environmentId,
+        );
       assert.equal(summary.terminalizedRuns, 1);
       assert.equal(summary.stoppedSessions, 1);
       assert.equal(summary.retiredEffects, 2);
@@ -1418,5 +1430,31 @@ it.effect("leaves delegated tasks to their own child threads after process loss"
         : [],
     );
     assert.deepEqual(noted, [`subagent ${nativeSubagentId}`]);
+  }).pipe(Effect.provide(layer));
+});
+it.effect("records this environment as the database owner after reconciliation", () => {
+  const calls: Array<string> = [];
+  const layer = ProviderRuntimeRecovery.layer.pipe(
+    Layer.provide(ServerSettings.layerTest()),
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.mock(ProjectionStore.ProjectionStoreV2)({
+          getRecoveryThreadIds: () => Effect.succeed([]),
+        }),
+        Layer.mock(EventSink.EventSinkV2)({}),
+        IdAllocator.layer,
+        Layer.mock(EffectOutbox.EffectOutboxV2)({
+          setRuntimeOwner: (owner) => Effect.sync(() => calls.push(`owner:${owner}`)),
+          reconcileAfterProcessLoss: Effect.sync(() => {
+            calls.push("reconcile");
+            return { requeued: 0, cancelled: 0 };
+          }),
+        }),
+      ),
+    ),
+  );
+  return Effect.gen(function* () {
+    yield* (yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService).recover(environmentId);
+    assert.deepEqual(calls, ["reconcile", `owner:${environmentId}`]);
   }).pipe(Effect.provide(layer));
 });
