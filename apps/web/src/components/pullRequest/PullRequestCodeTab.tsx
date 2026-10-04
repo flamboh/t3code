@@ -1216,8 +1216,6 @@ function PullRequestCodeTab({
         </PullRequestMetaLine>
       </div>
       <div className="flex shrink-0 items-center gap-1">
-        {/* View settings fold into one menu when the panel is too narrow to show them
-            beside the scope and file count. */}
         <DropdownMenu>
           <Tooltip>
             <TooltipTrigger
