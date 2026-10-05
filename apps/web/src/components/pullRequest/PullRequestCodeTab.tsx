@@ -42,7 +42,6 @@ import {
   resolveDiffThemeName,
   resolveFileDiffPath,
   resolveFileDiffPreviousPath,
-  type DiffLineStat,
   type RenderablePatch,
 } from "~/lib/diffRendering";
 import { APP_BASE_NAME } from "~/branding";
@@ -587,21 +586,32 @@ function PullRequestCodeTab({
       toggledFiles,
     ],
   );
-  const fileStats = useMemo(() => {
-    const stats = new Map<string, DiffLineStat>();
-    for (const slice of loadedSlices) {
-      for (const file of slice.omittedFileStats) stats.set(file.path, file);
-    }
-    for (const parsed of parsedSlices) {
-      if (parsed?.kind !== "files") continue;
-      for (const file of parsed.sourceFiles) {
-        const stat = getDiffLineStat([file]);
-        if (stat.additions === 0 && stat.deletions === 0) continue;
-        stats.set(resolveFileDiffPath(file), stat);
-      }
-    }
-    return stats;
-  }, [loadedSlices, parsedSlices]);
+  const omittedFileStats = useMemo(
+    () =>
+      new Map(
+        loadedSlices.flatMap((slice) =>
+          slice.omittedFileStats.map((file) => [file.path, file] as const),
+        ),
+      ),
+    [loadedSlices],
+  );
+  const sourceFileStats = useMemo(
+    () =>
+      new Map(
+        parsedSlices.flatMap((parsed) =>
+          parsed?.kind === "files"
+            ? parsed.files.map(
+                (file, index) =>
+                  [
+                    buildFileDiffRenderKey(file),
+                    getDiffLineStat([parsed.sourceFiles[index] ?? file]),
+                  ] as const,
+              )
+            : [],
+        ),
+      ),
+    [parsedSlices],
+  );
   const fileKeys = useMemo(() => items.map((item) => item.id), [items]);
   const collapsedFileKeys = useMemo(
     () => new Set(items.filter((item) => item.collapsed === true).map((item) => item.id)),
@@ -817,8 +827,13 @@ function PullRequestCodeTab({
   const renderHeaderMetadata = useCallback(
     (item: CodeViewItem<ReviewAnnotationGroup>) => {
       if (item.type !== "diff") return null;
+      let { additions, deletions } =
+        sourceFileStats.get(item.id) ?? getDiffLineStat([item.fileDiff]);
       const path = resolveFileDiffPath(item.fileDiff);
-      const { additions, deletions } = fileStats.get(path) ?? { additions: 0, deletions: 0 };
+      if (additions === 0 && deletions === 0) {
+        const withheld = omittedFileStats.get(path);
+        if (withheld) ({ additions, deletions } = withheld);
+      }
       const stat = (
         <PullRequestDiffStat
           additions={additions}
@@ -861,7 +876,7 @@ function PullRequestCodeTab({
         </span>
       );
     },
-    [fileStats],
+    [omittedFileStats, sourceFileStats],
   );
 
   const diffViewOptions = useMemo(
