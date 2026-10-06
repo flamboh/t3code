@@ -133,10 +133,12 @@ export function AssistantCitationChip({
         copyMarkdown={serializeAssistantCitation(citation)}
       >
         <div className="space-y-3 p-1 text-sm">
-          <blockquote className="max-h-40 overflow-y-auto whitespace-pre-wrap border-l-2 border-border pl-3 text-muted-foreground">
-            {citation.text}
-          </blockquote>
-          {citation.comment ? <p className="whitespace-pre-wrap">{citation.comment}</p> : null}
+          <div className="max-h-64 space-y-3 overflow-y-auto whitespace-pre-wrap wrap-break-word">
+            <blockquote className="border-l-2 border-border pl-3 text-muted-foreground">
+              {citation.text}
+            </blockquote>
+            {citation.comment ? <p>{citation.comment}</p> : null}
+          </div>
           <PopoverClose
             render={<Button variant="outline" size="sm" render={<Link {...sourceLinkProps} />} />}
           >
