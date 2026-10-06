@@ -134,7 +134,7 @@ export function AssistantCitationChip({
         accessibleLabel={`Quoted assistant text: ${label}`}
         copyMarkdown={serializeAssistantCitation(citation)}
       >
-        <div className="space-y-3 p-1 text-sm">
+        <div className="flex max-h-[calc(var(--available-height)_-_1rem_-_2px)] flex-col items-start gap-3 p-1 text-sm">
           <AssistantCitationQuote citation={citation} />
           <PopoverClose
             render={<Button variant="outline" size="sm" render={<Link {...sourceLinkProps} />} />}
@@ -259,7 +259,7 @@ function AssistantCitationQuote({ citation }: { citation: AssistantCitation }) {
       }}
       onScroll={(event) => updateFade(event.currentTarget)}
       className={cn(
-        "max-h-64 space-y-3 overflow-y-auto whitespace-pre-wrap wrap-break-word",
+        "max-h-64 min-h-0 space-y-3 self-stretch overflow-y-auto whitespace-pre-wrap wrap-break-word",
         getVirtualizedScrollFadeClassName(fade),
       )}
     >
