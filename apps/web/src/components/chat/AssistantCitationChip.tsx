@@ -241,9 +241,14 @@ export function AssistantCitationChip({
 }
 
 function AssistantCitationQuote({ citation }: { citation: AssistantCitation }) {
-  const [fadeBottom, setFadeBottom] = useState(false);
-  const updateFade = (element: HTMLElement) =>
-    setFadeBottom(element.scrollHeight - element.clientHeight - element.scrollTop > 1);
+  const [fade, setFade] = useState({ top: false, bottom: false });
+  const updateFade = (element: HTMLElement) => {
+    const top = element.scrollTop > 1;
+    const bottom = element.scrollHeight - element.clientHeight - element.scrollTop > 1;
+    setFade((current) =>
+      current.top === top && current.bottom === bottom ? current : { top, bottom },
+    );
+  };
   return (
     <div
       ref={(element) => {
@@ -252,7 +257,7 @@ function AssistantCitationQuote({ citation }: { citation: AssistantCitation }) {
       onScroll={(event) => updateFade(event.currentTarget)}
       className={cn(
         "max-h-64 space-y-3 overflow-y-auto whitespace-pre-wrap wrap-break-word",
-        getVirtualizedScrollFadeClassName({ top: false, bottom: fadeBottom }),
+        getVirtualizedScrollFadeClassName(fade),
       )}
     >
       <blockquote className="border-l-2 border-border pl-3 text-muted-foreground">
