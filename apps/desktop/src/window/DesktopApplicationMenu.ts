@@ -142,7 +142,9 @@ export const make = Effect.gen(function* () {
     const settingsClick = () => {
       runMenuEffect("open-settings", dispatchMenuAction("open-settings"));
     };
-    // Chromium and the renderer already handle this chord; injecting another paste duplicates text.
+    // Chromium pastes Ctrl+Shift+V itself on Windows and Linux, so only a menu
+    // click needs the renderer round trip. macOS has no native chord and uses
+    // the pasteAndMatchStyle role instead.
     const pasteAsTextClick = (
       _item: Electron.MenuItem,
       _window: Electron.BaseWindow | undefined,
@@ -229,7 +231,9 @@ export const make = Effect.gen(function* () {
           {
             label: "Paste as Text",
             accelerator: "CmdOrCtrl+Shift+V",
-            click: pasteAsTextClick,
+            ...(environment.platform === "darwin"
+              ? { role: "pasteAndMatchStyle" as const }
+              : { click: pasteAsTextClick }),
           },
           { role: "delete" },
           { type: "separator" },

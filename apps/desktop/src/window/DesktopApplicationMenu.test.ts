@@ -164,6 +164,25 @@ describe("DesktopApplicationMenu", () => {
     }),
   );
 
+  it.effect("pastes as text natively for the macOS accelerator", () =>
+    Effect.gen(function* () {
+      const selectedAction = yield* Deferred.make<string>();
+      const applicationMenuTemplate =
+        yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+
+      yield* configureMenu(selectedAction, applicationMenuTemplate, { platform: "darwin" });
+
+      const template = yield* Deferred.await(applicationMenuTemplate);
+      const editMenu = template.find((item) => item.label === "Edit");
+      if (!Array.isArray(editMenu?.submenu)) {
+        throw new Error("Expected Edit menu submenu to be an array.");
+      }
+      const pasteAsTextItem = editMenu.submenu.find((item) => item.label === "Paste as Text");
+      assert.equal(pasteAsTextItem?.role, "pasteAndMatchStyle");
+      assert.equal(pasteAsTextItem?.accelerator, "CmdOrCtrl+Shift+V");
+    }),
+  );
+
   it.effect("registers macOS command-plus once and routes it through main-window zoom", () =>
     Effect.gen(function* () {
       const selectedAction = yield* Deferred.make<string>();
