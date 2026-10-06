@@ -208,6 +208,17 @@ describe("isAutoSettlementCandidate", () => {
       ),
     ).toBe(true);
   });
+
+  it("leaves threads snoozed until their pull request needs attention to the watch", () => {
+    const snoozed = shell({ snoozedUntilNeedsAttention: true, snoozedAt: at(-60 * 60 * 1_000) });
+    expect(ThreadSettlementService.isAutoSettlementCandidate(snoozed, NOW_MS)).toBe(false);
+    expect(
+      ThreadSettlementService.isAutoSettlementCandidate(
+        shell({ ...snoozed, status: "failed", latestRunCompletedAt: at(-30 * 60 * 1_000) }),
+        NOW_MS,
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("threadHasQueuedTurnStart", () => {

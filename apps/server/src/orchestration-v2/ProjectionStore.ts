@@ -152,12 +152,19 @@ export type ProjectionLimitRecoveryCandidate = Pick<
   | "updatedAt"
   | "limitRecovery"
   | "snoozedUntil"
+  | "snoozedUntilNeedsAttention"
 >;
 
-/** The thread fields pull request sync reads, for a thread with at least one link. */
+/** The thread fields pull request sync and watches read, for a thread with at least one link. */
 export type ProjectionThreadPullRequests = Pick<
   OrchestrationV2AppThread,
-  "id" | "projectId" | "lineage" | "settledOverride" | "settledAt" | "pullRequests"
+  | "id"
+  | "projectId"
+  | "lineage"
+  | "settledOverride"
+  | "settledAt"
+  | "pullRequests"
+  | "snoozedUntilNeedsAttention"
 >;
 
 /**
@@ -181,6 +188,7 @@ export type ProjectionSettlementCandidate = Pick<
   | "autoSettleDisabledAt"
   | "snoozedUntil"
   | "snoozedAt"
+  | "snoozedUntilNeedsAttention"
   | "latestRunId"
   | "latestRunRequestedAt"
   | "latestRunStartedAt"
@@ -1465,6 +1473,7 @@ export function threadShellFromProjection(
     unsettledAt: projection.thread.unsettledAt ?? null,
     snoozedUntil: projection.thread.snoozedUntil ?? null,
     snoozedAt: projection.thread.snoozedAt ?? null,
+    snoozedUntilNeedsAttention: projection.thread.snoozedUntilNeedsAttention === true,
     pinnedAt: projection.thread.pinnedAt ?? null,
 
     autoSettleDisabledAt: projection.thread.autoSettleDisabledAt ?? null,
@@ -1720,6 +1729,7 @@ function shellFromState(input: {
     unsettledAt: input.state.thread.unsettledAt ?? null,
     snoozedUntil: input.state.thread.snoozedUntil ?? null,
     snoozedAt: input.state.thread.snoozedAt ?? null,
+    snoozedUntilNeedsAttention: input.state.thread.snoozedUntilNeedsAttention === true,
     pinnedAt: input.state.thread.pinnedAt ?? null,
 
     autoSettleDisabledAt: input.state.thread.autoSettleDisabledAt ?? null,
@@ -3416,6 +3426,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 AND json_extract(t.payload_json, '$.limitRecovery.resetAt') IS json_extract(item.payload_json, '$.failure.resetAt')
                 AND json_extract(t.payload_json, '$.limitRecovery.autoResume') = 1
                 AND julianday(json_extract(item.payload_json, '$.failure.resetAt')) <= julianday(${DateTime.formatIso(options.now)})
+                AND json_extract(t.payload_json, '$.snoozedUntilNeedsAttention') IS NOT 1
                 AND (
                   json_extract(t.payload_json, '$.snoozedUntil') IS NULL
                   OR julianday(json_extract(t.payload_json, '$.snoozedUntil')) <= julianday(${DateTime.formatIso(options.now)})
@@ -3461,6 +3472,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             pendingRuntimeRequest: null,
             limitRecovery: thread.limitRecovery ?? null,
             snoozedUntil: thread.snoozedUntil ?? null,
+            snoozedUntilNeedsAttention: thread.snoozedUntilNeedsAttention === true,
           });
         }
         return candidates;
@@ -5289,6 +5301,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   autoSettleDisabledAt: thread.autoSettleDisabledAt ?? null,
                   snoozedUntil: thread.snoozedUntil ?? null,
                   snoozedAt: thread.snoozedAt ?? null,
+                  snoozedUntilNeedsAttention: thread.snoozedUntilNeedsAttention === true,
                   status,
                   latestRunId,
                   latestRunRequestedAt:
@@ -5353,6 +5366,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               settledOverride: thread.settledOverride,
               settledAt: thread.settledAt,
               pullRequests: thread.pullRequests ?? [],
+              snoozedUntilNeedsAttention: thread.snoozedUntilNeedsAttention === true,
             })),
           ),
         );
@@ -5835,6 +5849,7 @@ export const layerMemory: Layer.Layer<ProjectionStoreV2> = Layer.effect(
                 settledOverride: thread.settledOverride,
                 settledAt: thread.settledAt,
                 pullRequests: thread.pullRequests ?? [],
+                snoozedUntilNeedsAttention: thread.snoozedUntilNeedsAttention === true,
               })),
           ),
         ),
@@ -5873,6 +5888,7 @@ export const layerMemory: Layer.Layer<ProjectionStoreV2> = Layer.effect(
                 return (
                   thread.limitRecovery.autoResume &&
                   resetMs <= nowMs &&
+                  thread.snoozedUntilNeedsAttention !== true &&
                   (thread.snoozedUntil == null ||
                     DateTime.toEpochMillis(thread.snoozedUntil) <= nowMs)
                 );

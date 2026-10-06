@@ -19,6 +19,7 @@ import {
   ProjectId,
   type PullRequestDetail,
   type PullRequestComment,
+  type ThreadPullRequestSnapshot,
   PullRequestOperationError,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -64,6 +65,7 @@ import * as ProviderRuntimeRecoveryService from "./ProviderRuntimeRecoveryServic
 import * as ProjectionMaintenance from "./ProjectionMaintenance.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as PullRequestWatchReactor from "./PullRequestWatchReactor.ts";
+import { newPullRequestWatch } from "./pullRequestWatch.ts";
 import { PullRequestProviderError } from "../pullRequest/PullRequestProvider.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as ProjectStore from "./ProjectStore.ts";
@@ -73,6 +75,7 @@ import * as RuntimeLayer from "./runtimeLayer.ts";
 import { shellStreamItemFromThreadShell } from "./ShellStream.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
+import * as ThreadSettlementService from "./ThreadSettlementService.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 
 const layerPlatformTest = Layer.merge(
@@ -2262,7 +2265,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         commandId: CommandId.make("pr-watch-record"),
         threadId,
         ...key,
-        startedAt: started.startedAt,
+        previous: started,
         watch: recorded,
       });
       assert.deepEqual(yield* watchOf, recorded);
@@ -2283,7 +2286,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           commandId: CommandId.make("pr-watch-late-record"),
           threadId,
           ...key,
-          startedAt: started.startedAt,
+          previous: recorded,
           watch: { ...recorded, wakes: 2 },
           wake: {
             messageId: MessageId.make("pr-watch-late-wake"),
@@ -2365,7 +2368,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
             threadId,
             ...key,
             number: 7,
-            startedAt: started.startedAt,
+            previous: started,
             watch: { ...started, headSha: "late", wakes: 1 },
             ...(wake === undefined ? {} : { wake }),
           })
@@ -2498,6 +2501,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         Effect.provide(
           Layer.mergeAll(
             NodeServices.layer,
+            ServerSettings.layerTest(),
             Layer.mock(PullRequestService.PullRequestService)({
               detail: () => Effect.die("host unreachable"),
               activity: () => Effect.die("host unreachable"),
@@ -2577,6 +2581,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           Effect.provide(
             Layer.mergeAll(
               NodeServices.layer,
+              ServerSettings.layerTest(),
               Layer.mock(PullRequestService.PullRequestService)({
                 detail: () =>
                   Effect.suspend(() => {
@@ -2713,6 +2718,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         Effect.provide(
           Layer.mergeAll(
             NodeServices.layer,
+            ServerSettings.layerTest(),
             Layer.mock(PullRequestService.PullRequestService)({
               detail: () =>
                 Effect.sync(() => ({
@@ -2815,6 +2821,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         Effect.provide(
           Layer.mergeAll(
             NodeServices.layer,
+            ServerSettings.layerTest(),
             Layer.mock(PullRequestService.PullRequestService)({
               watchFingerprint: () =>
                 Effect.suspend(() =>
@@ -3024,6 +3031,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         Effect.provide(
           Layer.mergeAll(
             NodeServices.layer,
+            ServerSettings.layerTest(),
             Layer.mock(PullRequestService.PullRequestService)({
               detail: () => Effect.succeed(detail),
               activity: () =>
@@ -3124,6 +3132,1214 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         { headSha: watch?.headSha, failedChecks: watch?.failedChecks, wakes: watch?.wakes },
         { headSha: "abc1234def", failedChecks: ["lint"], wakes: incomplete ? 1 : 0 },
       );
+    }),
+  );
+
+  /**
+   * One project whose host serves pull requests #7 and #8 (open, mergeable, lint failing), with a
+   * fingerprint that moves on every change and one reactor over it. `thread` makes a thread that
+   * links the given pull requests, synced as the host serves them; `sync` changes what sync saw.
+   * A pull request in `host.unreadable` fails to read.
+   */
+  const attentionHost = (name: string) =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const projectId = ProjectId.make(`pr-attention-${name}-project`);
+      yield* seedProject({
+        projectId,
+        title: "Attention",
+        workspaceRoot: "/workspace/watch",
+        defaultModelSelection: null,
+        createdAt: "2026-10-01T00:00:00.000Z",
+      });
+      const host = {
+        details: {} as Record<number, Partial<PullRequestDetail>>,
+        comments: {} as Record<number, ReadonlyArray<PullRequestComment>>,
+        version: 0,
+        stateFingerprints: false,
+        // Reads of this project's pull requests; watches left by other tests are read too.
+        reads: {} as Record<number, number>,
+        unreadable: new Set<number>(),
+        readGate: null as null | {
+          entered: Deferred.Deferred<void>;
+          release: Deferred.Deferred<void>;
+        },
+      };
+      const change = (
+        number: number,
+        patch: {
+          readonly detail?: Partial<PullRequestDetail>;
+          readonly comments?: ReadonlyArray<PullRequestComment>;
+        },
+      ) =>
+        Effect.sync(() => {
+          if (patch.detail) host.details[number] = { ...host.details[number], ...patch.detail };
+          if (patch.comments) host.comments[number] = patch.comments;
+          host.version += 1;
+        });
+      const reactor = yield* PullRequestWatchReactor.make.pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            NodeServices.layer,
+            ServerSettings.layerTest({ sidebarAutoSettleOnMerge: false }),
+            Layer.mock(PullRequestService.PullRequestService)({
+              watchFingerprint: (input) =>
+                Effect.sync(() =>
+                  host.stateFingerprints
+                    ? {
+                        status: host.details[input.number]?.mergeability ?? "mergeable",
+                        remarks: "no-remarks",
+                      }
+                    : { status: `${host.version}`, remarks: `${host.version}` },
+                ),
+              invalidate: () => Effect.void,
+              detail: (input) =>
+                Effect.suspend(() => {
+                  if (input.projectId === projectId) {
+                    host.reads[input.number] = (host.reads[input.number] ?? 0) + 1;
+                    if (host.unreadable.has(input.number)) {
+                      const failed = Effect.fail(
+                        new PullRequestOperationError({
+                          operation: "detail",
+                          detail: "Host unavailable",
+                        }),
+                      );
+                      const gate = host.readGate;
+                      if (gate === null) return failed;
+                      host.readGate = null;
+                      return Deferred.succeed(gate.entered, undefined).pipe(
+                        Effect.andThen(Deferred.await(gate.release)),
+                        Effect.andThen(failed),
+                      );
+                    }
+                  }
+                  const detail = {
+                    ...watchedPullRequestDetail({
+                      projectId,
+                      number: input.number,
+                      at: "2026-10-02T12:00:00.000Z",
+                    }),
+                    ...host.details[input.number],
+                  };
+                  const gate = input.projectId === projectId ? host.readGate : null;
+                  if (gate === null) return Effect.succeed(detail);
+                  host.readGate = null;
+                  return Deferred.succeed(gate.entered, undefined).pipe(
+                    Effect.andThen(Deferred.await(gate.release)),
+                    Effect.as(detail),
+                  );
+                }),
+              activity: (input) =>
+                Effect.sync(() => {
+                  const comments = host.comments[input.number] ?? [];
+                  return {
+                    comments,
+                    commentCount: comments.length,
+                    commentsTruncated: false,
+                    reviewThreads: [],
+                    commits: [],
+                  };
+                }),
+            }),
+          ),
+        ),
+      );
+      let commands = 0;
+      const commandId = (label: string) =>
+        CommandId.make(`pr-attention-${name}-${label}-${(commands += 1)}`);
+      const thread = (id: string, numbers: ReadonlyArray<number>) =>
+        Effect.gen(function* () {
+          const threadId = ThreadId.make(`runtime-pr-attention-${name}-${id}`);
+          yield* orchestrator.dispatch({
+            type: "thread.create",
+            createdBy: "user",
+            creationSource: "web",
+            commandId: commandId("create"),
+            threadId,
+            projectId,
+            title: "Attention",
+            modelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+          });
+          for (const number of numbers) {
+            yield* orchestrator.dispatch({
+              type: "thread.pull-request.link",
+              commandId: commandId("link"),
+              threadId,
+              host: "github.com",
+              repository: "pingdotgg/t3code",
+              number,
+              url: `https://github.com/pingdotgg/t3code/pull/${number}`,
+              source: "agent",
+            });
+          }
+          const sync = (number: number, snapshot: Partial<ThreadPullRequestSnapshot> = {}) =>
+            orchestrator.dispatch({
+              type: "thread.pull-request-link.sync",
+              commandId: commandId("sync"),
+              threadId,
+              host: "github.com",
+              repository: "pingdotgg/t3code",
+              number,
+              snapshot: {
+                state: "open",
+                title: "Watched pull request",
+                headBranch: "feature",
+                baseBranch: "main",
+                isDraft: false,
+                updatedAt: null,
+                syncedAt: "2026-10-02T12:00:00.000Z",
+                checksState: "failing",
+                mergeability: "mergeable",
+                ...snapshot,
+              },
+              stack: null,
+            });
+          for (const number of numbers) yield* sync(number);
+          const shell = orchestrator
+            .getThreadShell(threadId)
+            .pipe(Effect.map((current) => current!));
+          return {
+            threadId,
+            shell,
+            sync,
+            watchOf: (number: number) =>
+              Effect.map(
+                shell,
+                (current) => current.pullRequests?.find((link) => link.number === number)?.watch,
+              ),
+            summaries: Effect.map(
+              orchestrator.getThreadRecords(threadId, ["messages"]),
+              ({ messages }) => messages.flatMap((message) => message.notification?.summary ?? []),
+            ),
+            snooze: Effect.suspend(() =>
+              reactor.snoozeUntilAttention({
+                type: "thread.snooze-until-attention",
+                commandId: commandId("snooze"),
+                threadId,
+              }),
+            ),
+          };
+        });
+      return { host, change, reactor, thread, commandId };
+    });
+
+  it.effect("snoozes a thread whose pull request was linked by a legacy single-link event", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const eventSink = yield* EventSink.EventSinkV2;
+      const { thread, commandId } = yield* attentionHost("legacy-single-link");
+      const subject = yield* thread("subject", []);
+      const projection = yield* orchestrator.getThreadProjection(subject.threadId);
+      const { pullRequests: _links, ...legacy } = projection.thread;
+      const now = yield* DateTime.now;
+      yield* eventSink.write({
+        commandId: commandId("legacy-event"),
+        events: [
+          {
+            id: EventId.make("legacy-single-link"),
+            type: "thread.metadata-updated",
+            threadId: subject.threadId,
+            occurredAt: now,
+            payload: {
+              ...legacy,
+              linkedPullRequest: {
+                projectId: legacy.projectId,
+                repository: "pingdotgg/t3code",
+                number: 7,
+                url: "https://github.com/pingdotgg/t3code/pull/7",
+              },
+            },
+          },
+        ],
+      });
+      const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+      assert.isTrue((yield* maintenance.rebuild).valid);
+      assert.isUndefined(
+        (yield* orchestrator.getThreadProjection(subject.threadId)).thread.pullRequests,
+      );
+      const before = yield* subject.shell;
+      assert.equal(before.pullRequests?.[0]?.number, 7);
+      yield* subject.snooze;
+      assert.isTrue((yield* subject.shell).snoozedUntilNeedsAttention);
+      assert.isDefined(yield* subject.watchOf(7));
+      const recorded = (yield* orchestrator.getThreadProjection(subject.threadId)).thread;
+      assert.isDefined(recorded.pullRequests?.find((link) => link.number === 7)?.watch);
+    }),
+  );
+
+  it.effect("snoozes a thread until its pull requests need attention", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { thread, reactor, commandId } = yield* attentionHost("snooze");
+      const subject = yield* thread("subject", [7, 8]);
+      yield* orchestrator.dispatch({
+        type: "thread.pull-request.watch",
+        commandId: commandId("watch"),
+        threadId: subject.threadId,
+        host: "github.com",
+        repository: "pingdotgg/t3code",
+        number: 8,
+        watching: true,
+      });
+      const watching = yield* subject.watchOf(8);
+      yield* TestClock.adjust("1 minute");
+
+      yield* subject.snooze;
+      const snoozed = yield* subject.shell;
+      assert.isTrue(snoozed.snoozedUntilNeedsAttention);
+      assert.isNull(snoozed.snoozedUntil ?? null);
+      assert.isNotNull(snoozed.snoozedAt ?? null);
+      // Each watch waits from what the host showed at the snooze; one already on keeps its start.
+      const held = { headSha: "abc1234def", failedChecks: ["lint"] };
+      assert.deepInclude(yield* subject.watchOf(7), { ...held, wakes: 0 });
+      assert.deepEqual(yield* subject.watchOf(8), { ...watching!, ...held });
+
+      // The pull requests already fail lint; that is where they stood, so it wakes nobody.
+      yield* reactor.sweep;
+      assert.deepEqual(yield* subject.summaries, []);
+      assert.isTrue((yield* subject.shell).snoozedUntilNeedsAttention);
+      assert.deepEqual((yield* subject.watchOf(7))?.failedChecks, ["lint"]);
+
+      // Snoozing follows the snooze rules, and needs a pull request to wait on.
+      const unlinked = yield* thread("unlinked", []);
+      assert.equal((yield* unlinked.snooze.pipe(Effect.flip))._tag, "OrchestratorDispatchError");
+      const queued = yield* thread("queued", [7]);
+      for (const mode of ["start_immediately", "queue_after_active"] as const) {
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: commandId("message"),
+          threadId: queued.threadId,
+          messageId: MessageId.make(`pr-attention-snooze-queued-${mode}`),
+          text: "Work.",
+          attachments: [],
+          modelSelection,
+          dispatchMode: { type: mode },
+        });
+      }
+      const refused = yield* queued.snooze.pipe(Effect.flip);
+      assert.instanceOf(refused, Orchestrator.OrchestratorDispatchError);
+      assert.include(String(refused.cause), "queued run");
+      assert.isUndefined(yield* queued.watchOf(7));
+    }),
+  );
+
+  it.effect("an agent snoozes its running thread, which stays snoozed once its turn ends", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const eventSink = yield* EventSink.EventSinkV2;
+      const { thread, commandId } = yield* attentionHost("running");
+      const subject = yield* thread("subject", [7]);
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: commandId("message"),
+        threadId: subject.threadId,
+        messageId: MessageId.make("pr-attention-running-message"),
+        text: "Open the pull request and wait for review.",
+        attachments: [],
+        modelSelection,
+        dispatchMode: { type: "start_immediately" },
+      });
+      const { runs } = yield* orchestrator.getThreadRecords(subject.threadId, ["runs"]);
+      assert.equal(runs[0]?.status, "starting");
+
+      yield* subject.snooze;
+      const snoozedAt = (yield* subject.shell).snoozedAt;
+      assert.isTrue((yield* subject.shell).snoozedUntilNeedsAttention);
+
+      yield* TestClock.adjust("1 minute");
+      const now = yield* DateTime.now;
+      yield* eventSink.write({
+        commandId: commandId("completed"),
+        events: [
+          {
+            id: EventId.make("pr-attention-running-completed"),
+            type: "run.updated",
+            threadId: subject.threadId,
+            runId: runs[0]!.id,
+            occurredAt: now,
+            payload: { ...runs[0]!, status: "completed", startedAt: now, completedAt: now },
+          },
+        ],
+      });
+      const after = yield* subject.shell;
+      assert.isTrue(after.snoozedUntilNeedsAttention);
+      assert.deepEqual(after.snoozedAt, snoozedAt);
+      assert.isDefined(yield* subject.watchOf(7));
+    }),
+  );
+
+  it.effect.each([
+    ["a failed check", "#7: checks failed"],
+    ["a comment", "#7: new comments"],
+    ["a conflict", "#7: merge conflict"],
+  ] as const)("%s wakes the agent and brings the thread back, still watching", ([news, summary]) =>
+    Effect.gen(function* () {
+      const { thread, reactor, change } = yield* attentionHost(`wake-${news.replaceAll(" ", "-")}`);
+      const subject = yield* thread("subject", [7]);
+      yield* subject.snooze;
+      yield* reactor.sweep;
+      assert.deepEqual(yield* subject.summaries, []);
+
+      yield* change(
+        7,
+        news === "a failed check"
+          ? {
+              detail: {
+                checks: [
+                  { name: "lint", status: "failure", description: null, url: null },
+                  { name: "test", status: "failure", description: null, url: null },
+                ],
+              },
+            }
+          : news === "a comment"
+            ? {
+                comments: [
+                  {
+                    id: "review-1",
+                    kind: "review-comment",
+                    author: { login: "maintainer", name: null, avatarUrl: null },
+                    body: "One more thing.",
+                    createdAt: "2999-01-01T00:00:00.000Z",
+                    url: null,
+                    path: "src/index.ts",
+                    reviewState: null,
+                  },
+                ],
+              }
+            : { detail: { mergeability: "conflicting" } },
+      );
+      yield* TestClock.adjust("10 minutes");
+      yield* reactor.sweep;
+      assert.deepEqual(yield* subject.summaries, [summary]);
+      const woken = yield* subject.shell;
+      assert.notEqual(woken.snoozedUntilNeedsAttention, true);
+      assert.isNull(woken.snoozedAt ?? null);
+      assert.isDefined(yield* subject.watchOf(7));
+    }),
+  );
+
+  it.effect.each([
+    [
+      "another check fails",
+      {
+        detail: {
+          checks: [
+            { name: "lint", status: "failure", description: null, url: null },
+            { name: "test", status: "failure", description: null, url: null },
+          ],
+        },
+      },
+      "#7: checks failed",
+    ],
+    [
+      "the branch starts to conflict",
+      { detail: { mergeability: "conflicting" } },
+      "#7: merge conflict",
+    ],
+  ] as const)(
+    "when %s between the snooze and the watch's first read, the agent wakes",
+    ([news, hostChange, summary]) =>
+      Effect.gen(function* () {
+        const { thread, reactor, change } = yield* attentionHost(
+          `early-${news.replaceAll(" ", "-")}`,
+        );
+        const subject = yield* thread("subject", [7]);
+        yield* subject.snooze;
+        yield* change(7, hostChange);
+        yield* reactor.sweep;
+        assert.deepEqual(yield* subject.summaries, [summary]);
+        assert.notEqual((yield* subject.shell).snoozedUntilNeedsAttention, true);
+      }),
+  );
+
+  it.effect.each([
+    ["sync last saw checks running", { checksState: "pending" }],
+    ["sync never saw it", null],
+  ] as const)("a pull request snoozed as the host shows it stays quiet when %s", ([name, synced]) =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { thread, reactor, change, commandId } = yield* attentionHost(
+        `as-is-${name.replaceAll(" ", "-")}`,
+      );
+      const subject = yield* thread("subject", synced === null ? [] : [7]);
+      if (synced === null) {
+        yield* orchestrator.dispatch({
+          type: "thread.pull-request.link",
+          commandId: commandId("link"),
+          threadId: subject.threadId,
+          host: "github.com",
+          repository: "pingdotgg/t3code",
+          number: 7,
+          url: "https://github.com/pingdotgg/t3code/pull/7",
+          source: "agent",
+        });
+      } else {
+        yield* subject.sync(7, synced);
+      }
+      // The required check passed; an advisory bot still runs, and lint already failed.
+      yield* change(7, {
+        detail: {
+          checks: [
+            { name: "test", status: "success", required: true, description: null, url: null },
+            { name: "bot", status: "pending", description: null, url: null },
+            { name: "lint", status: "failure", description: null, url: null },
+          ],
+        },
+      });
+      yield* subject.snooze;
+      yield* reactor.sweep;
+      yield* TestClock.adjust("10 minutes");
+      yield* reactor.sweep;
+      assert.deepEqual(yield* subject.summaries, []);
+      assert.isTrue((yield* subject.shell).snoozedUntilNeedsAttention);
+    }),
+  );
+
+  it.effect("a watch already on waits from what the host shows at the snooze", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { thread, reactor, change, commandId } = yield* attentionHost("existing");
+      const subject = yield* thread("subject", [7]);
+      const pending = [{ name: "test", status: "pending", description: null, url: null }] as const;
+      yield* change(7, { detail: { checks: pending } });
+      yield* orchestrator.dispatch({
+        type: "thread.pull-request.watch",
+        commandId: commandId("watch"),
+        threadId: subject.threadId,
+        host: "github.com",
+        repository: "pingdotgg/t3code",
+        number: 7,
+        watching: true,
+      });
+      yield* reactor.sweep;
+      const watching = yield* subject.watchOf(7);
+
+      // The checks pass before the snooze, and the watch has not seen it.
+      yield* change(7, {
+        detail: { checks: [{ name: "test", status: "success", description: null, url: null }] },
+      });
+      yield* subject.snooze;
+      const primed = yield* subject.watchOf(7);
+      assert.equal(primed?.startedAt, watching?.startedAt);
+      assert.isTrue(primed?.passed);
+      yield* TestClock.adjust("10 minutes");
+      yield* reactor.sweep;
+      assert.deepEqual(yield* subject.summaries, []);
+      assert.isTrue((yield* subject.shell).snoozedUntilNeedsAttention);
+
+      // A comment after the snooze still wakes it.
+      yield* change(7, {
+        comments: [
+          {
+            id: "review-1",
+            kind: "review-comment",
+            author: { login: "maintainer", name: null, avatarUrl: null },
+            body: "One more thing.",
+            createdAt: "2999-01-01T00:00:00.000Z",
+            url: null,
+            path: "src/index.ts",
+            reviewState: null,
+          },
+        ],
+      });
+      yield* TestClock.adjust("10 minutes");
+      yield* reactor.sweep;
+      assert.deepEqual(yield* subject.summaries, ["#7: new comments"]);
+    }),
+  );
+
+  it.effect("needs an open pull request, and a pull request it can read", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { thread, change, host, commandId } = yield* attentionHost("refused");
+      // The only watched pull request closed, whatever sync last saw.
+      const closed = yield* thread("closed", [7]);
+      yield* orchestrator.dispatch({
+        type: "thread.pull-request.watch",
+        commandId: commandId("watch"),
+        threadId: closed.threadId,
+        host: "github.com",
+        repository: "pingdotgg/t3code",
+        number: 7,
+        watching: true,
+      });
+      yield* change(7, { detail: { state: "closed" } });
+      const refused = yield* closed.snooze.pipe(Effect.flip);
+      assert.include(String(refused.cause), "no open linked pull request");
+      assert.notEqual((yield* closed.shell).snoozedUntilNeedsAttention, true);
+
+      host.unreadable.add(8);
+      const unread = yield* thread("unread", [8]);
+      const failed = yield* unread.snooze.pipe(Effect.flip);
+      assert.equal(failed._tag, "PullRequestAttentionReadError");
+      assert.notEqual((yield* unread.shell).snoozedUntilNeedsAttention, true);
+      assert.isUndefined(yield* unread.watchOf(8));
+    }),
+  );
+
+  it.effect("refuses a snooze whose watch changed while the host was read", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { thread, commandId } = yield* attentionHost("raced");
+      const subject = yield* thread("subject", [7]);
+      const key = { host: "github.com", repository: "pingdotgg/t3code", number: 7 };
+      const watch = {
+        startedAt: "2026-10-02T12:00:00.000Z",
+        headSha: "abc1234def",
+        failedChecks: ["lint"],
+        passed: false,
+        passedChecks: [],
+        remarksThrough: "2026-10-02T12:00:00.000Z",
+        remarkIds: [],
+        conflicting: false,
+        wakes: 0,
+      };
+      // Read with no watch on, then a watch started before the snooze landed.
+      yield* orchestrator.dispatch({
+        ...key,
+        type: "thread.pull-request.watch",
+        commandId: commandId("watch"),
+        threadId: subject.threadId,
+        watching: true,
+      });
+      const refused = yield* orchestrator
+        .dispatch({
+          type: "thread.snooze-until-attention",
+          commandId: commandId("snooze"),
+          threadId: subject.threadId,
+          links: [key],
+          watches: [{ ...key, previous: null, watch }],
+        })
+        .pipe(Effect.flip);
+      assert.include(String(refused.cause), "changed while they were read");
+      assert.notEqual((yield* subject.shell).snoozedUntilNeedsAttention, true);
+    }),
+  );
+
+  it.effect.each(["merged", "closed"] as const)(
+    "a pull request %s while the thread is at work settles it once the turn ends",
+    (state) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const eventSink = yield* EventSink.EventSinkV2;
+        const { thread, reactor, change, host, commandId } = yield* attentionHost(`busy-${state}`);
+        const subject = yield* thread("subject", [7]);
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: commandId("message"),
+          threadId: subject.threadId,
+          messageId: MessageId.make(`pr-attention-busy-${state}-message`),
+          text: "Open the pull request and wait for review.",
+          attachments: [],
+          modelSelection,
+          dispatchMode: { type: "start_immediately" },
+        });
+        const { runs } = yield* orchestrator.getThreadRecords(subject.threadId, ["runs"]);
+        yield* subject.snooze;
+        yield* reactor.sweep;
+
+        // The agent's turn is still going, so the snooze holds and keeps watching.
+        yield* change(7, { detail: { state } });
+        yield* TestClock.adjust("10 minutes");
+        yield* reactor.sweep;
+        const waiting = yield* subject.shell;
+        assert.isNull(waiting.settledOverride);
+        assert.isTrue(waiting.snoozedUntilNeedsAttention);
+        assert.isDefined(yield* subject.watchOf(7));
+        // A merge is final, so it waits on what it read; a closed pull request can reopen, so each
+        // pass reads it again.
+        const reads = host.reads[7] ?? 0;
+        yield* TestClock.adjust("2 minutes");
+        yield* reactor.sweep;
+        assert.equal(host.reads[7], state === "merged" ? reads : reads + 1);
+
+        const now = yield* DateTime.now;
+        yield* eventSink.write({
+          commandId: commandId("completed"),
+          events: [
+            {
+              id: EventId.make(`pr-attention-busy-${state}-completed`),
+              type: "run.updated",
+              threadId: subject.threadId,
+              runId: runs[0]!.id,
+              occurredAt: now,
+              payload: { ...runs[0]!, status: "completed", startedAt: now, completedAt: now },
+            },
+          ],
+        });
+        yield* TestClock.adjust("2 minutes");
+        yield* reactor.sweep;
+        const settled = yield* subject.shell;
+        assert.equal(settled.settledOverride, "settled");
+        assert.notEqual(settled.snoozedUntilNeedsAttention, true);
+        assert.isUndefined(yield* subject.watchOf(7));
+        assert.deepEqual(yield* subject.summaries, []);
+      }),
+  );
+
+  it.effect.each(["idle", "busy"] as const)(
+    "a linked pull request that reopened keeps the thread from settling when it is %s",
+    (activity) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const eventSink = yield* EventSink.EventSinkV2;
+        const { thread, reactor, change, commandId } = yield* attentionHost(`reopened-${activity}`);
+        const subject = yield* thread("subject", [7, 8]);
+        if (activity === "busy") {
+          yield* orchestrator.dispatch({
+            type: "message.dispatch",
+            createdBy: "user",
+            creationSource: "web",
+            commandId: commandId("message"),
+            threadId: subject.threadId,
+            messageId: MessageId.make(`pr-attention-reopened-${activity}-message`),
+            text: "Wait for both reviews.",
+            attachments: [],
+            modelSelection,
+            dispatchMode: { type: "start_immediately" },
+          });
+        }
+        const { runs } = yield* orchestrator.getThreadRecords(subject.threadId, ["runs"]);
+        yield* subject.snooze;
+        yield* reactor.sweep;
+
+        // #7 closing ends its watch at once, since #8 is still watched.
+        yield* change(7, { detail: { state: "closed" } });
+        yield* subject.sync(7, { state: "closed" });
+        yield* TestClock.adjust("10 minutes");
+        yield* reactor.sweep;
+        assert.isUndefined(yield* subject.watchOf(7));
+        assert.isTrue((yield* subject.shell).snoozedUntilNeedsAttention);
+
+        // #7 reopens without a watch, then #8 closes.
+        yield* change(7, { detail: { state: "open" } });
+        yield* subject.sync(7, { state: "open" });
+        yield* change(8, { detail: { state: "closed" } });
+        yield* subject.sync(8, { state: "closed" });
+        yield* TestClock.adjust("10 minutes");
+        yield* reactor.sweep;
+        if (activity === "busy") {
+          const now = yield* DateTime.now;
+          yield* eventSink.write({
+            commandId: commandId("completed"),
+            events: [
+              {
+                id: EventId.make(`pr-attention-reopened-${activity}-completed`),
+                type: "run.updated",
+                threadId: subject.threadId,
+                runId: runs[0]!.id,
+                occurredAt: now,
+                payload: { ...runs[0]!, status: "completed", startedAt: now, completedAt: now },
+              },
+            ],
+          });
+          yield* TestClock.adjust("2 minutes");
+          yield* reactor.sweep;
+        }
+        const after = yield* subject.shell;
+        assert.isNull(after.settledOverride);
+        assert.notEqual(after.snoozedUntilNeedsAttention, true);
+        assert.isUndefined(yield* subject.watchOf(8));
+        assert.deepEqual(yield* subject.summaries, ["#8: closed, stopped watching"]);
+      }),
+  );
+
+  it.effect("automatic settlement leaves an attention snooze to its watch after a rollback", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const eventSink = yield* EventSink.EventSinkV2;
+      const { thread, reactor, change, commandId } = yield* attentionHost("auto-reopened");
+      const subject = yield* thread("subject", [7]);
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: commandId("message"),
+        threadId: subject.threadId,
+        messageId: MessageId.make("r7-auto-reopened-message"),
+        text: "Wait for review.",
+        attachments: [],
+        modelSelection,
+        dispatchMode: { type: "start_immediately" },
+      });
+      const { runs } = yield* orchestrator.getThreadRecords(subject.threadId, ["runs"]);
+      yield* subject.snooze;
+      yield* reactor.sweep;
+      yield* TestClock.adjust("10 minutes");
+      const closedAt = DateTime.formatIso(yield* DateTime.now);
+      yield* change(7, { detail: { state: "closed" } });
+      yield* subject.sync(7, { state: "closed", closedAt });
+      yield* reactor.sweep;
+      assert.isTrue((yield* subject.shell).snoozedUntilNeedsAttention);
+      assert.isDefined(yield* subject.watchOf(7));
+      yield* change(7, { detail: { state: "open" } });
+      yield* TestClock.adjust("1 millis");
+      const now = yield* DateTime.now;
+      yield* eventSink.write({
+        commandId: commandId("completed"),
+        events: [
+          {
+            id: EventId.make("r7-auto-reopened-completed"),
+            type: "run.updated",
+            threadId: subject.threadId,
+            runId: runs[0]!.id,
+            occurredAt: now,
+            payload: { ...runs[0]!, status: "completed", startedAt: now, completedAt: now },
+          },
+          {
+            id: EventId.make("r7-auto-reopened-rolled-back"),
+            type: "run.updated",
+            threadId: subject.threadId,
+            runId: runs[0]!.id,
+            occurredAt: now,
+            payload: { ...runs[0]!, status: "rolled_back", startedAt: now, completedAt: now },
+          },
+        ],
+      });
+      yield* subject.snooze;
+      assert.isTrue((yield* subject.shell).snoozedUntilNeedsAttention);
+      const candidate = (yield* projections.getSettlementCandidates(subject.threadId))[0]!;
+      const settledAt = ThreadSettlementService.resolveAutoSettlementAt({
+        thread: candidate,
+        pullRequest: null,
+        nowMs: DateTime.toEpochMillis(now),
+        autoSettleAfterDays: null,
+        autoSettleOnMerge: true,
+      });
+      assert.isNull(settledAt);
+      yield* reactor.sweep;
+      const after = yield* subject.shell;
+      assert.deepEqual(
+        {
+          settled: after.settledOverride,
+          snoozed: after.snoozedUntilNeedsAttention === true,
+          watching: (yield* subject.watchOf(7)) !== undefined,
+        },
+        { settled: null, snoozed: true, watching: true },
+      );
+    }),
+  );
+
+  it.effect("waking the thread yourself ends the snooze and keeps the watch", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { thread, reactor, change, host, commandId } = yield* attentionHost("user-wake");
+      const subject = yield* thread("subject", [7]);
+      yield* subject.snooze;
+      yield* reactor.sweep;
+      yield* orchestrator.dispatch({
+        type: "thread.unsnooze",
+        commandId: commandId("unsnooze"),
+        threadId: subject.threadId,
+        reason: "user",
+      });
+      const awake = yield* subject.shell;
+      assert.notEqual(awake.snoozedUntilNeedsAttention, true);
+      assert.isNull(awake.snoozedAt ?? null);
+      assert.isDefined(yield* subject.watchOf(7));
+
+      // It is an ordinary watch again, checked at the normal pace.
+      const reads = host.reads[7]!;
+      yield* change(7, { detail: { mergeability: "conflicting" } });
+      yield* reactor.sweep;
+      assert.equal(host.reads[7], reads + 1);
+      assert.deepEqual(yield* subject.summaries, ["#7: merge conflict"]);
+    }),
+  );
+
+  it.effect.each(["merged", "closed"] as const)(
+    "settles when its pull request is %s, without a wake, even with auto-settle on merge off",
+    (state) =>
+      Effect.gen(function* () {
+        const { thread, reactor, change } = yield* attentionHost(`ended-${state}`);
+        const subject = yield* thread("subject", [7]);
+        yield* subject.snooze;
+        yield* reactor.sweep;
+
+        yield* change(7, { detail: { state } });
+        yield* TestClock.adjust("10 minutes");
+        yield* reactor.sweep;
+        const ended = yield* subject.shell;
+        assert.equal(ended.settledOverride, "settled");
+        assert.notEqual(ended.snoozedUntilNeedsAttention, true);
+        assert.isNull(ended.snoozedAt ?? null);
+        assert.isUndefined(yield* subject.watchOf(7));
+        assert.deepEqual(yield* subject.summaries, []);
+      }),
+  );
+
+  it.effect("waits on every watched pull request until none is left open", () =>
+    Effect.gen(function* () {
+      const { thread, reactor, change } = yield* attentionHost("several");
+      const subject = yield* thread("subject", [7, 8]);
+      yield* subject.snooze;
+      yield* reactor.sweep;
+
+      // One merging leaves the thread waiting on the other.
+      yield* change(7, { detail: { state: "merged" } });
+      yield* subject.sync(7, { state: "merged" });
+      yield* TestClock.adjust("10 minutes");
+      yield* reactor.sweep;
+      const waiting = yield* subject.shell;
+      assert.isTrue(waiting.snoozedUntilNeedsAttention);
+      assert.isNull(waiting.settledOverride);
+      assert.isUndefined(yield* subject.watchOf(7));
+      assert.isDefined(yield* subject.watchOf(8));
+
+      yield* change(8, { detail: { state: "closed" } });
+      yield* TestClock.adjust("10 minutes");
+      yield* reactor.sweep;
+      assert.equal((yield* subject.shell).settledOverride, "settled");
+      assert.deepEqual(yield* subject.summaries, []);
+    }),
+  );
+
+  it.effect.each(["unwatch", "stop", "unlink", "settle", "archive"] as const)(
+    "ending the watch with %s ends the snooze",
+    (ending) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const { thread, commandId } = yield* attentionHost(`end-${ending}`);
+        const subject = yield* thread("subject", [7]);
+        yield* subject.snooze;
+        const key = { host: "github.com", repository: "pingdotgg/t3code", number: 7 };
+        const common = { commandId: commandId(ending), threadId: subject.threadId };
+        yield* orchestrator.dispatch(
+          ending === "unwatch"
+            ? { ...common, ...key, type: "thread.pull-request.watch", watching: false }
+            : ending === "stop"
+              ? { ...common, type: "thread.stop" }
+              : ending === "unlink"
+                ? { ...common, ...key, type: "thread.pull-request.unlink" }
+                : { ...common, type: `thread.${ending}` },
+        );
+        const ended = yield* orchestrator.getThreadProjection(subject.threadId);
+        assert.notEqual(ended.thread.snoozedUntilNeedsAttention, true);
+        assert.isNull(ended.thread.snoozedAt ?? null);
+        assert.isFalse(
+          ended.thread.pullRequests?.some((link) => link.watch !== undefined) ?? false,
+        );
+      }),
+  );
+
+  it.effect("checks a pull request only snoozed threads watch every ten minutes", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { thread, reactor, change, host, commandId } = yield* attentionHost("cadence");
+      const alone = yield* thread("alone", [7]);
+      yield* alone.snooze;
+      const shared = yield* thread("shared", [8]);
+      yield* shared.snooze;
+      const awake = yield* thread("awake", [8]);
+      yield* orchestrator.dispatch({
+        type: "thread.pull-request.watch",
+        commandId: commandId("watch"),
+        threadId: awake.threadId,
+        host: "github.com",
+        repository: "pingdotgg/t3code",
+        number: 8,
+        watching: true,
+      });
+
+      // Each snooze read its pull request, and every watch takes its first look at once.
+      assert.deepEqual(host.reads, { 7: 1, 8: 1 });
+      yield* reactor.sweep;
+      assert.deepEqual(host.reads, { 7: 2, 8: 2 });
+
+      // The host moved: the pull request a normal watch shares is read on the next pass.
+      yield* change(7, { detail: { title: "Renamed" } });
+      yield* TestClock.adjust("2 minutes");
+      yield* reactor.sweep;
+      assert.deepEqual(host.reads, { 7: 2, 8: 3 });
+
+      yield* TestClock.adjust("8 minutes");
+      yield* reactor.sweep;
+      assert.deepEqual(host.reads, { 7: 3, 8: 3 });
+    }),
+  );
+
+  it.effect("a watch pass read before a snooze cannot replace the watch the snooze read", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { thread, reactor, change, host, commandId } = yield* attentionHost("stale-pass");
+      const subject = yield* thread("subject", [7]);
+      yield* change(7, {
+        detail: { checks: [{ name: "lint", status: "pending", description: null, url: null }] },
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.pull-request.watch",
+        commandId: commandId("watch"),
+        threadId: subject.threadId,
+        host: "github.com",
+        repository: "pingdotgg/t3code",
+        number: 7,
+        watching: true,
+      });
+      const entered = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      host.readGate = { entered, release };
+      const sweep = yield* reactor.sweep.pipe(Effect.forkChild);
+      yield* Deferred.await(entered);
+      yield* change(7, {
+        detail: { checks: [{ name: "lint", status: "failure", description: null, url: null }] },
+      });
+      yield* subject.snooze;
+      assert.deepEqual((yield* subject.watchOf(7))?.failedChecks, ["lint"]);
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(sweep);
+      yield* TestClock.adjust("10 minutes");
+      yield* reactor.sweep;
+      assert.deepEqual(yield* subject.summaries, []);
+      assert.isTrue((yield* subject.shell).snoozedUntilNeedsAttention);
+    }),
+  );
+
+  it.effect.each(["before", "after"] as const)(
+    "a pass that read before a snooze cannot hide a later change, finishing %s it",
+    (finishes) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const { thread, reactor, change, host, commandId } = yield* attentionHost(
+          `stale-pass-${finishes}`,
+        );
+        host.stateFingerprints = true;
+        const subject = yield* thread("subject", [7]);
+        yield* change(7, { detail: { mergeability: "conflicting" } });
+        yield* subject.snooze;
+        yield* reactor.sweep;
+        yield* orchestrator.dispatch({
+          type: "thread.unsnooze",
+          commandId: commandId("unsnooze"),
+          threadId: subject.threadId,
+          reason: "user",
+        });
+        yield* TestClock.adjust("30 minutes");
+        const entered = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        host.readGate = { entered, release };
+        const stale = yield* reactor.sweep.pipe(Effect.forkChild);
+        yield* Deferred.await(entered);
+        if (finishes === "before") {
+          yield* Deferred.succeed(release, undefined);
+          yield* Fiber.join(stale);
+        }
+        yield* change(7, { detail: { mergeability: "mergeable" } });
+        yield* subject.snooze;
+        assert.isFalse((yield* subject.watchOf(7))!.conflicting);
+        yield* change(7, { detail: { mergeability: "conflicting" } });
+        if (finishes === "after") {
+          yield* Deferred.succeed(release, undefined);
+          yield* Fiber.join(stale);
+        }
+        yield* TestClock.adjust("10 minutes");
+        yield* reactor.sweep;
+        assert.deepEqual(yield* subject.summaries, ["#7: merge conflict"]);
+        assert.notEqual((yield* subject.shell).snoozedUntilNeedsAttention, true);
+      }),
+  );
+
+  it.effect(
+    "a pass that read a pull request closed cannot settle a snooze made after it reopened",
+    () =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const { thread, reactor, change, host, commandId } = yield* attentionHost("stale-closed");
+        const subject = yield* thread("subject", [7]);
+        yield* subject.snooze;
+        yield* reactor.sweep;
+        yield* orchestrator.dispatch({
+          type: "thread.unsnooze",
+          commandId: commandId("unsnooze"),
+          threadId: subject.threadId,
+          reason: "user",
+        });
+        const previous = yield* subject.watchOf(7);
+        yield* change(7, { detail: { state: "closed" } });
+        const entered = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        host.readGate = { entered, release };
+        const stale = yield* reactor.sweep.pipe(Effect.forkChild);
+        yield* Deferred.await(entered);
+        yield* change(7, { detail: { state: "open" } });
+        yield* subject.snooze;
+        assert.deepEqual(yield* subject.watchOf(7), previous);
+        assert.isTrue((yield* subject.shell).snoozedUntilNeedsAttention);
+        yield* Deferred.succeed(release, undefined);
+        yield* Fiber.join(stale);
+        assert.notEqual((yield* subject.shell).settledOverride, "settled");
+        assert.isTrue((yield* subject.shell).snoozedUntilNeedsAttention);
+        assert.isDefined(yield* subject.watchOf(7));
+      }),
+  );
+
+  it.effect(
+    "a snooze starts the read failures over, and a pass that failed before it does not count",
+    () =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const { thread, reactor, host, commandId } = yield* attentionHost("stale-failure");
+        const subject = yield* thread("subject", [7]);
+        yield* orchestrator.dispatch({
+          type: "thread.pull-request.watch",
+          commandId: commandId("watch"),
+          threadId: subject.threadId,
+          host: "github.com",
+          repository: "pingdotgg/t3code",
+          number: 7,
+          watching: true,
+        });
+        host.unreadable.add(7);
+        for (let attempt = 0; attempt < 6; attempt += 1) yield* reactor.sweep;
+        assert.isDefined(yield* subject.watchOf(7));
+        const entered = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        host.readGate = { entered, release };
+        const stale = yield* reactor.sweep.pipe(Effect.forkChild);
+        yield* Deferred.await(entered);
+        host.unreadable.delete(7);
+        yield* subject.snooze;
+        assert.isTrue((yield* subject.shell).snoozedUntilNeedsAttention);
+        yield* Deferred.succeed(release, undefined);
+        yield* Fiber.join(stale);
+        assert.isDefined(yield* subject.watchOf(7));
+        host.unreadable.add(7);
+        for (let attempt = 0; attempt < 7; attempt += 1) yield* reactor.sweep;
+        assert.isDefined(yield* subject.watchOf(7));
+        assert.isTrue((yield* subject.shell).snoozedUntilNeedsAttention);
+      }),
+  );
+
+  it.effect("refuses a snooze when a watch pass records while the host is read", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { thread, reactor, change, host, commandId } = yield* attentionHost("recorded-pass");
+      const subject = yield* thread("subject", [7]);
+      yield* change(7, {
+        detail: { checks: [{ name: "lint", status: "pending", description: null, url: null }] },
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.pull-request.watch",
+        commandId: commandId("watch"),
+        threadId: subject.threadId,
+        host: "github.com",
+        repository: "pingdotgg/t3code",
+        number: 7,
+        watching: true,
+      });
+      yield* reactor.sweep;
+      const entered = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      host.readGate = { entered, release };
+      const snooze = yield* subject.snooze.pipe(Effect.forkChild);
+      yield* Deferred.await(entered);
+      // The pass sees lint fail and wakes the agent while the snooze still holds the pending read.
+      yield* change(7, {
+        detail: { checks: [{ name: "lint", status: "failure", description: null, url: null }] },
+      });
+      yield* TestClock.adjust("2 minutes");
+      yield* reactor.sweep;
+      assert.deepEqual(yield* subject.summaries, ["#7: checks failed"]);
+      yield* Deferred.succeed(release, undefined);
+      const refused = yield* Fiber.join(snooze).pipe(Effect.flip);
+      assert.include(String(refused.cause), "changed while they were read");
+      assert.notEqual((yield* subject.shell).snoozedUntilNeedsAttention, true);
+      // The agent was told about the failure once.
+      yield* TestClock.adjust("2 minutes");
+      yield* reactor.sweep;
+      assert.equal((yield* subject.summaries).length, 1);
+    }),
+  );
+
+  it.effect(
+    "a pull request that closed and reopened during the turn does not settle the thread",
+    () =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const eventSink = yield* EventSink.EventSinkV2;
+        const { thread, reactor, change, commandId } = yield* attentionHost("reopened");
+        const subject = yield* thread("subject", [7]);
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: commandId("message"),
+          threadId: subject.threadId,
+          messageId: MessageId.make("pr-attention-reopened-message"),
+          text: "Wait for review.",
+          attachments: [],
+          modelSelection,
+          dispatchMode: { type: "start_immediately" },
+        });
+        const { runs } = yield* orchestrator.getThreadRecords(subject.threadId, ["runs"]);
+        yield* subject.snooze;
+        yield* reactor.sweep;
+        yield* change(7, { detail: { state: "closed" } });
+        yield* TestClock.adjust("10 minutes");
+        yield* reactor.sweep;
+        assert.isTrue((yield* subject.shell).snoozedUntilNeedsAttention);
+        yield* change(7, { detail: { state: "open" } });
+        yield* subject.sync(7, { state: "open" });
+        const now = yield* DateTime.now;
+        yield* eventSink.write({
+          commandId: commandId("completed"),
+          events: [
+            {
+              id: EventId.make("pr-attention-reopened-completed"),
+              type: "run.updated",
+              threadId: subject.threadId,
+              runId: runs[0]!.id,
+              occurredAt: now,
+              payload: { ...runs[0]!, status: "completed", startedAt: now, completedAt: now },
+            },
+          ],
+        });
+        yield* reactor.sweep;
+        assert.notEqual((yield* subject.shell).settledOverride, "settled");
+        assert.isDefined(yield* subject.watchOf(7));
+      }),
+  );
+
+  it.effect("refuses a snooze when a pull request is linked while the host is read", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { thread, host, commandId } = yield* attentionHost("link-race");
+      const subject = yield* thread("subject", [7]);
+      const entered = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      host.readGate = { entered, release };
+      const snooze = yield* subject.snooze.pipe(Effect.forkChild);
+      yield* Deferred.await(entered);
+      yield* orchestrator.dispatch({
+        type: "thread.pull-request.link",
+        commandId: commandId("link8"),
+        threadId: subject.threadId,
+        host: "github.com",
+        repository: "pingdotgg/t3code",
+        number: 8,
+        url: "https://github.com/pingdotgg/t3code/pull/8",
+        source: "agent",
+      });
+      yield* Deferred.succeed(release, undefined);
+      // A snooze that never read #8 cannot wait on it, so it is refused and nothing changes.
+      const refused = yield* Fiber.join(snooze).pipe(Effect.flip);
+      assert.include(String(refused.cause), "changed while they were read");
+      assert.notEqual((yield* subject.shell).snoozedUntilNeedsAttention, true);
+      assert.isUndefined(yield* subject.watchOf(7));
+      yield* subject.snooze;
+      assert.isTrue((yield* subject.shell).snoozedUntilNeedsAttention);
+      assert.isDefined(yield* subject.watchOf(7));
+      assert.isDefined(yield* subject.watchOf(8));
     }),
   );
 
@@ -4843,6 +6059,8 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
     "cancel",
     "rearm",
     "snooze-race",
+    "attention-snooze-race",
+    "attention-snooze-armed",
     "new-message",
     "archive",
     "settle",
@@ -4983,6 +6201,62 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
           .pipe(Effect.exit);
         assert.equal(resumeHeldQueue._tag, "Failure");
         assert.isTrue((yield* orchestrator.getThreadProjection(threadId)).runs[1]?.queueHeld);
+      }
+      // Snoozed until pull request #1 needs attention, as the watch reactor primes it.
+      const snoozeUntilAttention = (label: string) =>
+        Effect.gen(function* () {
+          const pullRequest = { host: "github.com", repository: "pingdotgg/t3code", number: 1 };
+          yield* orchestrator.dispatch({
+            ...pullRequest,
+            type: "thread.pull-request.link",
+            commandId: CommandId.make(`${label}:link`),
+            threadId,
+            url: "https://github.com/pingdotgg/t3code/pull/1",
+            source: "agent",
+          });
+          yield* orchestrator.dispatch({
+            type: "thread.snooze-until-attention",
+            commandId: CommandId.make(label),
+            threadId,
+            links: [pullRequest],
+            watches: [
+              {
+                ...pullRequest,
+                previous: null,
+                watch: newPullRequestWatch(DateTime.formatIso(yield* DateTime.now)),
+              },
+            ],
+          });
+        });
+      if (scenario === "attention-snooze-armed") {
+        // Arming with the snooze setting on, as the worker does, keeps the attention snooze.
+        yield* snoozeUntilAttention("recovery:armed-snooze");
+        const held = (yield* orchestrator.getShellSnapshot()).threads.find(
+          (thread) => thread.id === threadId,
+        )!;
+        const arm = limitRecoveryCommand(held, true, DateTime.toEpochMillis(now), true);
+        assert.isNotNull(arm);
+        yield* orchestrator.dispatch(arm!);
+        const armed = (yield* orchestrator.getShellSnapshot()).threads.find(
+          (thread) => thread.id === threadId,
+        )!;
+        assert.isTrue(armed.snoozedUntilNeedsAttention);
+        assert.isNull(armed.snoozedUntil ?? null);
+        assert.isFalse(armed.limitRecovery?.snooze);
+        assert.isTrue(armed.limitRecovery?.autoResume);
+
+        // The limit resets, and the continuation still waits for the pull request.
+        yield* TestClock.adjust("1 minute");
+        const later = DateTime.toEpochMillis(yield* DateTime.now);
+        assert.isNull(limitRecoveryCommand(armed, true, later, true));
+        const raced = limitRecoveryCommand(
+          { ...armed, snoozedUntilNeedsAttention: false },
+          true,
+          later,
+        );
+        yield* orchestrator.dispatch(raced!);
+        assert.lengthOf((yield* orchestrator.getThreadProjection(threadId)).runs, 1);
+        return;
       }
       const shell = (yield* orchestrator.getShellSnapshot()).threads.find(
         (thread) => thread.id === threadId,
@@ -5180,6 +6454,43 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
         assert.isNotNull(freshResume);
         assert.notEqual(freshResume!.commandId, resume!.commandId);
         yield* orchestrator.dispatch(freshResume!);
+        yield* orchestrator.dispatch(freshResume!);
+        assert.lengthOf((yield* orchestrator.getThreadProjection(threadId)).runs, 2);
+      }
+      if (scenario === "attention-snooze-race") {
+        // Snoozed until a pull request needs attention, the continuation waits for the wake.
+        yield* snoozeUntilAttention("recovery:attention-snooze");
+        const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
+        const candidates = () =>
+          Effect.flatMap(ProjectionStore.ProjectionStoreV2, (projections) =>
+            Effect.flatMap(DateTime.now, (now) =>
+              projections.getLimitRecoveryCandidates({ now, autoResume: true, snooze: false }),
+            ),
+          ).pipe(Effect.map((threads) => threads.map((thread) => thread.id)));
+        const held = (yield* orchestrator.getShellSnapshot()).threads.find(
+          (thread) => thread.id === threadId,
+        )!;
+        assert.isNull(limitRecoveryCommand(held, true, nowMs));
+        assert.notInclude(yield* candidates(), threadId);
+        yield* orchestrator.dispatch(resume!);
+        assert.lengthOf((yield* orchestrator.getThreadProjection(threadId)).runs, 1);
+        assert.isTrue(
+          (yield* orchestrator.getThreadProjection(threadId)).thread.snoozedUntilNeedsAttention,
+        );
+
+        yield* orchestrator.dispatch({
+          type: "thread.unsnooze",
+          commandId: CommandId.make("recovery:attention-wake"),
+          threadId,
+          reason: "user",
+        });
+        assert.include(yield* candidates(), threadId);
+        const current = (yield* orchestrator.getShellSnapshot()).threads.find(
+          (thread) => thread.id === threadId,
+        )!;
+        const freshResume = limitRecoveryCommand(current, true, nowMs);
+        assert.isNotNull(freshResume);
+        assert.notEqual(freshResume!.commandId, resume!.commandId);
         yield* orchestrator.dispatch(freshResume!);
         assert.lengthOf((yield* orchestrator.getThreadProjection(threadId)).runs, 2);
       }

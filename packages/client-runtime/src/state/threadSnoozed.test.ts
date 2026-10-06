@@ -26,6 +26,7 @@ function localDate(year: number, month: number, day: number, hour: number, minut
 function makeShell(input: {
   readonly snoozedUntil?: string | null;
   readonly snoozedAt?: string | null;
+  readonly snoozedUntilNeedsAttention?: boolean;
   readonly sessionStatus?: "starting" | "running" | "ready" | "error";
   readonly pending?: "approval" | "user-input";
   readonly turnCompletedAt?: string | null;
@@ -33,7 +34,12 @@ function makeShell(input: {
   const threadId = ThreadId.make("thread-1");
   return {
     snoozedUntil: input.snoozedUntil ?? null,
-    snoozedAt: input.snoozedAt ?? (input.snoozedUntil != null ? SNOOZED_AT : null),
+    snoozedAt:
+      input.snoozedAt ??
+      (input.snoozedUntil != null || input.snoozedUntilNeedsAttention ? SNOOZED_AT : null),
+    ...(input.snoozedUntilNeedsAttention === undefined
+      ? {}
+      : { snoozedUntilNeedsAttention: input.snoozedUntilNeedsAttention }),
     hasPendingApprovals: input.pending === "approval",
     hasPendingUserInput: input.pending === "user-input",
     session:
@@ -145,6 +151,34 @@ describe("effectiveSnoozed", () => {
         { now: NOW },
       ),
     ).toBe(true);
+  });
+});
+
+describe("snoozed until a pull request needs attention", () => {
+  const attention = { snoozedUntilNeedsAttention: true } as const;
+
+  it("stays snoozed with no wake time", () => {
+    expect(effectiveSnoozed(makeShell(attention), { now: NOW })).toBe(true);
+    expect(effectiveSnoozed(makeShell(attention), { now: "2999-01-01T00:00:00.000Z" })).toBe(true);
+    expect(threadWokeAt(makeShell(attention), { now: NOW })).toBe(null);
+  });
+
+  it("stays snoozed when the turn that snoozed it completes", () => {
+    const completed = makeShell({ ...attention, turnCompletedAt: "2026-04-10T10:30:00.000Z" });
+    expect(threadRaisedHandWhileSnoozed(completed)).toBe(false);
+    expect(effectiveSnoozed(completed, { now: NOW })).toBe(true);
+  });
+
+  it("raises its hand when the agent needs the user or fails", () => {
+    for (const shell of [
+      makeShell({ ...attention, pending: "approval" }),
+      makeShell({ ...attention, sessionStatus: "error" }),
+    ]) {
+      expect(effectiveSnoozed(shell, { now: NOW })).toBe(false);
+    }
+    expect(threadWokeAt(makeShell({ ...attention, sessionStatus: "error" }), { now: NOW })).toBe(
+      "2026-04-10T11:00:00.000Z",
+    );
   });
 });
 

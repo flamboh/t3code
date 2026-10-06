@@ -404,6 +404,12 @@ export const OrchestrationV2AppThread = Schema.Struct({
   unsettledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   snoozedUntil: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   snoozedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
+  /**
+   * Snoozed with no wake time until a watched pull request needs attention. `snoozedUntil` is
+   * null and `snoozedAt` is set. Ends when a watch wakes the agent, the user wakes the thread, or
+   * the last watch ends; a merged or closed pull request settles the thread instead.
+   */
+  snoozedUntilNeedsAttention: Schema.optional(Schema.Boolean),
   limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecovery)),
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   autoSettleDisabledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
@@ -1899,6 +1905,8 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   unsettledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   snoozedUntil: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   snoozedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
+  /** Snoozed until a watched pull request needs attention; omitted by older servers. */
+  snoozedUntilNeedsAttention: Schema.optional(Schema.Boolean),
   limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecovery)),
   /** Omitted by servers that predate thread pinning. */
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
@@ -2681,6 +2689,18 @@ export const OrchestrationV2Command = Schema.Union([
     threadId: ThreadId,
     reason: Schema.Literal("user"),
   }),
+  /**
+   * Watches every open linked pull request and snoozes the thread with no wake time until one
+   * needs attention. Follows the snooze rules, and needs an open linked pull request. An agent's
+   * snooze is refused once Stop reached the thread's latest run. The server reads each pull
+   * request before it dispatches the internal form below, and refuses the snooze when it cannot.
+   */
+  Schema.Struct({
+    type: Schema.Literal("thread.snooze-until-attention"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    createdBy: Schema.optional(OrchestrationV2Actor),
+  }),
   Schema.Struct({
     type: Schema.Literal("thread.auto-settle.set"),
     commandId: CommandId,
@@ -3058,18 +3078,42 @@ export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
  */
 const OrchestrationV2InternalCommand = Schema.Union([
   /**
+   * `thread.snooze-until-attention` once the server read each open linked pull request. `watches`
+   * are the watches the thread waits with, holding what the host showed then, so only what
+   * changes after the snooze wakes it. Each one replaces `previous`, the watch it read with, or
+   * starts one when that is null. The snooze is rejected when `links`, every pull request the
+   * thread linked, or one of those watches changed while the host was read.
+   */
+  Schema.Struct({
+    type: Schema.Literal("thread.snooze-until-attention"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    createdBy: Schema.optional(OrchestrationV2Actor),
+    links: Schema.Array(ThreadPullRequestKey),
+    watches: Schema.Array(
+      Schema.Struct({
+        ...ThreadPullRequestKey.fields,
+        previous: Schema.NullOr(ThreadPullRequestWatch),
+        watch: ThreadPullRequestWatch,
+      }),
+    ),
+  }),
+  /**
    * Records what a pull request watch saw, and wakes the agent in the same transaction when
-   * `wake` is set. Rejected once the watch started at `startedAt` has ended, and a wake is
-   * rejected on a settled or archived thread, so a read that raced either changes nothing.
+   * `wake` is set. Rejected unless the recorded watch is still `previous`, the one the pass
+   * evaluated, and a wake is rejected on a settled or archived thread, so a read that raced a
+   * stop, a restart, a snooze's newer read, or a settle changes nothing. `ended` says the watch
+   * ends because its pull request merged or closed.
    */
   Schema.Struct({
     type: Schema.Literal("thread.pull-request-watch.sync"),
     commandId: CommandId,
     threadId: ThreadId,
     ...ThreadPullRequestKey.fields,
-    startedAt: IsoDateTime,
+    previous: ThreadPullRequestWatch,
     /** The watch to record, or null to end it. */
     watch: Schema.NullOr(ThreadPullRequestWatch),
+    ended: Schema.optional(Schema.Literals(["merged", "closed"])),
     wake: Schema.optional(
       Schema.Struct({
         messageId: MessageId,

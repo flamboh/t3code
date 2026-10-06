@@ -548,7 +548,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
       yield* service.start();
     }),
   ).pipe(
-    Layer.provide(PullRequestWatchReactor.layer),
+    Layer.provideMerge(PullRequestWatchReactor.layer),
     Layer.provide(layerPullRequestService),
     Layer.provide(ProjectionStoreV2.layer),
   ),

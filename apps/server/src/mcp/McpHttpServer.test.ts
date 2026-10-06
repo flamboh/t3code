@@ -1,4 +1,5 @@
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
+import * as PullRequestWatchReactor from "../orchestration-v2/PullRequestWatchReactor.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import { expect, it } from "@effect/vitest";
 import { NodeHttpServer } from "@effect/platform-node";
@@ -72,6 +73,7 @@ const layerPullRequestsTest = McpHttpServer.layerPullRequestsToolkit.pipe(
     Layer.mergeAll(
       Layer.mock(ProjectService.ProjectService)({}),
       Layer.mock(Orchestrator.OrchestratorV2)({}),
+      Layer.mock(PullRequestWatchReactor.PullRequestWatchReactor)({}),
       Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
       NodeServices.layer,
     ),

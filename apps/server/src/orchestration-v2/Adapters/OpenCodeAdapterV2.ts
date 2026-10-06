@@ -3267,6 +3267,9 @@ export function makeOpenCodeAdapterV2(
                 buildRuntimeInstructions({
                   harness: "OpenCode",
                   model: turnInput.modelSelection.model,
+                  snoozePullRequestsAwaitingReview: McpProviderSession.readMcpProviderSession(
+                    turnInput.threadId,
+                  )?.snoozePullRequestsAwaitingReview,
                 }),
               ]
                 .filter(Boolean)

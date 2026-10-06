@@ -88,6 +88,8 @@ export function hasQueuedTurnStart(
 export interface ThreadSnoozeShell extends QueuedThreadShell {
   readonly snoozedUntil?: string | null;
   readonly snoozedAt?: string | null;
+  /** Snoozed with no wake time until a watched pull request needs attention. */
+  readonly snoozedUntilNeedsAttention?: boolean;
   readonly hasPendingApprovals: boolean;
   readonly hasPendingUserInput: boolean;
 }
@@ -98,7 +100,9 @@ export interface ThreadSnoozeShell extends QueuedThreadShell {
  * the session failed, or a run completed after the snooze was set — the
  * v1 taste of event-based snooze ("something happened" wakes early).
  * Raising a hand never clears the server-side snooze fields; it only stops
- * the thread from classifying as snoozed.
+ * the thread from classifying as snoozed. A snooze until a pull request needs
+ * attention is often set by the agent mid-turn, so that turn completing is not
+ * news; the server ends that snooze itself when anything starts a new turn.
  */
 export function threadRaisedHandWhileSnoozed(shell: ThreadSnoozeShell): boolean {
   if (shell.hasPendingApprovals || shell.hasPendingUserInput) return true;
@@ -116,6 +120,7 @@ export function threadRaisedHandWhileSnoozed(shell: ThreadSnoozeShell): boolean 
     return true;
   }
   if (
+    shell.snoozedUntilNeedsAttention !== true &&
     shell.snoozedAt != null &&
     (latestRun?.state === "completed" || latestRun?.status === "completed") &&
     latestRun.completedAt != null &&
@@ -154,15 +159,16 @@ export function canSnooze(
 
 /**
  * Snoozed resolution: hidden from the inbox while the wake time is in the
- * future and the thread has not raised its hand. Timer wakes are derived —
- * no server event fires when snoozedUntil passes; the stale fields simply
- * stop classifying as snoozed (and feed the woke indicator until the user
- * visits or re-engages).
+ * future, or until a pull request needs attention, and the thread has not
+ * raised its hand. Timer wakes are derived — no server event fires when
+ * snoozedUntil passes; the stale fields simply stop classifying as snoozed
+ * (and feed the woke indicator until the user visits or re-engages).
  */
 export function effectiveSnoozed(
   shell: ThreadSnoozeShell,
   options: { readonly now: string },
 ): boolean {
+  if (shell.snoozedUntilNeedsAttention === true) return !threadRaisedHandWhileSnoozed(shell);
   if (shell.snoozedUntil == null) return false;
   const wakeAtMs = Date.parse(shell.snoozedUntil);
   // Malformed data never hides a thread.
@@ -186,6 +192,11 @@ export function threadWokeAt(
   shell: ThreadSnoozeShell,
   options: { readonly now: string },
 ): string | null {
+  if (shell.snoozedUntilNeedsAttention === true) {
+    return threadRaisedHandWhileSnoozed(shell)
+      ? ((shell.runtime ?? shell.session)?.updatedAt ?? shell.snoozedAt ?? null)
+      : null;
+  }
   if (shell.snoozedUntil == null) return null;
   const wakeAtMs = Date.parse(shell.snoozedUntil);
   if (Number.isNaN(wakeAtMs)) return null;

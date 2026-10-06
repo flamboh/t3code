@@ -527,3 +527,20 @@ it.effect("shell failure lookups stay on the thread's own turn items", () =>
     assert.include(secretLookups[0]!.detail, "turn_items_thread_run_idx");
   }).pipe(Effect.provide(layerSql)),
 );
+
+it.effect.each([
+  ["sql", layerSql],
+  ["memory", ProjectionStore.layerMemory],
+] as const)("%s exposes the attention snooze to the watch reactor", ([, testLayer]) =>
+  Effect.gen(function* () {
+    const store = yield* ProjectionStore.ProjectionStoreV2;
+    const threadId = yield* createThread("attention-snooze", {
+      snoozedUntil: null,
+      snoozedAt: old,
+      snoozedUntilNeedsAttention: true,
+      pullRequests: [pullRequestLink(7)],
+    });
+    const [thread] = yield* store.getThreadsWithPullRequests(threadId);
+    assert.isTrue(thread?.snoozedUntilNeedsAttention);
+  }).pipe(Effect.provide(testLayer)),
+);

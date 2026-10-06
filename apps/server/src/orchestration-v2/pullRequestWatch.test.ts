@@ -8,6 +8,7 @@ import { assert, describe, it } from "@effect/vitest";
 import {
   PULL_REQUEST_WATCH_WAKE_LIMIT,
   evaluatePullRequestWatch,
+  primedPullRequestWatch,
   pullRequestWatchMessage,
 } from "./pullRequestWatch.ts";
 
@@ -265,7 +266,67 @@ describe("evaluatePullRequestWatch", () => {
   });
 });
 
+describe("primedPullRequestWatch", () => {
+  it("holds the pull request as it is, and reports what changes after", () => {
+    // Lint already fails and the branch conflicts: that is where the snooze found it.
+    const failing = detail({
+      checks: [check("lint", "failure"), check("test", "pending")],
+      mergeability: "conflicting",
+    });
+    const told = watch({ remarksThrough: "2026-10-02T12:05:00.000Z", remarkIds: ["r"], wakes: 3 });
+    const primed = primedPullRequestWatch(told, failing);
+    assert.deepEqual(primed, {
+      ...told,
+      headSha: "aaaaaaaaaa",
+      failedChecks: ["lint"],
+      conflicting: true,
+    });
+    assert.deepEqual(evaluatePullRequestWatch(primed, failing, noRemarks).changes, []);
+
+    // Another check failing is news, and so is a comment after the snooze.
+    const comment = remark("reviewer", "2026-10-02T12:10:00.000Z");
+    const worse = detail({
+      checks: [check("lint", "failure"), check("test", "failure")],
+      mergeability: "conflicting",
+    });
+    assert.deepEqual(evaluatePullRequestWatch(primed, worse, [comment]).changes, [
+      { kind: "checks-failed", failed: [check("test", "failure")] },
+      { kind: "remarks", remarks: [comment] },
+    ]);
+  });
+
+  it("counts required checks that already passed as told, whatever advisory checks do", () => {
+    const green = detail({
+      checks: [{ ...check("test", "success"), required: true }, check("bot", "pending")],
+    });
+    const primed = primedPullRequestWatch(watch(), green);
+    assert.isTrue(primed.passed);
+    assert.deepEqual(evaluatePullRequestWatch(primed, green, noRemarks).changes, []);
+  });
+});
+
 describe("pullRequestWatchMessage", () => {
+  it("suggests snoozing a pull request that waits on review only when the setting is on", () => {
+    const report = evaluatePullRequestWatch(
+      watch(),
+      detail({ checks: [check("lint", "success")] }),
+      noRemarks,
+    );
+    const message = (snoozeAwaitingReview: boolean) =>
+      pullRequestWatchMessage({
+        number: 12,
+        url: "https://github.com/o/r/pull/12",
+        baseBranch: "main",
+        headSha: report.next.headSha,
+        report,
+        snoozeAwaitingReview,
+      }).text;
+    assert.include(message(true), "unwatch_pull_request");
+    assert.include(message(true), "call snooze_until_pull_request_needs_attention instead");
+    assert.include(message(false), "unwatch_pull_request");
+    assert.notInclude(message(false), "snooze");
+  });
+
   it("tells the agent what changed and marks failures for the timeline", () => {
     const report = evaluatePullRequestWatch(
       watch(),

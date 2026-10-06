@@ -17,6 +17,7 @@ import * as Stream from "effect/Stream";
 import type { Tool } from "effect/ai";
 
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
+import * as PullRequestWatchReactor from "../../../orchestration-v2/PullRequestWatchReactor.ts";
 import {
   type PullRequestTestThread,
   v2PullRequestThread,
@@ -135,6 +136,8 @@ interface HarnessOptions {
   readonly project?: OrchestrationProjectShell | null;
   /** A rejection the orchestrator reports as the dispatch error's cause. */
   readonly reject?: (command: OrchestrationCommand) => string | null;
+  /** The pull request a snooze cannot read. */
+  readonly unreadable?: number;
 }
 
 const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
@@ -163,6 +166,18 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
       getThreadShell: (id) =>
         Effect.succeed(id === THREAD_ID && thread ? v2PullRequestThread(thread) : null),
       dispatch,
+    }),
+    Layer.mock(PullRequestWatchReactor.PullRequestWatchReactor)({
+      snoozeUntilAttention: (command) =>
+        options.unreadable === undefined
+          ? dispatch({ ...command, links: [], watches: [] })
+          : Effect.fail(
+              new PullRequestWatchReactor.PullRequestAttentionReadError({
+                threadId: command.threadId,
+                number: options.unreadable,
+                cause: "host unavailable",
+              }),
+            ),
     }),
     Layer.succeed(Crypto.Crypto, testCrypto),
     McpToolAccessTestkit.liveThreadsLayer,
@@ -299,6 +314,35 @@ describe("pull request toolkit handlers", () => {
       expect(yield* Ref.get(harness.commands)).toMatchObject([
         { type: "thread.pull-request.watch", number: 1, watching: true },
       ]);
+    }),
+  );
+
+  it.effect("snoozes its own thread until a pull request needs attention", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ thread: makeThread([makeLink(4)]) });
+      yield* harness.call("snooze_until_pull_request_needs_attention", {});
+      expect(yield* Ref.get(harness.commands)).toMatchObject([
+        { type: "thread.snooze-until-attention", threadId: THREAD_ID },
+      ]);
+
+      // The orchestrator's reason for refusing reaches the agent.
+      const refused = yield* makeHarness({
+        reject: () => `Thread ${THREAD_ID} has a queued run and cannot be snoozed.`,
+      });
+      const error = yield* refused
+        .call("snooze_until_pull_request_needs_attention", {})
+        .pipe(Effect.flip);
+      expect(error).toMatchObject({ _tag: "PullRequestSnoozeFailedError" });
+      expect(error.message).toBe(`Thread ${THREAD_ID} has a queued run and cannot be snoozed.`);
+
+      // So does a pull request it could not read.
+      const unreadable = yield* makeHarness({ thread: makeThread([makeLink(4)]), unreadable: 4 });
+      const unread = yield* unreadable
+        .call("snooze_until_pull_request_needs_attention", {})
+        .pipe(Effect.flip);
+      expect(unread.message).toBe(
+        "Could not read pull request #4, so the thread was not snoozed. Try again.",
+      );
     }),
   );
 

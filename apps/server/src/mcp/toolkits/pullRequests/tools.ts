@@ -153,6 +153,19 @@ export class PullRequestWatchFromSubagentError extends Schema.TaggedError<PullRe
   }
 }
 
+export class PullRequestSnoozeFailedError extends Schema.TaggedError<PullRequestSnoozeFailedError>()(
+  "PullRequestSnoozeFailedError",
+  {
+    /** Why T3 Code refused, when it did. */
+    reason: Schema.optional(Schema.String),
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return this.reason ?? "Could not snooze the thread.";
+  }
+}
+
 export class PullRequestListFailedError extends Schema.TaggedError<PullRequestListFailedError>()(
   "PullRequestListFailedError",
   { cause: Schema.Defect() },
@@ -176,6 +189,7 @@ export const PullRequestToolError = Schema.Union([
   PullRequestWatchFailedError,
   PullRequestNotOpenError,
   PullRequestWatchFromSubagentError,
+  PullRequestSnoozeFailedError,
 ]);
 export type PullRequestToolError = typeof PullRequestToolError.Type;
 
@@ -214,6 +228,14 @@ export const WatchPullRequestResult = Schema.Struct({
   }),
 });
 export type WatchPullRequestResult = typeof WatchPullRequestResult.Type;
+
+export const SnoozeUntilPullRequestNeedsAttentionResult = Schema.Struct({
+  watching: Schema.Array(Schema.Struct(PullRequestIdentity)).annotate({
+    description: "The pull requests T3 Code now watches for this thread.",
+  }),
+});
+export type SnoozeUntilPullRequestNeedsAttentionResult =
+  typeof SnoozeUntilPullRequestNeedsAttentionResult.Type;
 
 export const ThreadPullRequestEntry = Schema.Struct({
   ...PullRequestIdentity,
@@ -319,10 +341,32 @@ const UnwatchPullRequestTool = Tool.make("unwatch_pull_request", {
   .annotate(Tool.Idempotent, true)
   .annotate(Tool.OpenWorld, false);
 
+const SnoozeUntilPullRequestNeedsAttentionTool = Tool.make(
+  "snooze_until_pull_request_needs_attention",
+  {
+    description:
+      "Snooze a thread, by default this one, until one of its pull requests needs attention. T3 Code watches every open pull request linked to it, starting watches where needed, and snoozes the thread with no wake time. A watch wakes you as usual when a check fails, the required checks pass, someone else comments or reviews, or the branch starts to conflict, and the wake brings the thread back. Once no watched pull request is left open, because they merged or closed, the thread settles. It fails after the user stops the thread's run, while the thread has a queued message or a pending approval or question, when the thread has no open linked pull request, and in a subagent.",
+    parameters: Schema.Struct({
+      threadId: Schema.optional(
+        ThreadId.annotate({ description: "Thread to snooze. Omit for this thread." }),
+      ),
+    }),
+    success: SnoozeUntilPullRequestNeedsAttentionResult,
+    failure: PullRequestToolError,
+    dependencies,
+  },
+)
+  .annotate(Tool.Title, "Snooze until a pull request needs attention")
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true)
+  .annotate(Tool.OpenWorld, false);
+
 export const PullRequestsToolkit = Toolkit.make(
   LinkPullRequestTool,
   UnlinkPullRequestTool,
   ListThreadPullRequestsTool,
   WatchPullRequestTool,
   UnwatchPullRequestTool,
+  SnoozeUntilPullRequestNeedsAttentionTool,
 );

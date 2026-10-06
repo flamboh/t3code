@@ -114,6 +114,24 @@ it("keeps a subagent child awake when its parent thread is snoozed", () => {
   });
 });
 
+it("keeps a subagent child awake when its parent waits on a pull request", () => {
+  const childThread = makeSubagentChildThread({
+    parentThread: { ...makeParentThread(), snoozedUntil: null, snoozedUntilNeedsAttention: true },
+    childThreadId,
+    parentNodeId: NodeId.make("node:subagent-parent"),
+    activeProviderThreadId: null,
+    providerInstanceId: childProviderInstanceId,
+    modelSelection: childModelSelection,
+    title: "Awake child",
+    now: childCreatedAt,
+    createdBy: "agent",
+    creationSource: "provider",
+  });
+
+  assert.notEqual(childThread.snoozedUntilNeedsAttention, true);
+  assert.isNull(childThread.snoozedAt);
+});
+
 it("attributes native subagent prompts to their parent thread", () => {
   for (const role of ["user", "assistant"] as const) {
     const artifacts = makeSubagentConversationArtifacts({
