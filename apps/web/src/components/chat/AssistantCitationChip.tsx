@@ -20,10 +20,12 @@ import {
   assistantCitationHash,
   assistantCitationNavigation,
 } from "../../lib/assistantCitationNavigation";
+import { cn } from "~/lib/utils";
 import { ContextChip, ContextChipAction, ContextChipLabel } from "../ContextChip";
 import { ContextChipPopover } from "../contextChipParts";
 import { Button } from "../ui/button";
 import { Popover, PopoverClose, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import { AssistantCitationCommentEditor } from "./AssistantCitationCommentEditor";
 import { resolveAssistantCitationCommentDismissal } from "./assistantCitationCommentDismissal";
 import { observeAssistantCitationCommentSource } from "./AssistantCitationSource";
@@ -133,12 +135,7 @@ export function AssistantCitationChip({
         copyMarkdown={serializeAssistantCitation(citation)}
       >
         <div className="space-y-3 p-1 text-sm">
-          <div className="max-h-64 space-y-3 overflow-y-auto whitespace-pre-wrap wrap-break-word">
-            <blockquote className="border-l-2 border-border pl-3 text-muted-foreground">
-              {citation.text}
-            </blockquote>
-            {citation.comment ? <p>{citation.comment}</p> : null}
-          </div>
+          <AssistantCitationQuote citation={citation} />
           <PopoverClose
             render={<Button variant="outline" size="sm" render={<Link {...sourceLinkProps} />} />}
           >
@@ -240,5 +237,28 @@ export function AssistantCitationChip({
         </Popover>
       ) : null}
     </ContextChip>
+  );
+}
+
+function AssistantCitationQuote({ citation }: { citation: AssistantCitation }) {
+  const [fadeBottom, setFadeBottom] = useState(false);
+  const updateFade = (element: HTMLElement) =>
+    setFadeBottom(element.scrollHeight - element.clientHeight - element.scrollTop > 1);
+  return (
+    <div
+      ref={(element) => {
+        if (element) updateFade(element);
+      }}
+      onScroll={(event) => updateFade(event.currentTarget)}
+      className={cn(
+        "max-h-64 space-y-3 overflow-y-auto whitespace-pre-wrap wrap-break-word",
+        getVirtualizedScrollFadeClassName({ top: false, bottom: fadeBottom }),
+      )}
+    >
+      <blockquote className="border-l-2 border-border pl-3 text-muted-foreground">
+        {citation.text}
+      </blockquote>
+      {citation.comment ? <p>{citation.comment}</p> : null}
+    </div>
   );
 }
