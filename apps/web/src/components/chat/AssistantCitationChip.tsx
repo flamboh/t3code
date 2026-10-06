@@ -252,7 +252,10 @@ function AssistantCitationQuote({ citation }: { citation: AssistantCitation }) {
   return (
     <div
       ref={(element) => {
-        if (element) updateFade(element);
+        if (!element) return;
+        const observer = new ResizeObserver(() => updateFade(element));
+        observer.observe(element);
+        return () => observer.disconnect();
       }}
       onScroll={(event) => updateFade(event.currentTarget)}
       className={cn(
