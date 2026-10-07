@@ -147,6 +147,10 @@ export interface RememberedTimelinePosition {
   readonly offsetWithinRow: number;
   readonly scrollOffset: number;
   readonly atEnd: boolean;
+  readonly itemSize?: {
+    readonly viewportWidth: number;
+    readonly average: number;
+  };
   readonly disclosures?: {
     readonly runs: ReadonlySet<RunId>;
     readonly workGroups: ReadonlySet<string>;
