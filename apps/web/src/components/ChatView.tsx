@@ -8,7 +8,7 @@ import {
   resolveWorktreeSetupProgress,
 } from "./ChatView.logic";
 import * as DateTime from "effect/DateTime";
-import { restorePlanFollowUpComposer } from "./ChatView.logic";
+import { composerBackgroundTasks, restorePlanFollowUpComposer } from "./ChatView.logic";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 import { prepareQueuedEditAttachments, recoverQueuedMessageEdit } from "./chat/queuedMessageEdit";
 import {
@@ -7091,6 +7091,8 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadShell !== null &&
     supportsSnooze &&
     effectiveSnoozed(activeThreadShell, { now: new Date().toISOString() });
+  const activeThreadSnoozedUntilAttention =
+    activeThreadSnoozed && activeThreadShell?.snoozedUntilNeedsAttention === true;
   const [snoozeWakeTick, bumpSnoozeWakeTick] = useState(0);
   useEffect(() => {
     void snoozeWakeTick;
@@ -7341,7 +7343,14 @@ export default function ChatView(props: ChatViewProps) {
   // the turn; once it settles, the composer stop button is gone, so this
   // banner is the only visible stop affordance. The interrupt path also
   // accepts a completed run while its provider still has background work.
-  const activeBackgroundTasks = !isWorking && activeThread ? pendingBackgroundTasks : [];
+  const hasActiveThread = activeThread != null;
+  const activeBackgroundTasks = useMemo(
+    () =>
+      !isWorking && hasActiveThread
+        ? composerBackgroundTasks(pendingBackgroundTasks, activeThreadSnoozedUntilAttention)
+        : [],
+    [activeThreadSnoozedUntilAttention, hasActiveThread, isWorking, pendingBackgroundTasks],
+  );
   const [stoppingBackgroundWorkKey, setStoppingBackgroundWorkKey] = useState<string | null>(null);
   const isStoppingBackgroundWork =
     stoppingBackgroundWorkKey === `${environmentId}:${activeThreadId}`;
@@ -7577,9 +7586,11 @@ export default function ChatView(props: ChatViewProps) {
       <ThreadStatusLine
         icon={<AlarmClockIcon />}
         label={
-          activeThreadShell?.snoozedUntil
-            ? `Snoozed, ${formatRelativeTimeUntilLabel(activeThreadShell.snoozedUntil)}`
-            : "Snoozed"
+          activeThreadSnoozedUntilAttention
+            ? "Snoozed until its pull request needs attention"
+            : activeThreadShell?.snoozedUntil
+              ? `Snoozed, ${formatRelativeTimeUntilLabel(activeThreadShell.snoozedUntil)}`
+              : "Snoozed"
         }
         actionLabel={isUnsnoozing ? "Waking..." : "Wake now"}
         actionDisabled={!canOperateThread || isUnsnoozing}
@@ -7611,6 +7622,7 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadShell?.settledAt,
     activeThreadShell?.snoozedUntil,
     activeThreadSnoozed,
+    activeThreadSnoozedUntilAttention,
     activeThreadWokeVisible,
     canOperateThread,
     handleUnsettleActiveThread,

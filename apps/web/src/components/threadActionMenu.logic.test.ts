@@ -15,6 +15,7 @@ const baseState: ThreadActionMenuState = {
   autoSettleEnabled: true,
   isSnoozed: false,
   canSnoozeNow: true,
+  canSnoozeUntilAttention: false,
   isRegeneratingTitle: false,
   isRunning: false,
   supports: {
@@ -170,6 +171,19 @@ describe("buildThreadActionMenuItems", () => {
     expect(
       ids({ ...baseState, supports: { ...baseState.supports, autoSettleOptOut: false } }),
     ).not.toContain("auto-settle");
+  });
+
+  it("offers snoozing until it needs attention only for threads with an open pull request", () => {
+    const children = (state: ThreadActionMenuState) =>
+      buildThreadActionMenuItems(state)
+        .find((item) => item.id === "snooze")
+        ?.children?.map((child) => child.id);
+    expect(children(baseState)).toEqual(["snooze:hour", "snooze:custom"]);
+    expect(children({ ...baseState, canSnoozeUntilAttention: true })).toEqual([
+      "snooze:hour",
+      "snooze:needs-attention",
+      "snooze:custom",
+    ]);
   });
 
   it("disables snooze when the thread cannot snooze, keeping presets visible", () => {

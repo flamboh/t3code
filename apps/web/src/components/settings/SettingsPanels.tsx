@@ -588,6 +588,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.snoozeLimitedThreads !== DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads
         ? ["Snooze limited threads"]
         : []),
+      ...(settings.snoozePullRequestsAwaitingReview !==
+      DEFAULT_UNIFIED_SETTINGS.snoozePullRequestsAwaitingReview
+        ? ["Snooze pull requests awaiting review"]
+        : []),
       ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? ["Word wrap"] : []),
       ...(settings.persistComposerContextStrip !==
       DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip
@@ -708,6 +712,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.sidebarAutoSettleOnMerge,
       settings.autoResumeLimitedThreads,
       settings.snoozeLimitedThreads,
+      settings.snoozePullRequestsAwaitingReview,
       settings.sidebarProjectGroupingMode,
       settings.sidebarProjectSortOrder,
       settings.sidebarWorkingShelfEnabled,
@@ -815,6 +820,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
+      snoozePullRequestsAwaitingReview: DEFAULT_UNIFIED_SETTINGS.snoozePullRequestsAwaitingReview,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
@@ -2204,6 +2210,11 @@ export function GeneralSettingsPanel() {
     connectedEnvironments.every(
       (target) => target.serverConfig?.environment.capabilities.threadRestartContinuation === true,
     );
+  const supportsSnoozeUntilAttention =
+    connectedEnvironments.length > 0 &&
+    connectedEnvironments.every(
+      (target) => target.serverConfig?.environment.capabilities.threadSnoozeUntilAttention === true,
+    );
 
   const textGenerationProviders = serverProviders.filter(
     (provider) => provider.supportsTextGeneration !== false,
@@ -2366,6 +2377,28 @@ export function GeneralSettingsPanel() {
                 updateSettings({ snoozeLimitedThreads: Boolean(checked) })
               }
               aria-label="Snooze limited threads"
+            />
+          }
+        />
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("snooze-pull-requests-awaiting-review")}
+          description="Let agents snooze threads whose pull requests are only waiting on someone else's review. They wake when the pull request needs attention."
+          settingKeys={["snoozePullRequestsAwaitingReview"]}
+          status={
+            !supportsSnoozeUntilAttention
+              ? "All selected connected environments must support snoozing until a pull request needs attention."
+              : undefined
+          }
+          control={
+            <ScopedSwitch
+              settingKeys={["snoozePullRequestsAwaitingReview"]}
+              checked={settings.snoozePullRequestsAwaitingReview}
+              disabled={!supportsSnoozeUntilAttention}
+              onCheckedChange={(checked) =>
+                updateSettings({ snoozePullRequestsAwaitingReview: Boolean(checked) })
+              }
+              aria-label="Snooze pull requests awaiting review"
             />
           }
         />

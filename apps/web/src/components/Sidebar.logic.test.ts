@@ -7,6 +7,7 @@ import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import {
   animateSidebarLayoutChanges,
+  applySidebarThreadDrop,
   archiveSelectedThreadEntries,
   buildBulkTitleRegenerationContextMenuItem,
   buildBulkUnpinContextMenuItem,
@@ -52,8 +53,10 @@ import {
   sortProjectsForSidebar,
   sortScopedProjectsForSidebar,
   sortSidebarV2ProjectGroups,
+  sortSnoozedThreads,
   shouldCreateNewThreadInCurrentProject,
   shouldNavigateAfterThreadPark,
+  threadHoldsSnooze,
   THREAD_JUMP_HINT_SHOW_DELAY_MS,
   type SidebarListItem,
   type SidebarListMarker,
@@ -2070,6 +2073,64 @@ describe("navigation after parking a thread", () => {
       ).toBe(expected);
     },
   );
+});
+
+describe("snoozed until a pull request needs attention", () => {
+  const timed = (id: string, snoozedUntil: string) => ({
+    id,
+    snoozedAt: "2026-09-12T08:00:00.000Z",
+    snoozedUntil,
+    snoozedUntilNeedsAttention: false,
+  });
+  const waiting = (id: string, snoozedAt: string) => ({
+    id,
+    snoozedAt,
+    snoozedUntil: null,
+    snoozedUntilNeedsAttention: true,
+  });
+
+  it("sorts after timed snoozes, oldest snooze first", () => {
+    const sorted = sortSnoozedThreads([
+      waiting("newer-wait", "2026-09-12T09:00:00.000Z"),
+      timed("later", "2026-09-14T09:00:00.000Z"),
+      waiting("older-wait", "2026-09-11T09:00:00.000Z"),
+      timed("sooner", "2026-09-13T09:00:00.000Z"),
+    ]);
+    expect(sorted.map((thread) => thread.id)).toEqual([
+      "sooner",
+      "later",
+      "older-wait",
+      "newer-wait",
+    ]);
+  });
+
+  it("is held until the server clears the flag", () => {
+    expect(threadHoldsSnooze(waiting("thread", "2026-09-12T09:00:00.000Z"))).toBe(true);
+    expect(threadHoldsSnooze({ snoozedUntil: null, snoozedUntilNeedsAttention: false })).toBe(
+      false,
+    );
+  });
+
+  it.each(["pinned", "active", "settled"] as const)("wakes when dropped into %s", (section) => {
+    const projected = applySidebarThreadDrop(
+      {
+        ...waiting("thread", "2026-09-12T09:00:00.000Z"),
+        pinnedAt: null,
+        pinOrderKey: null,
+        activeOrderKey: null,
+        settledAt: null,
+        settledOverride: null,
+        unsettledAt: null,
+      },
+      section,
+      "2026-09-12T10:00:00.000Z",
+    );
+    expect(projected).toMatchObject({
+      snoozedAt: null,
+      snoozedUntil: null,
+      snoozedUntilNeedsAttention: false,
+    });
+  });
 });
 
 describe("unseen completion with background work", () => {

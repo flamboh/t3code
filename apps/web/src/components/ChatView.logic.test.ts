@@ -1,4 +1,9 @@
-import { findRecordedWorktreeSetup, resolveVisibleWorktreeSetup } from "./ChatView.logic";
+import {
+  composerBackgroundTasks,
+  findRecordedWorktreeSetup,
+  resolveVisibleWorktreeSetup,
+} from "./ChatView.logic";
+import { derivePendingBackgroundWork } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import {
   recallCheckoutIsRepo,
   rememberCheckoutIsRepo,
@@ -2178,5 +2183,56 @@ describe("waitForRevertedMessage", () => {
     await vi.advanceTimersByTimeAsync(50);
     await settled;
     vi.useRealTimers();
+  });
+});
+
+describe("composerBackgroundTasks", () => {
+  const tasks = derivePendingBackgroundWork({
+    latestRun: { id: RunId.make("run-1"), ordinal: 1, status: "completed" },
+    providerThreads: [
+      {
+        id: "provider-thread-1" as never,
+        pendingBackgroundTasks: [
+          { taskId: "agent-1", kind: "subagent", description: "Explore" },
+          { taskId: "tail-logs", kind: "monitor", description: "Tail logs" },
+        ],
+      },
+    ],
+    turnItems: [],
+    pullRequests: [
+      {
+        host: "github.com",
+        repository: "acme/app",
+        number: 7,
+        url: "https://github.com/acme/app/pull/7",
+        source: "agent",
+        watch: {
+          startedAt: "2026-10-05T00:00:00.000Z",
+          headSha: null,
+          failedChecks: [],
+          passed: false,
+          passedChecks: [],
+          remarksThrough: "2026-10-05T00:00:00.000Z",
+          remarkIds: [],
+          conflicting: false,
+          wakes: 0,
+        },
+      },
+    ],
+  });
+
+  it("hides only pull request watches while the thread waits on its pull request", () => {
+    expect(composerBackgroundTasks(tasks, true).map((task) => task.taskId)).toEqual([
+      "agent-1",
+      "tail-logs",
+    ]);
+  });
+
+  it("keeps every task for awake and timed-snoozed threads", () => {
+    expect(composerBackgroundTasks(tasks, false).map((task) => task.taskId)).toEqual([
+      "agent-1",
+      "tail-logs",
+      "pull-request-watch:github.com/acme/app#7",
+    ]);
   });
 });

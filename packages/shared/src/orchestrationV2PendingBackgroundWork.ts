@@ -286,6 +286,13 @@ export function derivePendingBackgroundWork(input: {
   return Array.from(byTaskId.values());
 }
 
+const PULL_REQUEST_WATCH_TASK_ID_PREFIX = "pull-request-watch:";
+
+/** Whether a pending task is a thread pull request watch rather than provider work. */
+export function isPullRequestWatchTask(task: Pick<PendingBackgroundWorkTask, "taskId">): boolean {
+  return task.taskId.startsWith(PULL_REQUEST_WATCH_TASK_ID_PREFIX);
+}
+
 function pullRequestWatchTasks(
   pullRequests: ReadonlyArray<PendingBackgroundWorkPullRequest> | undefined,
 ): Array<PendingBackgroundWorkTask> {
@@ -294,7 +301,7 @@ function pullRequestWatchTasks(
       ? []
       : [
           {
-            taskId: `pull-request-watch:${threadPullRequestKeyOf(link)}`,
+            taskId: `${PULL_REQUEST_WATCH_TASK_ID_PREFIX}${threadPullRequestKeyOf(link)}`,
             description: `Watching pull request #${link.number}`,
             kind: "monitor" as const,
           },

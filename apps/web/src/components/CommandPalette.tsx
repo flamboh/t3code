@@ -25,6 +25,7 @@ import {
   getFilesystemBrowsePath,
 } from "@t3tools/client-runtime/state/filesystem";
 import {
+  type AtomCommandResult,
   isAtomCommandInterrupted,
   settlePromise,
   squashAtomCommandFailure,
@@ -47,10 +48,12 @@ import {
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import {
+  AlarmClockOffIcon,
   ArrowLeftIcon,
   ChartNoAxesColumnIcon,
   CheckIcon,
   ChevronRightIcon,
+  ClockIcon,
   CornerLeftUpIcon,
   FileSearchIcon,
   FolderGit2Icon,
@@ -86,6 +89,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useThreadActions } from "../hooks/useThreadActions";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { useClientSettings } from "../hooks/useSettings";
@@ -177,6 +181,7 @@ import {
   ITEM_ICON_CLASS,
   RECENT_THREAD_LIMIT,
   reduceCommandPaletteUiState,
+  resolveActiveThreadSnoozeAction,
   type SearchOverlayMode,
 } from "./CommandPalette.logic";
 import { orderItemsByPreferredIds, sortLogicalProjectsForSidebar } from "./Sidebar.logic";
@@ -738,6 +743,7 @@ function OpenCommandPaletteDialog(props: {
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
+  const { snoozeThread, unsnoozeThread } = useThreadActions();
   const { environments } = useEnvironments();
   const desktopLocalBootstraps = useDesktopLocalBootstraps();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -758,6 +764,10 @@ function OpenCommandPaletteDialog(props: {
   const openPanelPullRequestUrl = useOpenPanelPullRequestUrl(referenceThreadRef);
   const activeThreadServerConfig = useServerConfigs().get(
     activeThread?.environmentId ?? ("" as EnvironmentId),
+  );
+  const canOperateActiveThread = useEnvironmentScope(
+    activeThread?.environmentId ?? null,
+    AuthOrchestrationOperateScope,
   );
   const activeThreadReferenceCopyTarget =
     referenceThreadRef === null || (pathname === "/pull-requests" && !openPanelPullRequestUrl)
@@ -1971,6 +1981,55 @@ function OpenCommandPaletteDialog(props: {
         },
       });
     }
+  }
+
+  const activeThreadSnoozeAction =
+    activeThread === null
+      ? null
+      : resolveActiveThreadSnoozeAction({
+          thread: activeThread,
+          capabilities: activeThreadServerConfig?.environment.capabilities,
+          now: new Date().toISOString(),
+        });
+  if (activeThread !== null && activeThreadSnoozeAction !== null) {
+    const threadRef = scopeThreadRef(activeThread.environmentId, activeThread.id);
+    const reportFailure = (title: string, result: AtomCommandResult<unknown, unknown>) => {
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title,
+            description: errorMessage(squashAtomCommandFailure(result)),
+          }),
+        );
+      }
+    };
+    actionItems.push(
+      activeThreadSnoozeAction.kind === "wake"
+        ? {
+            kind: "action",
+            value: "action:wake-thread",
+            searchTerms: ["wake", "unsnooze", "snooze"],
+            title: "Wake thread",
+            disabled: !canOperateActiveThread,
+            icon: <AlarmClockOffIcon className={ITEM_ICON_CLASS} />,
+            run: async () => {
+              reportFailure("Failed to wake thread", await unsnoozeThread(threadRef));
+            },
+          }
+        : {
+            kind: "action",
+            value: "action:snooze-until-attention",
+            searchTerms: ["snooze", "pull request", "pr", "review", "attention", "wait"],
+            title: "Snooze until it needs attention",
+            description: "Wakes when its pull request needs attention",
+            disabled: !canOperateActiveThread || activeThreadSnoozeAction.disabled,
+            icon: <ClockIcon className={ITEM_ICON_CLASS} />,
+            run: async () => {
+              reportFailure("Failed to snooze thread", await snoozeThread(threadRef, null));
+            },
+          },
+    );
   }
 
   if (activeThread !== null) {

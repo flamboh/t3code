@@ -430,13 +430,19 @@ export function applySidebarThreadDrop<
     | "activeOrderKey"
     | "snoozedAt"
     | "snoozedUntil"
+    | "snoozedUntilNeedsAttention"
     | "settledAt"
     | "settledOverride"
     | "unsettledAt"
   >,
 >(thread: T, section: "pinned" | "active" | "settled", now: string, orderKey?: string): T {
   const wasSettled = thread.settledOverride === "settled";
-  const awake = { ...thread, snoozedAt: null, snoozedUntil: null };
+  const awake = {
+    ...thread,
+    snoozedAt: null,
+    snoozedUntil: null,
+    snoozedUntilNeedsAttention: false,
+  };
   if (section === "settled") {
     return {
       ...awake,
@@ -1036,6 +1042,31 @@ export function resolveSidebarV2TopStatus(input: {
     return "woke";
   }
   return input.isUnread ? "done" : null;
+}
+
+/** Whether the server still holds a snooze on the thread, timed or until a pull request needs attention. */
+export function threadHoldsSnooze(
+  thread: Pick<SidebarThreadSummary, "snoozedUntil" | "snoozedUntilNeedsAttention">,
+): boolean {
+  return thread.snoozedUntil != null || thread.snoozedUntilNeedsAttention === true;
+}
+
+/**
+ * Snoozed shelf order. Soonest wake first, since "what comes back next" is the shelf's question.
+ * Threads waiting on a pull request have no wake time, so they follow, oldest snooze first: a new
+ * one joins the end instead of reshuffling the rows above it.
+ */
+export function sortSnoozedThreads<
+  T extends Pick<SidebarThreadSummary, "snoozedAt" | "snoozedUntil" | "snoozedUntilNeedsAttention">,
+>(threads: ReadonlyArray<T>): T[] {
+  return threads.toSorted((left, right) => {
+    const leftWaits = left.snoozedUntil == null && left.snoozedUntilNeedsAttention === true;
+    const rightWaits = right.snoozedUntil == null && right.snoozedUntilNeedsAttention === true;
+    if (leftWaits !== rightWaits) return leftWaits ? 1 : -1;
+    return leftWaits
+      ? firstValidTimestampMs(left.snoozedAt) - firstValidTimestampMs(right.snoozedAt)
+      : firstValidTimestampMs(left.snoozedUntil) - firstValidTimestampMs(right.snoozedUntil);
+  });
 }
 
 export function shouldShowSidebarV2Duration(status: SidebarThreadStatus): boolean {

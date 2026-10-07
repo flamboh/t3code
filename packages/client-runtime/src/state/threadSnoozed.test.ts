@@ -1,10 +1,11 @@
 // @effect-diagnostics globalDate:off -- Tests exercise local calendar snooze boundaries.
-import { ThreadId } from "@t3tools/contracts";
+import { ThreadId, type ThreadPullRequestLink } from "@t3tools/contracts";
 import { TurnId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   canSnooze,
+  canSnoozeUntilAttention,
   effectiveSnoozed,
   hasQueuedTurnStart,
   resolveSnoozePresets,
@@ -179,6 +180,61 @@ describe("snoozed until a pull request needs attention", () => {
     expect(threadWokeAt(makeShell({ ...attention, sessionStatus: "error" }), { now: NOW })).toBe(
       "2026-04-10T11:00:00.000Z",
     );
+  });
+});
+
+describe("canSnoozeUntilAttention", () => {
+  const link = (
+    state: "open" | "closed" | "merged" | null,
+    source: ThreadPullRequestLink["source"] = "agent",
+  ): ThreadPullRequestLink => ({
+    host: "github.com",
+    repository: "acme/app",
+    number: 1,
+    url: "https://github.com/acme/app/pull/1",
+    source,
+    linkedAt: "2026-04-10T09:00:00.000Z",
+    snapshot:
+      state === null
+        ? null
+        : {
+            state,
+            title: "Fix",
+            headBranch: "fix",
+            baseBranch: "main",
+            isDraft: false,
+            updatedAt: null,
+            syncedAt: "2026-04-10T09:00:00.000Z",
+          },
+    stack: null,
+  });
+  const thread = (
+    pullRequests: ReadonlyArray<ThreadPullRequestLink>,
+    settledOverride: "settled" | "active" | null = null,
+    relationshipToParent: "fork" | "subagent" | null = null,
+  ) => ({
+    pullRequests,
+    settledOverride,
+    settledAt: settledOverride === "settled" ? NOW : null,
+    lineage: { relationshipToParent },
+  });
+
+  it("needs an open or not yet synced linked pull request", () => {
+    expect(canSnoozeUntilAttention(thread([link("open")]))).toBe(true);
+    expect(canSnoozeUntilAttention(thread([link(null)]))).toBe(true);
+    expect(canSnoozeUntilAttention(thread([link("merged"), link("open")]))).toBe(true);
+    expect(canSnoozeUntilAttention(thread([]))).toBe(false);
+    expect(canSnoozeUntilAttention(thread([link("merged"), link("closed")]))).toBe(false);
+    expect(canSnoozeUntilAttention(thread([link("open", "stack-dismissed")]))).toBe(false);
+  });
+
+  it("is unavailable on a settled thread", () => {
+    expect(canSnoozeUntilAttention(thread([link("open")], "settled"))).toBe(false);
+  });
+
+  it("is unavailable on a subagent, which cannot watch pull requests", () => {
+    expect(canSnoozeUntilAttention(thread([link("open")], null, "subagent"))).toBe(false);
+    expect(canSnoozeUntilAttention(thread([link("open")], null, "fork"))).toBe(true);
   });
 });
 
