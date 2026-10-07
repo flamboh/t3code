@@ -12,6 +12,7 @@ import {
   sortActiveThreadsByOrderKey,
   sortPinnedThreadsByOrderKey,
   sortSettledThreads,
+  sortSnoozedThreads,
   sortThreads,
   type SettledThreadTimestampInput,
   type ThreadSortInput,
@@ -173,6 +174,36 @@ describe("sortSettledThreads", () => {
     expect(sortSettledThreads(threads).map((thread) => thread.row)).toEqual(
       expected.map((thread) => thread.row),
     );
+  });
+});
+
+describe("sortSnoozedThreads", () => {
+  const timed = (id: string, snoozedUntil: string) => ({
+    id,
+    snoozedAt: "2026-09-12T08:00:00.000Z",
+    snoozedUntil,
+    snoozedUntilNeedsAttention: false,
+  });
+  const waiting = (id: string, snoozedAt: string) => ({
+    id,
+    snoozedAt,
+    snoozedUntil: null,
+    snoozedUntilNeedsAttention: true,
+  });
+
+  it("puts snoozes waiting on a pull request after timed ones, oldest snooze first", () => {
+    const sorted = sortSnoozedThreads([
+      waiting("newer-wait", "2026-09-12T09:00:00.000Z"),
+      timed("later", "2026-09-14T09:00:00.000Z"),
+      waiting("older-wait", "2026-09-11T09:00:00.000Z"),
+      timed("sooner", "2026-09-13T09:00:00.000Z"),
+    ]);
+    expect(sorted.map((thread) => thread.id)).toEqual([
+      "sooner",
+      "later",
+      "older-wait",
+      "newer-wait",
+    ]);
   });
 });
 

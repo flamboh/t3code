@@ -32,6 +32,7 @@ import {
   buildThreadListV2ListItems,
   getThreadListV2OrderedSection,
   isThreadListV2ListItem,
+  resolveThreadListV2SnoozeAccessibilityValue,
   resolveThreadListV2SnoozeMenuSelection,
   resolveThreadListV2SnoozeGateExpiryMs,
   resolveThreadListV2Status,
@@ -107,6 +108,47 @@ describe("resolveThreadListV2SnoozeMenuSelection", () => {
         new Date(selectedAt.getTime() + 60 * 60 * 1_000).toISOString(),
       );
     }
+  });
+});
+
+describe("snoozing until a pull request needs attention from the menu", () => {
+  it("selects the attention snooze instead of treating it as an expired preset", () => {
+    expect(
+      resolveThreadListV2SnoozeMenuSelection({
+        event: "snooze:needs-attention",
+        displayedPresets: [],
+        now: new Date(NOW),
+      }),
+    ).toEqual({ _tag: "until-attention" });
+  });
+});
+
+describe("resolveThreadListV2SnoozeAccessibilityValue", () => {
+  it("tells screen readers how a snoozed row will wake", () => {
+    expect(
+      resolveThreadListV2SnoozeAccessibilityValue({
+        snoozedUntilNeedsAttention: true,
+        snoozeWakeLabelText: undefined,
+      }),
+    ).toBe("Snoozed until its pull request needs attention");
+    expect(
+      resolveThreadListV2SnoozeAccessibilityValue({
+        snoozedUntilNeedsAttention: false,
+        snoozeWakeLabelText: "2h",
+      }),
+    ).toBe("Snoozed, wakes in 2h");
+    expect(
+      resolveThreadListV2SnoozeAccessibilityValue({
+        snoozedUntilNeedsAttention: false,
+        snoozeWakeLabelText: "now",
+      }),
+    ).toBe("Snoozed, waking now");
+    expect(
+      resolveThreadListV2SnoozeAccessibilityValue({
+        snoozedUntilNeedsAttention: false,
+        snoozeWakeLabelText: undefined,
+      }),
+    ).toBeUndefined();
   });
 });
 
@@ -656,6 +698,53 @@ describe("buildThreadListV2Items", () => {
     expect(layout.items.map((item) => item.snoozed)).toEqual([false, true, true, false]);
     expect(layout.snoozedShelfHeaderIndex).toBe(1);
     expect(layout.snoozedCount).toBe(2);
+  });
+
+  it("lists threads waiting on a pull request after timed snoozes, without a countdown", () => {
+    const waiting = (id: string, snoozedAt: string) =>
+      makeThread({
+        id: ThreadId.make(id),
+        title: id,
+        snoozedUntil: null,
+        snoozedAt,
+        snoozedUntilNeedsAttention: true,
+      });
+    const layout = buildThreadListV2Items({
+      threads: [
+        waiting("newer-wait", "2026-06-01T13:00:00.000Z"),
+        makeThread({
+          id: ThreadId.make("timed"),
+          title: "Timed",
+          snoozedUntil: "2026-06-03T09:00:00.000Z",
+          snoozedAt: "2026-06-01T12:00:00.000Z",
+        }),
+        waiting("older-wait", "2026-06-01T11:00:00.000Z"),
+      ],
+      environmentId: null,
+      searchQuery: "",
+      now: NOW,
+      snoozedShelfExpanded: true,
+    });
+
+    expect(layout.items.map((item) => item.thread.id)).toEqual([
+      "timed",
+      "older-wait",
+      "newer-wait",
+    ]);
+    expect(layout.nextSnoozeWakeAt).toBe("2026-06-03T09:00:00.000Z");
+    const rows = buildThreadListV2ListItems({
+      items: layout.items,
+      pendingTasks: [],
+      snoozedCount: layout.snoozedCount,
+      snoozedShelfExpanded: true,
+      snoozedShelfHeaderIndex: layout.snoozedShelfHeaderIndex,
+      snoozeLabelNow: NOW,
+    }).flatMap((item) => (item.type === "v2-thread" ? [item] : []));
+    expect(rows.map((row) => [row.snoozeWakeLabelText !== undefined, row.timeLabel])).toEqual([
+      [true, ""],
+      [false, ""],
+      [false, ""],
+    ]);
   });
 
   it("collapses to a header-only shelf", () => {

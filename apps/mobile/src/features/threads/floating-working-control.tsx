@@ -159,15 +159,15 @@ export function FloatingWorkingControl(props: {
     hasAgents ||
     hasQueue ||
     (props.devicePreview !== null && props.browserPreview !== null);
-  // The queue, agents, and reconnect labels have separate tap targets.
-  const statusInteractive = props.status?.kind === "connection";
+  // The queue, agents, reconnect, and wake labels have separate tap targets.
+  const statusInteractive = props.status?.kind === "connection" || props.status?.kind === "snoozed";
   const capsuleInteractive = statusInteractive || hasQueue || hasAgents || hasPreview;
   // The host stays centered on the capsule, but its measurement constraint
   // comes from the overlay, independent of the capsule's current width.
   const statusContent =
     props.status !== null ? (
       <View
-        pointerEvents={props.status.kind === "connection" ? "box-none" : "none"}
+        pointerEvents={statusInteractive ? "box-none" : "none"}
         className="h-11 items-center justify-center"
       >
         <Animated.View className="h-11" style={capsuleSizerStyle} />
@@ -414,6 +414,25 @@ function FloatingStatusLabel(props: {
         <Text className="shrink font-t3-medium text-xs text-foreground" numberOfLines={1}>
           {props.status.label}
         </Text>
+      </StatusLabelRow>
+    );
+  }
+  if (props.status.kind === "snoozed") {
+    return (
+      <StatusLabelRow
+        key="snoozed"
+        accessibilityLabel={`${props.status.label}. Wake`}
+        accessibilityRole="button"
+        className="gap-2"
+        onLayout={props.onLayout}
+        onPress={props.status.onWake}
+      >
+        <SymbolView name="eye" size={13} tintColorClassName="foreground" type="monochrome" />
+        <Text className="shrink font-t3-medium text-xs text-foreground" numberOfLines={1}>
+          {props.status.label}
+        </Text>
+        <View className="h-4 w-px bg-border" />
+        <Text className="font-t3-medium text-xs text-foreground-muted">Wake</Text>
       </StatusLabelRow>
     );
   }

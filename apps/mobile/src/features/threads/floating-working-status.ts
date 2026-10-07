@@ -17,6 +17,9 @@ export type FloatingWorkingStatus =
       readonly accessibilityLabel: string;
       readonly waiting: boolean;
     }
+  // Snoozed until its pull request needs attention. The watch holding it would
+  // otherwise read as background work, so this leads it; tapping wakes the thread.
+  | { readonly kind: "snoozed"; readonly label: string; readonly onWake: () => void }
   // A native /goal on an idle thread: paused, blocked, complete, or set.
   | { readonly kind: "goal"; readonly label: string; readonly accessibilityLabel: string }
   // A task whose thread the server has not created yet: the worktree may

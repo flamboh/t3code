@@ -1051,24 +1051,6 @@ export function threadHoldsSnooze(
   return thread.snoozedUntil != null || thread.snoozedUntilNeedsAttention === true;
 }
 
-/**
- * Snoozed shelf order. Soonest wake first, since "what comes back next" is the shelf's question.
- * Threads waiting on a pull request have no wake time, so they follow, oldest snooze first: a new
- * one joins the end instead of reshuffling the rows above it.
- */
-export function sortSnoozedThreads<
-  T extends Pick<SidebarThreadSummary, "snoozedAt" | "snoozedUntil" | "snoozedUntilNeedsAttention">,
->(threads: ReadonlyArray<T>): T[] {
-  return threads.toSorted((left, right) => {
-    const leftWaits = left.snoozedUntil == null && left.snoozedUntilNeedsAttention === true;
-    const rightWaits = right.snoozedUntil == null && right.snoozedUntilNeedsAttention === true;
-    if (leftWaits !== rightWaits) return leftWaits ? 1 : -1;
-    return leftWaits
-      ? firstValidTimestampMs(left.snoozedAt) - firstValidTimestampMs(right.snoozedAt)
-      : firstValidTimestampMs(left.snoozedUntil) - firstValidTimestampMs(right.snoozedUntil);
-  });
-}
-
 export function shouldShowSidebarV2Duration(status: SidebarThreadStatus): boolean {
   return status === "working";
 }

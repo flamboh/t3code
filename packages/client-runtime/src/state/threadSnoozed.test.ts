@@ -8,6 +8,7 @@ import {
   canSnoozeUntilAttention,
   effectiveSnoozed,
   hasQueuedTurnStart,
+  offersSnoozeUntilAttention,
   resolveSnoozePresets,
   snoozeWakeLabel,
   threadRaisedHandWhileSnoozed,
@@ -235,6 +236,41 @@ describe("canSnoozeUntilAttention", () => {
   it("is unavailable on a subagent, which cannot watch pull requests", () => {
     expect(canSnoozeUntilAttention(thread([link("open")], null, "subagent"))).toBe(false);
     expect(canSnoozeUntilAttention(thread([link("open")], null, "fork"))).toBe(true);
+  });
+});
+
+describe("offersSnoozeUntilAttention", () => {
+  const thread = {
+    pullRequests: [
+      {
+        host: "github.com",
+        repository: "acme/app",
+        number: 1,
+        url: "https://github.com/acme/app/pull/1",
+        source: "agent" as const,
+        linkedAt: "2026-10-06T22:00:00.000Z",
+        snapshot: null,
+        stack: null,
+      },
+    ],
+    settledOverride: null,
+    settledAt: null,
+    lineage: { relationshipToParent: null },
+  };
+
+  it("needs a server that advertises it, not just timed snooze", () => {
+    expect(offersSnoozeUntilAttention(thread, { threadSnoozeUntilAttention: true })).toBe(true);
+    expect(offersSnoozeUntilAttention(thread, {})).toBe(false);
+    expect(offersSnoozeUntilAttention(thread, undefined)).toBe(false);
+  });
+
+  it("needs an open linked pull request", () => {
+    expect(
+      offersSnoozeUntilAttention(
+        { ...thread, pullRequests: [] },
+        { threadSnoozeUntilAttention: true },
+      ),
+    ).toBe(false);
   });
 });
 

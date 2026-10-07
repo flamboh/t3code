@@ -319,6 +319,7 @@ function ThreadNavigationSidebarPane(
     machineByEnvironmentId,
     settlementEnvironmentIds,
     snoozeEnvironmentIds,
+    snoozeUntilAttentionEnvironmentIds,
     pinningEnvironmentIds,
     autoSettleOptOutEnvironmentIds,
     pinReorderEnvironmentIds,
@@ -730,6 +731,9 @@ function ThreadNavigationSidebarPane(
               settlementSupported={settlementEnvironmentIds.has(thread.environmentId)}
               onSettleThread={settleThread}
               snoozeSupported={snoozeEnvironmentIds.has(thread.environmentId)}
+              snoozeUntilAttentionSupported={snoozeUntilAttentionEnvironmentIds.has(
+                thread.environmentId,
+              )}
               pinningSupported={pinningEnvironmentIds.has(thread.environmentId)}
               autoSettleOptOutSupported={autoSettleOptOutEnvironmentIds.has(thread.environmentId)}
               reorderSupported={
@@ -828,6 +832,7 @@ function ThreadNavigationSidebarPane(
       sidebarScrollGesture,
       snoozeEnvironmentIds,
       snoozeThread,
+      snoozeUntilAttentionEnvironmentIds,
       toggleSettledShelf,
       toggleSnoozedShelf,
       toggleWorkingShelf,

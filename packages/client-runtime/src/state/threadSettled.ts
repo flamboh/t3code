@@ -178,6 +178,14 @@ export function canSnoozeUntilAttention(shell: {
   );
 }
 
+/** Whether snooze menus offer "Until it needs attention": the server understands it and the thread links an open pull request. */
+export function offersSnoozeUntilAttention(
+  thread: Parameters<typeof canSnoozeUntilAttention>[0],
+  capabilities: { readonly threadSnoozeUntilAttention?: boolean } | undefined,
+): boolean {
+  return capabilities?.threadSnoozeUntilAttention === true && canSnoozeUntilAttention(thread);
+}
+
 /**
  * Snoozed resolution: hidden from the inbox while the wake time is in the
  * future, or until a pull request needs attention, and the thread has not

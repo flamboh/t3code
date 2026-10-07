@@ -1,6 +1,5 @@
 import type { TimestampFormat } from "@t3tools/contracts/settings";
 import {
-  canSnoozeUntilAttention,
   resolveSnoozePresets as resolveSharedSnoozePresets,
   snoozeWakeLabel,
   type SnoozePreset,
@@ -17,14 +16,6 @@ export interface SnoozeChoice {
 
 /** The choice behind "Until it needs attention". */
 export const SNOOZE_UNTIL_ATTENTION: SnoozeChoice = { snoozedUntil: null };
-
-/** Whether snooze menus offer "Until it needs attention": the server understands it and the thread links an open pull request. */
-export function offersSnoozeUntilAttention(
-  thread: Parameters<typeof canSnoozeUntilAttention>[0],
-  capabilities: { readonly threadSnoozeUntilAttention?: boolean } | undefined,
-): boolean {
-  return capabilities?.threadSnoozeUntilAttention === true && canSnoozeUntilAttention(thread);
-}
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 

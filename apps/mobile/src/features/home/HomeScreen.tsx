@@ -97,7 +97,7 @@ interface HomeScreenProps {
   readonly onSettleThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly onSnoozeThread: (
     thread: EnvironmentThreadShell,
-    snoozedUntil: string,
+    snoozedUntil: string | null,
   ) => Promise<boolean>;
   readonly onUnsnoozeThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly onUnsettleThread: (thread: EnvironmentThreadShell) => void;
@@ -402,7 +402,7 @@ export function HomeScreen(props: HomeScreenProps) {
   // optimistic holds.
   const handleSettleThread = props.onSettleThread;
   const handleSnoozeThread = useCallback(
-    (thread: EnvironmentThreadShell, snoozedUntil: string) => {
+    (thread: EnvironmentThreadShell, snoozedUntil: string | null) => {
       void props.onSnoozeThread(thread, snoozedUntil);
     },
     [props.onSnoozeThread],
@@ -496,6 +496,7 @@ export function HomeScreen(props: HomeScreenProps) {
     machineByEnvironmentId,
     settlementEnvironmentIds,
     snoozeEnvironmentIds,
+    snoozeUntilAttentionEnvironmentIds,
     pinningEnvironmentIds,
     autoSettleOptOutEnvironmentIds,
     pinReorderEnvironmentIds,
@@ -755,6 +756,9 @@ export function HomeScreen(props: HomeScreenProps) {
           settlementSupported={settlementEnvironmentIds.has(thread.environmentId)}
           onSettleThread={handleSettleThread}
           snoozeSupported={snoozeEnvironmentIds.has(thread.environmentId)}
+          snoozeUntilAttentionSupported={snoozeUntilAttentionEnvironmentIds.has(
+            thread.environmentId,
+          )}
           pinningSupported={pinningEnvironmentIds.has(thread.environmentId)}
           autoSettleOptOutSupported={autoSettleOptOutEnvironmentIds.has(thread.environmentId)}
           reorderSupported={
@@ -808,6 +812,7 @@ export function HomeScreen(props: HomeScreenProps) {
       providersByEnvironmentId,
       settlementEnvironmentIds,
       snoozeEnvironmentIds,
+      snoozeUntilAttentionEnvironmentIds,
       threadSearchMatchByKey,
       titleRegenerationEnvironmentIds,
       toggleSettledShelf,
