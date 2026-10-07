@@ -30,6 +30,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { TitleSlotRoll } from "../TitleSlotRoll";
 import {
   WorkspaceBreadcrumb,
   WorkspaceBreadcrumbItem,
@@ -44,6 +45,7 @@ interface ChatHeaderProps {
   activeThreadTitle: string;
   /** Drafts have no server thread yet, so the title carries no action menu. */
   isServerThread: boolean;
+  isRegeneratingTitle: boolean;
   activeProject: EnvironmentProject | null;
   rightPanelOpen: boolean;
   onNewThreadInProject: () => void;
@@ -76,6 +78,7 @@ export const ChatHeader = memo(function ChatHeader({
   activeThreadId,
   activeThreadTitle,
   isServerThread,
+  isRegeneratingTitle,
   activeProject,
   rightPanelOpen,
   onNewThreadInProject,
@@ -333,7 +336,9 @@ export const ChatHeader = memo(function ChatHeader({
                 }
               >
                 <h2 className="min-w-0">
-                  <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
+                  <TitleSlotRoll regenerating={isRegeneratingTitle}>
+                    <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
+                  </TitleSlotRoll>
                 </h2>
                 <ChevronDownIcon
                   aria-hidden
