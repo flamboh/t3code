@@ -108,6 +108,11 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     "unwatch-pr",
     "pull-request",
   ),
+  snooze_until_pull_request_needs_attention: tool(
+    ["Snooze", "Snoozing", "Snoozed", "until a pull request needs attention"],
+    "thread-organize",
+    "pull-request",
+  ),
   orchestrator_capabilities: tool(
     ["Get", "Getting", "Got", "orchestration capabilities"],
     "capabilities",

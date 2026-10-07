@@ -224,6 +224,7 @@ import { listLinkedPullRequestThreads } from "./pullRequest/linkedThreads.ts";
 import { pullRequestSyncKey } from "./pullRequest/pullRequestSyncKey.ts";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
+import * as PullRequestWatchReactor from "./orchestration-v2/PullRequestWatchReactor.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as AzureDevOpsCli from "./sourceControl/AzureDevOpsCli.ts";
@@ -1222,6 +1223,7 @@ const layerWsRpc = (
       const secretRequests = yield* SecretRequests.SecretRequests;
       const pullRequests = yield* PullRequestService.PullRequestService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
+      const pullRequestWatch = yield* PullRequestWatchReactor.PullRequestWatchReactor;
       const deviceService = yield* DeviceService.DeviceService;
       const deviceHostContext =
         yield* Effect.context<Effect.Services<ReturnType<typeof remoteSshDeviceHosts>>>();
@@ -1827,17 +1829,26 @@ const layerWsRpc = (
             Effect.andThen(
               startup
                 .enqueueCommand(
-                  // A retry also restarts the preparation work the launch owns.
-                  (command.type === "prepared-run.retry"
-                    ? threadLaunch.retryPreparation(command)
-                    : ThreadMessageIntake.dispatchCommand(
-                        ThreadManagementService.withCreationProvenance(command, {
-                          createdBy: "user",
-                          creationSource:
-                            "creationSource" in command ? command.creationSource : "web",
-                        }),
-                      )
-                  ).pipe(Effect.provide(intakeContext)),
+                  Effect.gen(function* () {
+                    // A retry also restarts the preparation work the launch owns.
+                    if (command.type === "prepared-run.retry") {
+                      return yield* threadLaunch.retryPreparation(command);
+                    }
+                    // A snooze until a pull request needs attention reads its pull requests first.
+                    if (command.type === "thread.snooze-until-attention") {
+                      return yield* pullRequestWatch.snoozeUntilAttention({
+                        ...command,
+                        createdBy: "user",
+                      });
+                    }
+                    return yield* ThreadMessageIntake.dispatchCommand(
+                      ThreadManagementService.withCreationProvenance(command, {
+                        createdBy: "user",
+                        creationSource:
+                          "creationSource" in command ? command.creationSource : "web",
+                      }),
+                    );
+                  }).pipe(Effect.provide(intakeContext)),
                 )
                 .pipe(
                   Effect.tap(() => recordClientCommandAnalytics(command)),

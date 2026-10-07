@@ -129,6 +129,7 @@ describe("pickSharedServerSettings", () => {
       "sidebarAutoSettleAfterDays",
       "sidebarAutoSettleOnMerge",
       "snoozeLimitedThreads",
+      "snoozePullRequestsAwaitingReview",
       "sourceControlWritingStyle",
       "textGenerationModelSelection",
     ]);

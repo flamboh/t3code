@@ -24,6 +24,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
+import * as PullRequestWatchReactor from "../../../orchestration-v2/PullRequestWatchReactor.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
@@ -36,6 +37,7 @@ import {
   PullRequestUnlinkFailedError,
   PullRequestListFailedError,
   PullRequestNotOpenError,
+  PullRequestSnoozeFailedError,
   type PullRequestTargetInput,
   PullRequestWatchFailedError,
   PullRequestWatchFromSubagentError,
@@ -44,6 +46,21 @@ import {
   PullRequestsToolkit,
   type ThreadPullRequestEntry,
 } from "./tools.ts";
+
+/** Why T3 Code refused a command, which the agent can act on. */
+function refusalOf(
+  cause: Cause.Cause<
+    Orchestrator.OrchestratorV2Error | PullRequestWatchReactor.PullRequestAttentionReadError
+  >,
+): string | undefined {
+  const error = Option.getOrUndefined(Cause.findErrorOption(cause));
+  if (error?._tag === "PullRequestAttentionReadError") return error.message;
+  return (error?._tag === "OrchestratorDispatchError" ||
+    error?._tag === "OrchestratorCommandRejectedError") &&
+    typeof error.cause === "string"
+    ? error.cause
+    : undefined;
+}
 
 interface ResolvedTarget {
   readonly host: string;
@@ -155,6 +172,7 @@ export function listThreadPullRequests(
 
 const make = Effect.gen(function* () {
   const engine = yield* Orchestrator.OrchestratorV2;
+  const pullRequestWatch = yield* PullRequestWatchReactor.PullRequestWatchReactor;
 
   const projects = yield* ProjectService.ProjectService;
   const crypto = yield* Crypto.Crypto;
@@ -170,7 +188,8 @@ const make = Effect.gen(function* () {
       | typeof PullRequestLinkFailedError
       | typeof PullRequestUnlinkFailedError
       | typeof PullRequestListFailedError
-      | typeof PullRequestWatchFailedError,
+      | typeof PullRequestWatchFailedError
+      | typeof PullRequestSnoozeFailedError,
     requested: ThreadId | undefined,
   ) {
     const scope = yield* McpInvocationContext.requireMcpCapability("pull-requests");
@@ -342,6 +361,42 @@ const make = Effect.gen(function* () {
     ),
     watch_pull_request: writesThread((input) => setWatching(input, true)),
     unwatch_pull_request: writesThread((input) => setWatching(input, false)),
+    snooze_until_pull_request_needs_attention: writesThread((input) =>
+      Effect.gen(function* () {
+        const thread = yield* requireThread(PullRequestSnoozeFailedError, input.threadId);
+        yield* pullRequestWatch
+          .snoozeUntilAttention({
+            type: "thread.snooze-until-attention",
+            commandId: yield* commandId("mcp-pr-snooze", thread.id),
+            threadId: thread.id,
+            createdBy: "agent",
+          })
+          .pipe(
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.failCause(cause as Cause.Cause<never>)
+                : Effect.fail(
+                    new PullRequestSnoozeFailedError({ reason: refusalOf(cause), cause }),
+                  ),
+            ),
+          );
+        const after = yield* requireThread(PullRequestSnoozeFailedError, thread.id);
+        return {
+          watching: visibleThreadPullRequests(after.pullRequests ?? []).flatMap((link) =>
+            link.watch === undefined
+              ? []
+              : [
+                  {
+                    host: normalizeThreadPullRequestKey(link).host,
+                    repository: link.repository,
+                    number: link.number,
+                    url: link.url,
+                  },
+                ],
+          ),
+        };
+      }),
+    ),
   } satisfies McpToolAccess.Handlers<typeof PullRequestsToolkit.tools>;
 });
 

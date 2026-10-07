@@ -603,6 +603,7 @@ function runBrowserAccessScenario(input: {
   readonly deviceOverride?: boolean;
   readonly createThread?: boolean;
   readonly projectExists?: boolean;
+  readonly snoozePullRequestsAwaitingReview?: boolean;
 }) {
   return Effect.gen(function* () {
     const state = yield* Ref.make(emptyState);
@@ -646,6 +647,7 @@ function runBrowserAccessScenario(input: {
           projectServiceLayer: layerProjectService,
           serverSettingsLayer: ServerSettings.layerTest({
             enableAgentBrowserAccess: input.enableAgentBrowserAccess,
+            snoozePullRequestsAwaitingReview: input.snoozePullRequestsAwaitingReview ?? false,
             projectSettingsOverrides: {
               [projectId]: {
                 enableAgentBrowserAccess: input.projectOverride,
@@ -1872,6 +1874,19 @@ it.effect("ProviderSessionManagerV2 honors a project browser-access opt-in", () 
     assert.isDefined(captured);
     assert.equal(captured?.browserToolsAvailable, true);
   }),
+);
+
+it.effect.each([true, false])(
+  "ProviderSessionManagerV2 gives the agent the pull request snooze setting (%s)",
+  (snoozePullRequestsAwaitingReview) =>
+    Effect.gen(function* () {
+      const captured = yield* runBrowserAccessScenario({
+        enableAgentBrowserAccess: true,
+        projectOverride: true,
+        snoozePullRequestsAwaitingReview,
+      });
+      assert.equal(captured?.snoozePullRequestsAwaitingReview, snoozePullRequestsAwaitingReview);
+    }),
 );
 
 it.effect("ProviderSessionManagerV2 fails browser access closed for a missing project", () =>

@@ -308,7 +308,27 @@ it.effect("a run Stop reached cannot delegate or start a watch, even after it en
       watched: [4],
     });
 
-    // The user can still stop and restart a watch by hand.
+    // Nor can a slow snooze_until_pull_request_needs_attention call snooze the thread.
+    const snooze = (createdBy: "agent" | "user") =>
+      Effect.gen(function* () {
+        const { thread } = yield* orchestrator.getThreadProjection(threadId);
+        const watch = thread.pullRequests?.find((link) => link.number === 4)?.watch;
+        return yield* orchestrator.dispatch({
+          type: "thread.snooze-until-attention",
+          commandId: CommandId.make(`snooze:${createdBy}`),
+          threadId,
+          createdBy,
+          links: [pullRequest(4)],
+          watches: [{ ...pullRequest(4), previous: watch!, watch: watch! }],
+        });
+      });
+    assert.include(String((yield* Effect.flip(snooze("agent"))).cause), "was stopped");
+    assert.notEqual(
+      (yield* orchestrator.getThreadProjection(threadId)).thread.snoozedUntilNeedsAttention,
+      true,
+    );
+
+    // The user can still stop and restart a watch, and snooze, by hand.
     for (const watching of [false, true]) {
       yield* orchestrator.dispatch({
         type: "thread.pull-request.watch",
@@ -319,6 +339,10 @@ it.effect("a run Stop reached cannot delegate or start a watch, even after it en
       });
     }
     assert.deepEqual((yield* threadState(threadId)).watched, [4]);
+    yield* snooze("user");
+    assert.isTrue(
+      (yield* orchestrator.getThreadProjection(threadId)).thread.snoozedUntilNeedsAttention,
+    );
   }).pipe(Effect.provide(layerTest)),
 );
 

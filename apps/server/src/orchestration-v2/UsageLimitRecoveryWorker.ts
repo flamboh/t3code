@@ -47,9 +47,11 @@ export function limitRecoveryCommand(
       },
     };
   }
+  // A snooze holds the continuation until the thread wakes.
   if (
     !recovery.autoResume ||
     resetMs > nowMs ||
+    thread.snoozedUntilNeedsAttention === true ||
     (thread.snoozedUntil != null && DateTime.toEpochMillis(thread.snoozedUntil) > nowMs)
   )
     return null;

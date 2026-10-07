@@ -3,8 +3,14 @@ import type {
   PullRequestCheck,
   PullRequestComment,
   PullRequestDetail,
+  ThreadPullRequestKey,
+  ThreadPullRequestLink,
   ThreadPullRequestWatch,
 } from "@t3tools/contracts";
+import {
+  threadPullRequestKeysEqual,
+  visibleThreadPullRequests,
+} from "@t3tools/shared/threadPullRequests";
 
 /**
  * Wakes in a row that bring only comments. Check, conflict, or push news resets the count, so
@@ -125,6 +131,66 @@ export function evaluatePullRequestWatch(
   };
 }
 
+/** A watch that starts now: only what happens from here on wakes the agent. */
+export function newPullRequestWatch(startedAt: string): ThreadPullRequestWatch {
+  return {
+    startedAt,
+    headSha: null,
+    failedChecks: [],
+    passed: false,
+    passedChecks: [],
+    remarksThrough: startedAt,
+    remarkIds: [],
+    conflicting: false,
+    wakes: 0,
+  };
+}
+
+/** Whether two watches record the same progress. */
+export function pullRequestWatchesEqual(
+  left: ThreadPullRequestWatch,
+  right: ThreadPullRequestWatch,
+): boolean {
+  return (
+    left.startedAt === right.startedAt &&
+    left.headSha === right.headSha &&
+    left.failedChecks.join("\n") === right.failedChecks.join("\n") &&
+    left.passed === right.passed &&
+    left.passedChecks.join("\n") === right.passedChecks.join("\n") &&
+    left.remarksThrough === right.remarksThrough &&
+    left.remarkIds.join("\n") === right.remarkIds.join("\n") &&
+    left.conflicting === right.conflicting &&
+    left.wakes === right.wakes
+  );
+}
+
+/**
+ * Whether a linked pull request other than `key` was open when it last synced. A thread snoozed
+ * until its pull requests need attention settles only when none is, since one that reopened after
+ * its watch ended is not watched again.
+ */
+export function otherPullRequestOpen(
+  pullRequests: ReadonlyArray<ThreadPullRequestLink>,
+  key: ThreadPullRequestKey,
+): boolean {
+  return visibleThreadPullRequests(pullRequests).some(
+    (link) => link.snapshot?.state === "open" && !threadPullRequestKeysEqual(link, key),
+  );
+}
+
+/**
+ * The watch a snooze until the pull request needs attention waits with: `watch` brought up to the
+ * head, checks, and conflict `detail` shows, as if the agent had been told, so only what changes
+ * after the snooze wakes it. Remarks are left to the watch's reads, so its remark cursor and
+ * comment-only wake count stay.
+ */
+export function primedPullRequestWatch(
+  watch: ThreadPullRequestWatch,
+  detail: Parameters<typeof evaluatePullRequestWatch>[1],
+): ThreadPullRequestWatch {
+  return { ...evaluatePullRequestWatch(watch, detail, null).next, wakes: watch.wakes };
+}
+
 function snippet(body: string): string {
   const text = body
     .replaceAll(/<!--[\s\S]*?-->/g, " ")
@@ -179,13 +245,18 @@ const SUMMARY: Record<PullRequestWatchChange["kind"], string> = {
   conflicting: "merge conflict",
 };
 
-/** The wake the agent reads and the timeline notification the user sees. */
+/**
+ * The wake the agent reads and the timeline notification the user sees. With
+ * `snoozeAwaitingReview` (the `snoozePullRequestsAwaitingReview` setting), a pull request that only
+ * waits on someone else is snoozed rather than handed back.
+ */
 export function pullRequestWatchMessage(input: {
   readonly number: number;
   readonly url: string;
   readonly baseBranch: string;
   readonly headSha: string | null;
   readonly report: PullRequestWatchReport;
+  readonly snoozeAwaitingReview?: boolean;
 }): { readonly text: string; readonly notification: OrchestrationV2Notification } {
   const { changes, exhausted } = input.report;
   const context = {
@@ -198,7 +269,14 @@ export function pullRequestWatchMessage(input: {
     "",
     exhausted
       ? `T3 Code stopped watching after ${PULL_REQUEST_WATCH_WAKE_LIMIT} comment-only updates in a row. Call watch_pull_request to watch it again.`
-      : "Look into each item and act on it as your task requires. T3 Code keeps watching and wakes you on the next change, so end your turn when you are done. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.",
+      : [
+          "Look into each item and act on it as your task requires. T3 Code keeps watching and wakes you on the next change, so end your turn when you are done. When you hand the work back to the user, call unwatch_pull_request first so the thread returns to their inbox.",
+          ...(input.snoozeAwaitingReview
+            ? [
+                "If the pull request is ready and only waits on someone else to review or merge it, call snooze_until_pull_request_needs_attention instead of unwatch_pull_request, then end your turn: T3 Code keeps watching and snoozes the thread until the pull request needs attention.",
+              ]
+            : []),
+        ].join(" "),
   ].join("\n");
   const failed = changes.some(
     (change) => change.kind === "checks-failed" || change.kind === "conflicting",

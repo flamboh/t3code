@@ -1,6 +1,7 @@
 import {
   CommandId,
   MessageId,
+  type OrchestrationV2Command,
   type OrchestrationV2Notification,
   type PullRequestActivity,
   type PullRequestComment,
@@ -8,16 +9,19 @@ import {
   type PullRequestThreadCommentsResult,
   type ThreadPullRequestLink,
   type ThreadPullRequestWatch,
+  ThreadId,
 } from "@t3tools/contracts";
 import {
   normalizeThreadPullRequestKey,
   threadPullRequestKeyOf,
+  threadPullRequestKeysEqual,
   visibleThreadPullRequests,
 } from "@t3tools/shared/threadPullRequests";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -32,15 +36,28 @@ import {
 } from "../pullRequest/PullRequestProvider.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import { forkParked } from "../serverActivation.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
-import { evaluatePullRequestWatch, pullRequestWatchMessage } from "./pullRequestWatch.ts";
+import {
+  evaluatePullRequestWatch,
+  newPullRequestWatch,
+  otherPullRequestOpen,
+  primedPullRequestWatch,
+  pullRequestWatchesEqual,
+  pullRequestWatchMessage,
+} from "./pullRequestWatch.ts";
 
 /**
  * Minutes between passes. Checks take minutes, so a faster pass mostly spends the host's rate
  * limit, which every machine on the same account shares.
  */
 const SWEEP_MINUTES = 2;
+/**
+ * A pull request that only threads snoozed until it needs attention watch is checked this often:
+ * it waits on someone else, so news can wait a little longer.
+ */
+const SNOOZED_CHECK_MS = 10 * 60_000;
 /** Reads in a row that failed for a reason other than a rate limit before the watch ends. */
 const READ_FAILURE_LIMIT = 8;
 /**
@@ -57,6 +74,20 @@ const FINGERPRINT_REREAD_MS = 30 * 60_000;
 
 const isProviderError = Schema.is(PullRequestProviderError);
 
+/** A snooze until a pull request needs attention could not read one of the thread's pull requests. */
+export class PullRequestAttentionReadError extends Schema.TaggedError<PullRequestAttentionReadError>()(
+  "PullRequestAttentionReadError",
+  { threadId: ThreadId, number: Schema.Number, cause: Schema.Defect() },
+) {
+  override get message(): string {
+    return `Could not read pull request #${this.number}, so the thread was not snoozed. Try again.`;
+  }
+}
+
+/** A snooze primed the pull request after the pass read it, so the pass reports nothing. */
+class PrimedSinceRead extends Schema.TaggedError<PrimedSinceRead>()("PrimedSinceRead", {}) {}
+const isPrimedSinceRead = Schema.is(PrimedSinceRead);
+
 /** A rate limit is the host asking us to wait, not a sign the pull request cannot be read. */
 const isRateLimited = (cause: Cause.Cause<PullRequestService.PullRequestError>) =>
   Option.match(Cause.findErrorOption(cause), {
@@ -72,12 +103,16 @@ const logFailure =
   <E>(cause: Cause.Cause<E>): Effect.Effect<void> =>
     Cause.hasInterruptsOnly(cause)
       ? Effect.interrupt
-      : Effect.logWarning(message, { ...fields, cause });
+      : Option.exists(Cause.findErrorOption(cause), isPrimedSinceRead)
+        ? Effect.logDebug(message, { ...fields, cause })
+        : Effect.logWarning(message, { ...fields, cause });
 
 interface WatchTarget {
   readonly thread: ProjectionStore.ProjectionThreadPullRequests;
   readonly link: ThreadPullRequestLink;
   readonly watch: ThreadPullRequestWatch;
+  /** The snooze primings counted when the pass that read this began. */
+  readonly pass: number;
 }
 
 /** Every thread of one project that watches one pull request, read once per pass. */
@@ -196,27 +231,16 @@ function planRead(
   return { detail: activity || last.status !== fingerprint.status || last.inFlight, activity };
 }
 
-function watchesEqual(left: ThreadPullRequestWatch, right: ThreadPullRequestWatch): boolean {
-  return (
-    left.startedAt === right.startedAt &&
-    left.headSha === right.headSha &&
-    left.failedChecks.join("\n") === right.failedChecks.join("\n") &&
-    left.passed === right.passed &&
-    left.passedChecks.join("\n") === right.passedChecks.join("\n") &&
-    left.remarksThrough === right.remarksThrough &&
-    left.remarkIds.join("\n") === right.remarkIds.join("\n") &&
-    left.conflicting === right.conflicting &&
-    left.wakes === right.wakes
-  );
-}
-
 /**
  * Wakes a thread's agent when a pull request it watches (`watch_pull_request`) needs a look:
  * checks finished on the head commit, someone else commented, or the branch started to
  * conflict. A pass every two minutes looks at each watched pull request once for all the threads
  * of a project that watch it. Where the host has a fingerprint, one batched read of those tells
  * the pass which pull requests moved, and only those are read; elsewhere a pull request is read
- * unless its sync snapshot has not moved while nothing is in flight.
+ * unless its sync snapshot has not moved while nothing is in flight. A pull request watched only
+ * by threads snoozed until it needs attention is looked at every ten minutes instead; such a
+ * thread settles when its last watched pull request merges or closes and no other linked one is
+ * open, once its turn is over.
  * Settling or archiving a thread ends its watches, and a merged or closed pull request ends
  * its watch. Each ended watch is logged once with why it ended and how long it went without
  * a push, for debugging watches that live too long.
@@ -227,6 +251,17 @@ export class PullRequestWatchReactor extends Context.Service<
     readonly start: () => Effect.Effect<void, never, Scope.Scope>;
     /** One pass over every watched pull request. */
     readonly sweep: Effect.Effect<void>;
+    /**
+     * Reads each open pull request the thread links, then snoozes the thread until one needs
+     * attention, watching them from what the host showed: only what changes after the snooze
+     * wakes it. Refused when a pull request cannot be read.
+     */
+    readonly snoozeUntilAttention: (
+      command: Extract<OrchestrationV2Command, { readonly type: "thread.snooze-until-attention" }>,
+    ) => Effect.Effect<
+      Orchestrator.OrchestratorV2DispatchResult,
+      Orchestrator.OrchestratorV2Error | PullRequestAttentionReadError
+    >;
   }
 >()("t3/orchestration-v2/PullRequestWatchReactor") {}
 
@@ -235,6 +270,7 @@ export const make = Effect.gen(function* () {
   const engine = yield* Orchestrator.OrchestratorV2;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const pullRequests = yield* PullRequestService.PullRequestService;
+  const settings = yield* ServerSettings.ServerSettingsService;
   const crypto = yield* Crypto.Crypto;
   const bootedAt = yield* Clock.currentTimeMillis;
   const lives = new Map<string, WatchLife>();
@@ -285,6 +321,17 @@ export const make = Effect.gen(function* () {
   // Reads in a row that failed, per pull request. Kept in memory: a restart only delays the stop.
   const readFailures = new Map<string, number>();
   const lastReads = new Map<string, LastRead>();
+  // When a snooze last primed each pull request's watches, numbered in order. A pass that began
+  // before it read the watches it replaced, or the pull request before the snooze did, so it must
+  // neither report what it saw nor record a read the next pass would trust.
+  let primings = 0;
+  const primedAt = new Map<string, number>();
+  const primedSince = (key: string, pass: number) => (primedAt.get(key) ?? 0) > pass;
+  // When each pull request was last checked, to space out those only snoozed threads watch.
+  const checkedAt = new Map<string, number>();
+  // Merged pull requests whose end waits for a thread's turn, so later passes end them without
+  // reading the host again. A closed one can reopen, so it is read again each pass until then.
+  const merged = new Set<string>();
   // Replies past each long thread's first page, per pull request, so a pass pages a thread
   // again only when the host's count of it moves. A restart pages each thread once more.
   const threadTails = new Map<
@@ -298,28 +345,42 @@ export const make = Effect.gen(function* () {
     repository: link.repository,
     number: link.number,
   });
+  // Grouped per project too: each project reads through its own checkout, so one that cannot read
+  // the pull request must not end another project's watches.
+  const groupKeyOf = (projectId: string, link: ThreadPullRequestLink) =>
+    `${projectId} ${threadPullRequestKeyOf(link)}`;
 
   /**
    * Records what a pass saw, and wakes the agent with it. The orchestrator applies this only
-   * while the same watch is on, so a stop or restart that lands during the host read wins.
+   * while the watch is still the one the pass evaluated, so a stop, restart, or snooze that lands
+   * during the host read wins.
+   * `ended` says the pull request merged or closed, which settles a thread snoozed on it.
    */
   const record = (
     target: WatchTarget,
     next: ThreadPullRequestWatch | null,
-    wake?: { readonly text: string; readonly notification: OrchestrationV2Notification },
+    options: {
+      readonly wake?: { readonly text: string; readonly notification: OrchestrationV2Notification };
+      readonly ended?: "merged" | "closed";
+    } = {},
   ) =>
     Effect.gen(function* () {
       const uuid = yield* crypto.randomUUIDv4;
+      // Checked last, so a snooze that dispatched before this sees no report from an older read.
+      if (primedSince(groupKeyOf(target.thread.projectId, target.link), target.pass)) {
+        return yield* new PrimedSinceRead();
+      }
       yield* engine.dispatch({
         type: "thread.pull-request-watch.sync",
         commandId: CommandId.make(`server:pr-watch:${target.thread.id}:${uuid}`),
         threadId: target.thread.id,
         ...identityOf(target.link),
-        startedAt: target.watch.startedAt,
+        previous: target.watch,
         watch: next,
-        ...(wake === undefined
+        ...(options.ended === undefined ? {} : { ended: options.ended }),
+        ...(options.wake === undefined
           ? {}
-          : { wake: { ...wake, messageId: MessageId.make(`message:pr-watch:${uuid}`) } }),
+          : { wake: { ...options.wake, messageId: MessageId.make(`message:pr-watch:${uuid}`) } }),
       });
     });
 
@@ -327,11 +388,13 @@ export const make = Effect.gen(function* () {
   // "Watching" while it learns nothing.
   const giveUp = (target: WatchTarget) =>
     record(target, null, {
-      text: `T3 Code stopped watching pull request #${target.link.number} (${target.link.url}) because it failed to read it from the host ${READ_FAILURE_LIMIT} times in a row. Check it yourself, and call watch_pull_request to watch it again.`,
-      notification: {
-        source: { kind: "monitor" },
-        outcome: "failed",
-        summary: `#${target.link.number}: stopped watching, could not read it`,
+      wake: {
+        text: `T3 Code stopped watching pull request #${target.link.number} (${target.link.url}) because it failed to read it from the host ${READ_FAILURE_LIMIT} times in a row. Check it yourself, and call watch_pull_request to watch it again.`,
+        notification: {
+          source: { kind: "monitor" },
+          outcome: "failed",
+          summary: `#${target.link.number}: stopped watching, could not read it`,
+        },
       },
     }).pipe(
       Effect.tap(() => woke(target)),
@@ -395,15 +458,56 @@ export const make = Effect.gen(function* () {
   // A closed pull request can reopen, but the watch has nothing to report until then.
   const closed = (target: WatchTarget) =>
     record(target, null, {
-      text: `Pull request #${target.link.number} (${target.link.url}) was closed, so T3 Code stopped watching it. Call watch_pull_request if it reopens.`,
-      notification: {
-        source: { kind: "monitor" },
-        outcome: "updated",
-        summary: `#${target.link.number}: closed, stopped watching`,
+      ended: "closed",
+      wake: {
+        text: `Pull request #${target.link.number} (${target.link.url}) was closed, so T3 Code stopped watching it. Call watch_pull_request if it reopens.`,
+        notification: {
+          source: { kind: "monitor" },
+          outcome: "updated",
+          summary: `#${target.link.number}: closed, stopped watching`,
+        },
       },
     }).pipe(
       Effect.tap(() => woke(target)),
       Effect.tap(() => ended(target, "closed")),
+    );
+
+  /**
+   * A thread snoozed until its pull requests need attention settles when its last watched one
+   * merges or closes and no other linked one is open, which waits until its turn is over.
+   */
+  const waitsForTurn = (target: WatchTarget) =>
+    target.thread.snoozedUntilNeedsAttention !== true ||
+    visibleThreadPullRequests(target.thread.pullRequests ?? []).some(
+      (link) => link.watch !== undefined && !threadPullRequestKeysEqual(link, target.link),
+    ) ||
+    otherPullRequestOpen(target.thread.pullRequests ?? [], target.link)
+      ? Effect.succeed(false)
+      : projections
+          .getThreadRecords(target.thread.id, ["runs", "runtimeRequests"])
+          .pipe(Effect.map((records) => !Orchestrator.threadIdle(records)));
+
+  /** Ends the watch on a pull request that merged or closed. Succeeds with whether it waits. */
+  const finish = (target: WatchTarget, state: "merged" | "closed") =>
+    Effect.gen(function* () {
+      if (yield* waitsForTurn(target)) return true;
+      yield* state === "closed"
+        ? closed(target)
+        : record(target, null, { ended: "merged" }).pipe(Effect.tap(() => ended(target, "merged")));
+      return false;
+    }).pipe(
+      // The orchestrator checks again under the thread lock, and refuses while a turn that started
+      // since is still going.
+      Effect.catchTags({
+        OrchestratorDispatchError: (error) =>
+          target.thread.snoozedUntilNeedsAttention === true
+            ? Effect.logDebug("pull request watch end waits for the turn", {
+                threadId: target.thread.id,
+                pullRequest: threadPullRequestKeyOf(target.link),
+                error,
+              }).pipe(Effect.as(true))
+            : Effect.fail(error),
+      }),
     );
 
   /** Why a watch ends without a host read; the rest are read once per pull request. */
@@ -440,6 +544,21 @@ export const make = Effect.gen(function* () {
       ),
     ).pipe(Effect.map((landed) => landed.every(Boolean)));
 
+  /** Ends the watches on a pull request that merged or closed, remembering a merge that waits. */
+  const endGroup = (group: WatchGroup, state: "merged" | "closed") =>
+    Effect.gen(function* () {
+      let waiting = false;
+      yield* eachTarget(group, (target) =>
+        finish(target, state).pipe(
+          Effect.map((waits) => {
+            waiting ||= waits;
+          }),
+        ),
+      );
+      if (waiting && state === "merged") merged.add(group.key);
+      else merged.delete(group.key);
+    });
+
   const referenceOf = (group: WatchGroup) => {
     const first = group.targets[0]!;
     return { projectId: first.thread.projectId, ...identityOf(first.link) };
@@ -471,6 +590,7 @@ export const make = Effect.gen(function* () {
   const readGroup = Effect.fn("PullRequestWatchReactor.readGroup")(function* (
     group: WatchGroup,
     fingerprint: ProviderChangeRequestWatchFingerprint | null,
+    snoozeAwaitingReview: boolean,
   ) {
     const now = yield* Clock.currentTimeMillis;
     const last = lastReads.get(group.key);
@@ -493,6 +613,8 @@ export const make = Effect.gen(function* () {
     );
     if (Exit.isFailure(read)) {
       if (Cause.hasInterruptsOnly(read.cause)) return yield* Effect.failCause(read.cause);
+      // A snooze read the pull request since, so this failure must not count against its watches.
+      if (primedSince(group.key, group.targets[0]!.pass)) return yield* new PrimedSinceRead();
       lastReads.delete(group.key);
       // The host's pause refuses later reads without a request, so waiting it out is free.
       if (isRateLimited(read.cause)) return;
@@ -523,11 +645,7 @@ export const make = Effect.gen(function* () {
     }
     if (detail.state !== "open") {
       lastReads.delete(group.key);
-      return yield* eachTarget(group, (target) =>
-        detail.state === "closed"
-          ? closed(target)
-          : record(target, null).pipe(Effect.tap(() => ended(target, "merged"))),
-      );
+      return yield* endGroup(group, detail.state === "closed" ? "closed" : "merged");
     }
 
     // Never advance the remark watermark past comments an incomplete read could have missed.
@@ -535,45 +653,49 @@ export const make = Effect.gen(function* () {
     const remarks = Option.isSome(activity)
       ? yield* readRemarks(group.key, reference, activity.value)
       : null;
-    lastReads.set(group.key, {
-      at: plan.activity || last === undefined ? now : last.at,
-      fingerprint: group.fingerprint,
-      inFlight:
-        detail.mergeability === "unknown" ||
-        detail.checks.some((check) => check.status === "pending"),
-      // Comments a partial read could not see are read again next pass.
-      remarksComplete: plan.activity ? remarks !== null : (last?.remarksComplete ?? false),
-      watches: new Set(group.targets.map(watchKey)),
-      status: fingerprint?.status ?? null,
-      remarks: fingerprint?.remarks ?? null,
-    });
+    if (!primedSince(group.key, group.targets[0]!.pass)) {
+      lastReads.set(group.key, {
+        at: plan.activity || last === undefined ? now : last.at,
+        fingerprint: group.fingerprint,
+        inFlight:
+          detail.mergeability === "unknown" ||
+          detail.checks.some((check) => check.status === "pending"),
+        // Comments a partial read could not see are read again next pass.
+        remarksComplete: plan.activity ? remarks !== null : (last?.remarksComplete ?? false),
+        watches: new Set(group.targets.map(watchKey)),
+        status: fingerprint?.status ?? null,
+        remarks: fingerprint?.remarks ?? null,
+      });
+    }
     yield* eachTarget(group, (target) => {
       const report = evaluatePullRequestWatch(target.watch, detail, remarks);
       if (report.changes.length > 0) {
-        return record(
-          target,
-          report.exhausted ? null : report.next,
-          pullRequestWatchMessage({
+        return record(target, report.exhausted ? null : report.next, {
+          wake: pullRequestWatchMessage({
             number: target.link.number,
             url: target.link.url,
             baseBranch: detail.baseBranch,
             headSha: report.next.headSha,
             report,
+            snoozeAwaitingReview,
           }),
-        ).pipe(
+        }).pipe(
           Effect.tap(() => woke(target)),
           Effect.tap(() => (report.exhausted ? ended(target, "comment-limit") : Effect.void)),
         );
       }
-      return watchesEqual(report.next, target.watch) ? Effect.void : record(target, report.next);
+      return pullRequestWatchesEqual(report.next, target.watch)
+        ? Effect.void
+        : record(target, report.next);
     });
   });
 
   const sweep = Effect.gen(function* () {
+    const pass = primings;
     const threads = yield* projections.getThreadsWithPullRequests();
     const targets = threads.flatMap((thread) =>
       visibleThreadPullRequests(thread.pullRequests ?? []).flatMap((link) =>
-        link.watch === undefined ? [] : [{ thread, link, watch: link.watch }],
+        link.watch === undefined ? [] : [{ thread, link, watch: link.watch, pass }],
       ),
     );
     // A watch seen last pass and gone now was ended outside this reactor.
@@ -592,9 +714,7 @@ export const make = Effect.gen(function* () {
         ending.push([target, reason]);
         continue;
       }
-      // Grouped per project too: each project reads through its own checkout, so one that cannot
-      // read the pull request must not end another project's watches.
-      const key = `${target.thread.projectId} ${threadPullRequestKeyOf(target.link)}`;
+      const key = groupKeyOf(target.thread.projectId, target.link);
       byPullRequest.set(key, [...(byPullRequest.get(key) ?? []), target]);
     }
     const groups = [...byPullRequest].map(([key, members]): WatchGroup => ({
@@ -602,14 +722,17 @@ export const make = Effect.gen(function* () {
       targets: members,
       fingerprint: [...new Set(members.map(snapshotFingerprint))].toSorted().join("\n"),
     }));
-    for (const cache of [readFailures, lastReads, threadTails]) {
+    for (const cache of [readFailures, lastReads, threadTails, checkedAt, merged, primedAt]) {
       for (const key of cache.keys()) if (!byPullRequest.has(key)) cache.delete(key);
     }
     yield* Effect.forEach(
       ending,
       ([target, reason]) =>
-        record(target, null).pipe(
-          Effect.tap(() => ended(target, reason)),
+        Effect.gen(function* () {
+          if (reason === "merged") return yield* finish(target, "merged");
+          yield* record(target, null);
+          yield* ended(target, reason);
+        }).pipe(
           Effect.catchCause(
             logFailure("pull request watch stop failed", {
               threadId: target.thread.id,
@@ -619,16 +742,40 @@ export const make = Effect.gen(function* () {
         ),
       { discard: true },
     );
-    const fingerprints = yield* Effect.forEach(groups, fingerprintOf, {
+    // A merged pull request whose end waited for a turn is ended again without a read.
+    const waited = groups.filter((group) => merged.has(group.key));
+    yield* Effect.forEach(waited, (group) => endGroup(group, "merged"), { discard: true });
+    const now = yield* Clock.currentTimeMillis;
+    const due = groups.filter((group) => {
+      if (waited.includes(group)) return false;
+      if (!group.targets.every((target) => target.thread.snoozedUntilNeedsAttention === true)) {
+        return true;
+      }
+      // A watch still takes its first look on the next pass.
+      const last = lastReads.get(group.key);
+      const checked = checkedAt.get(group.key);
+      return (
+        last === undefined ||
+        checked === undefined ||
+        group.targets.some((target) => !last.watches.has(watchKey(target))) ||
+        now - checked >= SNOOZED_CHECK_MS
+      );
+    });
+    for (const group of due) checkedAt.set(group.key, now);
+    const snoozeAwaitingReview = yield* settings.getSettings.pipe(
+      Effect.map((current) => current.snoozePullRequestsAwaitingReview),
+      Effect.orElseSucceed(() => false),
+    );
+    const fingerprints = yield* Effect.forEach(due, fingerprintOf, {
       concurrency: "unbounded",
     });
     yield* Effect.forEach(
-      groups,
+      due,
       (group, index) => {
         const fingerprint = fingerprints[index]!;
         return fingerprint === "paused"
           ? Effect.void
-          : readGroup(group, fingerprint).pipe(
+          : readGroup(group, fingerprint, snoozeAwaitingReview).pipe(
               Effect.catchCause(
                 logFailure("pull request watch check failed", { pullRequest: group.key }),
               ),
@@ -641,12 +788,73 @@ export const make = Effect.gen(function* () {
     Effect.withSpan("PullRequestWatchReactor.sweep"),
   );
 
+  const snoozeUntilAttention: PullRequestWatchReactor["Service"]["snoozeUntilAttention"] = (
+    command,
+  ) =>
+    Effect.gen(function* () {
+      const thread = yield* engine.getThreadShell(command.threadId);
+      const startedAt = DateTime.formatIso(yield* DateTime.now);
+      // A merged pull request never reopens.
+      const open =
+        thread === null
+          ? []
+          : visibleThreadPullRequests(thread.pullRequests ?? []).flatMap((link) =>
+              link.snapshot?.state === "merged"
+                ? []
+                : [{ link, reference: { projectId: thread.projectId, ...identityOf(link) } }],
+            );
+      const read = yield* Effect.forEach(
+        open,
+        ({ link, reference }) =>
+          Effect.gen(function* () {
+            // The same fresh read a pass makes, not a cached answer from before the snooze.
+            yield* pullRequests.invalidate({ reference });
+            const detail = yield* pullRequests.detail({ ...reference, allowStale: false }).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new PullRequestAttentionReadError({
+                    threadId: command.threadId,
+                    number: link.number,
+                    cause,
+                  }),
+              ),
+            );
+            return detail.state === "open" ? [{ link, reference, detail }] : [];
+          }),
+        { concurrency: 4 },
+      ).pipe(Effect.map((reads) => reads.flat()));
+      const keys = read.map(({ link, reference }) => groupKeyOf(reference.projectId, link));
+      const prime = () => {
+        primings += 1;
+        for (const key of keys) primedAt.set(key, primings);
+      };
+      // A pass that began before this read may have read the pull request before it did, so once
+      // this lands, nothing that pass saw may be reported against the watches it primes.
+      prime();
+      // The snooze's read succeeded, so like a pass's it starts the failure count over.
+      for (const key of keys) readFailures.delete(key);
+      const result = yield* engine.dispatch({
+        ...command,
+        links: visibleThreadPullRequests(thread?.pullRequests ?? []).map(identityOf),
+        watches: read.map(({ link, detail }) => ({
+          ...identityOf(link),
+          previous: link.watch ?? null,
+          watch: primedPullRequestWatch(link.watch ?? newPullRequestWatch(startedAt), detail),
+        })),
+      });
+      // The next pass reads these in full, against the watches the snooze primed, so one that
+      // began while it dispatched must not leave a read it would trust.
+      prime();
+      for (const key of keys) lastReads.delete(key);
+      return result;
+    }).pipe(Effect.withSpan("PullRequestWatchReactor.snoozeUntilAttention"));
+
   const start: PullRequestWatchReactor["Service"]["start"] = () =>
     forkParked(
       sweep.pipe(Effect.repeat(Schedule.spaced(`${SWEEP_MINUTES} minutes`)), Effect.asVoid),
     );
 
-  return { start, sweep } satisfies PullRequestWatchReactor["Service"];
+  return { start, sweep, snoozeUntilAttention } satisfies PullRequestWatchReactor["Service"];
 });
 
 export const layer = Layer.effect(PullRequestWatchReactor, make);

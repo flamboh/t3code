@@ -705,6 +705,7 @@ export function buildCodexTurnStartParams(input: {
   readonly hasT3Mcp?: boolean;
   readonly browserToolsAvailable?: boolean;
   readonly deviceToolsAvailable?: boolean;
+  readonly snoozePullRequestsAwaitingReview?: boolean;
   /** ChatGPT token sharing does not accept service tiers. */
   readonly omitServiceTier?: boolean;
 }) {
@@ -735,7 +736,11 @@ export function buildCodexTurnStartParams(input: {
     const additionalContext =
       input.hasT3Mcp === true
         ? buildCodexAdditionalContext(
-            { model: input.modelSelection.model, reasoningEffort: effort ?? "medium" },
+            {
+              model: input.modelSelection.model,
+              reasoningEffort: effort ?? "medium",
+              snoozePullRequestsAwaitingReview: input.snoozePullRequestsAwaitingReview,
+            },
             {
               browser: input.browserToolsAvailable ?? true,
               device: input.deviceToolsAvailable ?? false,
@@ -5873,6 +5878,8 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
               hasT3Mcp: mcpSession !== undefined,
               browserToolsAvailable: mcpSession?.browserToolsAvailable ?? true,
               deviceToolsAvailable: mcpSession?.capabilities?.has("device") ?? false,
+              snoozePullRequestsAwaitingReview:
+                mcpSession?.snoozePullRequestsAwaitingReview === true,
               omitServiceTier: adapterOptions.resolveRuntime !== undefined,
             });
             yield* Ref.update(pendingRootTurns, (current) => {

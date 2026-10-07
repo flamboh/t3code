@@ -342,9 +342,12 @@ export const layerWithOptions = (
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
       const agentAccessSettings = Effect.fn("ProviderSessionManagerV2.agentAccessSettings")(
         function* (threadId: ThreadId) {
-          if (Option.isNone(serverSettings)) return { browser: true, device: false };
+          if (Option.isNone(serverSettings)) {
+            return { browser: true, device: false, snoozePullRequestsAwaitingReview: false };
+          }
           return yield* Effect.gen(function* () {
             const settings = yield* serverSettings.value.getSettings;
+            const { snoozePullRequestsAwaitingReview } = settings;
             const thread = yield* projectionStore.getThread(threadId);
             const entries = Object.values(settings.projectSettingsOverrides);
             const browserOverridden = entries.some(
@@ -361,19 +364,27 @@ export const layerWithOptions = (
                 return {
                   browser: browserOverridden ? false : settings.enableAgentBrowserAccess,
                   device: deviceOverridden ? false : settings.enableAgentDeviceAccess,
+                  snoozePullRequestsAwaitingReview,
                 };
             }
             const effective = resolveProjectSettings(settings, thread.projectId).settings;
             return {
               browser: effective.enableAgentBrowserAccess,
               device: effective.enableAgentDeviceAccess,
+              snoozePullRequestsAwaitingReview,
             };
           }).pipe(
             Effect.catch((cause) =>
               Effect.logWarning(
                 "Could not resolve agent access; withholding browser and device tools.",
                 { threadId, cause },
-              ).pipe(Effect.as({ browser: false, device: false })),
+              ).pipe(
+                Effect.as({
+                  browser: false,
+                  device: false,
+                  snoozePullRequestsAwaitingReview: false,
+                }),
+              ),
             ),
           );
         },
@@ -469,8 +480,11 @@ export const layerWithOptions = (
                 // the credential it started with, so a thread that detaches and
                 // re-attaches across a workspace handoff must come back to the
                 // same token or the process's tool calls fail auth.
-                const { browser: browserToolsAvailable, device: deviceToolsAvailable } =
-                  yield* agentAccessSettings(threadId);
+                const {
+                  browser: browserToolsAvailable,
+                  device: deviceToolsAvailable,
+                  snoozePullRequestsAwaitingReview,
+                } = yield* agentAccessSettings(threadId);
                 const capabilities = new Set<
                   import("../mcp/McpInvocationContext.ts").McpCapability
                 >(["orchestration", "worktree", "pull-requests"]);
@@ -502,6 +516,10 @@ export const layerWithOptions = (
                     resolved.capabilities.has("preview") === browserToolsAvailable &&
                     resolved.capabilities.has("device") === deviceToolsAvailable
                   ) {
+                    McpProviderSession.setMcpProviderSession({
+                      ...existing,
+                      snoozePullRequestsAwaitingReview,
+                    });
                     return { mcpCredentialId: existing.providerSessionId, issued: false };
                   }
                   dropMcpCredentialReservation(threadId, existing.providerSessionId);
@@ -513,7 +531,10 @@ export const layerWithOptions = (
                   browserToolsAvailable,
                   capabilities,
                 });
-                McpProviderSession.setMcpProviderSession(credential.config);
+                McpProviderSession.setMcpProviderSession({
+                  ...credential.config,
+                  snoozePullRequestsAwaitingReview,
+                });
                 reserveMcpCredential(threadId, credential.config.providerSessionId);
                 return { mcpCredentialId: credential.config.providerSessionId, issued: true };
               }),

@@ -149,6 +149,9 @@ export function isAutoSettlementCandidate(
   if (thread.activityRunStatus != null) return false;
   if (backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks ?? [])) return false;
   if (threadHasQueuedTurnStart(thread, nowMs)) return false;
+  // The pull request watch reactor settles a thread snoozed until its pull
+  // request needs attention, from a fresh read of the host.
+  if (thread.snoozedUntilNeedsAttention === true) return false;
   const snoozedUntilMs = toMillis(thread.snoozedUntil);
   if (snoozedUntilMs === null || snoozedUntilMs <= nowMs) return true;
   // A snoozed thread that woke early (error or completed work) can settle;

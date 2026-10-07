@@ -215,6 +215,23 @@ A watched thread counts as working between wakes, so it stays in the **Working**
 not auto-settle. Agents stop watching when they hand the work back to you, and the thread then
 returns to your inbox.
 
+To keep a pull request that waits on someone else out of sight, choose **Snooze until it needs
+attention** from the thread's snooze menu or the command palette on web and desktop, or from the
+snooze menu on mobile. The thread needs an open linked pull request. The server reads every open
+linked pull request, watches them, and snoozes the thread with no wake time; if a pull request
+cannot be read, the snooze fails and you can try again. What is already true when you snooze, such
+as a failing check, does not wake it. A newly failed check, the required checks passing, a
+comment or review from someone else, or a new conflict wakes the agent and brings the thread back
+to **Working**, and watching continues. While snoozed, its pull requests are checked every 10
+minutes. Once none of them is left open, because they merged or closed, the thread settles, after
+the agent's current turn if one is running. Waking the thread yourself keeps the watch. Stopping the
+thread or ending its last watch ends the snooze.
+
+Agents can snooze their own thread the same way. Turn on **Snooze pull requests awaiting review** in
+**Settings → General** on web and desktop, or **Settings → Thread behavior** on mobile, to have
+agents do this instead of returning the thread to your inbox when a pull request is ready and only
+waits on someone else to review or merge it.
+
 Cross-repository links use a project on the same host. Azure DevOps reviews require a project checked
 out from the matching organization and repository.
 

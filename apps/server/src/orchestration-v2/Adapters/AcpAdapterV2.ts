@@ -6790,6 +6790,9 @@ export function makeAcpAdapterV2(
             text: buildRuntimeInstructions({
               harness: flavor.runtimeHarness ?? driver,
               model: turnInput.modelSelection.model,
+              snoozePullRequestsAwaitingReview: McpProviderSession.readMcpProviderSession(
+                turnInput.threadId,
+              )?.snoozePullRequestsAwaitingReview,
             }),
           });
           return { prompt, instructionState: text === messageText ? undefined : instructionState };

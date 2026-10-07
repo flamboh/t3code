@@ -44,6 +44,7 @@ import {
   type SetThreadAutoSettleInput,
   type SettleThreadInput,
   type SnoozeThreadInput,
+  type SnoozeThreadUntilAttentionInput,
   type StartThreadTurnInput,
   type StopThreadSessionInput,
   type UnarchiveThreadInput,
@@ -80,6 +81,7 @@ import {
   setThreadAutoSettle,
   settleThread,
   snoozeThread,
+  snoozeThreadUntilAttention,
   startThreadTurn,
   stopThreadSession,
   unarchiveThread,
@@ -124,6 +126,7 @@ export type {
   SetThreadAutoSettleInput,
   SettleThreadInput,
   SnoozeThreadInput,
+  SnoozeThreadUntilAttentionInput,
   StartThreadTurnInput,
   StopThreadSessionInput,
   ThreadCommandInput,
@@ -193,6 +196,12 @@ export function createThreadEnvironmentAtoms<R, E>(
     unsnooze: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:unsnooze",
       execute: (input: UnsnoozeThreadInput) => unsnoozeThread(input),
+      scheduler,
+      concurrency,
+    }),
+    snoozeUntilAttention: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:snooze-until-attention",
+      execute: (input: SnoozeThreadUntilAttentionInput) => snoozeThreadUntilAttention(input),
       scheduler,
       concurrency,
     }),
@@ -422,6 +431,7 @@ export function createThreadEnvironmentAtoms<R, E>(
             pinOrderKey: null,
             snoozedAt: null,
             snoozedUntil: null,
+            snoozedUntilNeedsAttention: false,
           },
     ),
     unsettle: optimistic.wrap(commands.unsettle, (thread, input, now) => ({
@@ -439,6 +449,7 @@ export function createThreadEnvironmentAtoms<R, E>(
         : {
             ...thread,
             pendingRuntimeRequest: null,
+            snoozedUntilNeedsAttention: false,
             snoozedUntil: DateTime.makeUnsafe(input.snoozedUntil),
             snoozedAt:
               thread.snoozedUntil != null &&
@@ -451,7 +462,23 @@ export function createThreadEnvironmentAtoms<R, E>(
       ...thread,
       snoozedUntil: null,
       snoozedAt: null,
+      snoozedUntilNeedsAttention: false,
     })),
+    snoozeUntilAttention: optimistic.wrap(
+      commands.snoozeUntilAttention,
+      (thread, _input, now, accepted) =>
+        !accepted &&
+        (thread.pendingRuntimeRequest !== null ||
+          ["preparing", "queued", "starting"].includes(thread.status))
+          ? thread
+          : {
+              ...thread,
+              pendingRuntimeRequest: null,
+              snoozedUntil: null,
+              snoozedAt: thread.snoozedUntilNeedsAttention === true ? thread.snoozedAt : now,
+              snoozedUntilNeedsAttention: true,
+            },
+    ),
     setAutoSettle: optimistic.wrap(commands.setAutoSettle, (thread, input, now) => ({
       ...thread,
       autoSettleDisabledAt: input.enabled ? null : (thread.autoSettleDisabledAt ?? now),
@@ -469,6 +496,7 @@ export function createThreadEnvironmentAtoms<R, E>(
         : {}),
       snoozedUntil: null,
       snoozedAt: null,
+      snoozedUntilNeedsAttention: false,
     })),
     unpin: optimistic.wrap(commands.unpin, (thread) => ({
       ...thread,

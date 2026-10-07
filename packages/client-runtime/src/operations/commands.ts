@@ -114,6 +114,8 @@ export interface UnsnoozeThreadInput extends ThreadCommandInput {
   readonly reason: "user";
 }
 
+export type SnoozeThreadUntilAttentionInput = ThreadCommandInput;
+
 export interface VisitThreadInput extends ThreadCommandInput {
   /** Watermark of the thread state the viewer has seen (ISO timestamp). */
   readonly visitedAt: string;
@@ -416,7 +418,8 @@ function simpleThreadCommand(
     | "thread.unarchive"
     | "thread.settle"
     | "thread.pin"
-    | "thread.unpin",
+    | "thread.unpin"
+    | "thread.snooze-until-attention",
   input: ThreadCommandInput,
 ) {
   return allocateCommandId(input).pipe(
@@ -523,6 +526,13 @@ export const snoozeThread = Effect.fn("EnvironmentCommands.snoozeThread")(functi
     threadId: input.threadId,
     snoozedUntil: input.snoozedUntil,
   });
+});
+
+/** Watches the thread's open linked pull requests and snoozes it until one needs attention. */
+export const snoozeThreadUntilAttention = Effect.fn(
+  "EnvironmentCommands.snoozeThreadUntilAttention",
+)(function* (input: SnoozeThreadUntilAttentionInput) {
+  return yield* simpleThreadCommand("thread.snooze-until-attention", input);
 });
 
 export const unsnoozeThread = Effect.fn("EnvironmentCommands.unsnoozeThread")(function* (

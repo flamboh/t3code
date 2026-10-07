@@ -10,6 +10,20 @@ describe("buildRuntimeInstructions", () => {
     expect(instructions).toContain("call list_thread_pull_requests and link any PR");
   });
 
+  it("suggests snoozing a pull request that waits on review only when the user turned it on", () => {
+    const off = buildRuntimeInstructions({ harness: "Codex" });
+    expect(off).toContain("call unwatch_pull_request first");
+    expect(off).not.toContain("snooze_until_pull_request_needs_attention");
+    const on = buildRuntimeInstructions({
+      harness: "Codex",
+      snoozePullRequestsAwaitingReview: true,
+    });
+    expect(on).toContain(
+      "call snooze_until_pull_request_needs_attention instead of unwatch_pull_request",
+    );
+    expect(on).toMatch(/snooze_until_pull_request_needs_attention[^]*<\/pull_request_linking>$/);
+  });
+
   it("keeps known model and effort metadata on one line", () => {
     expect(
       buildRuntimeInstructions({
