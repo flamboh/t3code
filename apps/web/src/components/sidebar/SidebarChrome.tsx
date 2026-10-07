@@ -1,7 +1,7 @@
 import { ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
-import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
@@ -143,17 +143,25 @@ function SidebarUtilityItem({
   icon,
   label,
   onClick,
+  onIntent,
 }: {
   icon: ReactNode;
   label: string;
   onClick: () => void;
+  onIntent?: () => void;
 }) {
   return (
     <SidebarMenuItem className="shrink-0">
       <Tooltip>
         <TooltipTrigger
           render={
-            <SidebarMenuButton aria-label={label} onClick={onClick} size="icon">
+            <SidebarMenuButton
+              aria-label={label}
+              onClick={onClick}
+              onMouseEnter={onIntent}
+              onFocus={onIntent}
+              size="icon"
+            >
               {icon}
             </SidebarMenuButton>
           }
@@ -166,6 +174,7 @@ function SidebarUtilityItem({
 
 export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigate = useNavigate();
+  const router = useRouter();
   const navigateToMainApp = useNavigateToMainApp();
   const { isMobile, setOpenMobile } = useSidebar();
   const isOnUtilityPage = useLocation({
@@ -186,8 +195,12 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   }, [closeMobileSidebar, navigate]);
   const handleSettingsClick = useCallback(() => {
     closeMobileSidebar();
-    void navigate({ to: "/settings" });
+    void navigate({ to: "/settings/general" });
   }, [closeMobileSidebar, navigate]);
+
+  const handleSettingsIntent = useCallback(() => {
+    void router.preloadRoute({ to: "/settings/general" });
+  }, [router]);
 
   const handleUsageClick = useCallback(() => {
     if (isMobile) {
@@ -216,6 +229,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             icon={<SettingsIcon />}
             label="Settings"
             onClick={handleSettingsClick}
+            onIntent={handleSettingsIntent}
           />
           {pullRequestsSupported ? (
             <SidebarUtilityItem

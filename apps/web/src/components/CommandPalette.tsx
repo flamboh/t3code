@@ -44,7 +44,7 @@ import {
   PRIMARY_LOCAL_ENVIRONMENT_ID,
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
-import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
+import { useLocation, useNavigate, useParams, useRouter } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import {
   ArrowLeftIcon,
@@ -696,6 +696,7 @@ function OpenCommandPaletteDialog(props: {
   readonly clearOpenIntent: () => void;
 }) {
   const navigate = useNavigate();
+  const router = useRouter();
   const pathname = useLocation({ select: (location) => location.pathname });
   const { clearOpenIntent, openIntent, openOverlayMode, setOpen } = props;
   const [query, setQuery] = useState(openIntent?.kind === "search" ? openIntent.query : "");
@@ -2248,7 +2249,7 @@ function OpenCommandPaletteDialog(props: {
     title: "Open settings",
     icon: <SettingsIcon className={ITEM_ICON_CLASS} />,
     run: async () => {
-      await navigate({ to: "/settings" });
+      await navigate({ to: "/settings/general" });
     },
   });
 
@@ -3483,6 +3484,9 @@ function OpenCommandPaletteDialog(props: {
         if (eventDetails.reason === "none" && highlightClearedRef.current) return;
         highlightClearedRef.current = false;
         setHighlightedItemValue(typeof value === "string" ? value : null);
+        if (value === "action:settings") {
+          void router.preloadRoute({ to: "/settings/general" });
+        }
         const rowIndex = resultRows.rowIndexByItemIndex[eventDetails.index];
         if (eventDetails.reason === "keyboard" && rowIndex !== undefined) {
           scrollCommandPaletteRowIntoView(resultListRef.current, rowIndex);
