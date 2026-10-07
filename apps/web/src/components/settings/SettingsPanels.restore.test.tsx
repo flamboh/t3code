@@ -51,7 +51,7 @@ vi.mock("../../localApi", async (importOriginal) => ({
   readLocalApi: () => ({ dialogs: { confirm: state.confirm } }),
 }));
 
-import { useSettingsRestore } from "./SettingsPanels";
+import { useSettingsRestore } from "./useSettingsRestore";
 
 beforeEach(() => {
   hooks.reset();
