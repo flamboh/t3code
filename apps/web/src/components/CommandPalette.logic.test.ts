@@ -14,6 +14,7 @@ import {
   filterCommandPaletteGroups,
   findHighlightedCommandPaletteItem,
   reduceCommandPaletteUiState,
+  resolveActiveThreadSnoozeAction,
   type CommandPaletteActionItem,
   type CommandPaletteGroup,
 } from "./CommandPalette.logic";
@@ -892,5 +893,66 @@ describe("virtualized command palette rows", () => {
     expect(findHighlightedCommandPaletteItem(groups, "thread-b")?.value).toBe("thread-b");
     expect(findHighlightedCommandPaletteItem(groups, "offline")).toBeNull();
     expect(findHighlightedCommandPaletteItem(groups, null)).toBeNull();
+  });
+});
+
+describe("resolveActiveThreadSnoozeAction", () => {
+  const NOW = "2026-10-06T22:30:00.000Z";
+  const thread = (snooze: { snoozedUntil?: string; snoozedUntilNeedsAttention?: boolean } = {}) =>
+    makeThreadFixture({
+      snoozedAt: snooze.snoozedUntil || snooze.snoozedUntilNeedsAttention ? NOW : null,
+      snoozedUntil: snooze.snoozedUntil ?? null,
+      snoozedUntilNeedsAttention: snooze.snoozedUntilNeedsAttention ?? false,
+      pullRequests: [
+        {
+          host: "github.com",
+          repository: "acme/app",
+          number: 1,
+          url: "https://github.com/acme/app/pull/1",
+          source: "agent",
+          linkedAt: NOW,
+          snapshot: null,
+          stack: null,
+        },
+      ],
+    });
+  const currentServer = { threadSnooze: true, threadSnoozeUntilAttention: true };
+  const timedSnoozeServer = { threadSnooze: true };
+
+  it("offers snoozing until it needs attention only on servers that advertise it", () => {
+    expect(
+      resolveActiveThreadSnoozeAction({ thread: thread(), capabilities: currentServer, now: NOW }),
+    ).toEqual({ kind: "snooze-until-attention", disabled: false });
+    expect(
+      resolveActiveThreadSnoozeAction({
+        thread: thread(),
+        capabilities: timedSnoozeServer,
+        now: NOW,
+      }),
+    ).toBeNull();
+  });
+
+  it("offers waking a snoozed thread, timed or until it needs attention", () => {
+    expect(
+      resolveActiveThreadSnoozeAction({
+        thread: thread({ snoozedUntilNeedsAttention: true }),
+        capabilities: currentServer,
+        now: NOW,
+      }),
+    ).toEqual({ kind: "wake" });
+    expect(
+      resolveActiveThreadSnoozeAction({
+        thread: thread({ snoozedUntil: "2026-10-07T09:00:00.000Z" }),
+        capabilities: timedSnoozeServer,
+        now: NOW,
+      }),
+    ).toEqual({ kind: "wake" });
+    expect(
+      resolveActiveThreadSnoozeAction({
+        thread: thread({ snoozedUntilNeedsAttention: true }),
+        capabilities: {},
+        now: NOW,
+      }),
+    ).toBeNull();
   });
 });

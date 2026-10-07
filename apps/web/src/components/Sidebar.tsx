@@ -176,6 +176,8 @@ import { ProjectEnvironmentBadge } from "./ProjectEnvironmentBadge";
 import {
   buildDraftActionMenuItems,
   buildThreadActionMenuItems,
+  SNOOZE_UNTIL_ATTENTION_LABEL,
+  SNOOZE_UNTIL_ATTENTION_MENU_ID,
   threadActionRequiresOperate,
 } from "./threadActionMenu.logic";
 import {
@@ -187,7 +189,6 @@ import {
   deleteSelectedThreadEntries,
   filterSidebarProjectScopeItems,
   formatWorkingDurationLabel,
-  firstValidTimestampMs,
   hasUnseenCompletion,
   isSidebarNestedLinkClick,
   isSidebarThreadWorking,
@@ -215,8 +216,10 @@ import {
   sortInboxThreadsByReturn,
   sortPinnedThreadsForSidebar,
   sortSidebarV2ProjectGroups,
+  sortSnoozedThreads,
   sortThreadsForSidebar,
   sortWorkingThreadsBySend,
+  threadHoldsSnooze,
   useThreadJumpHintVisibility,
   useRetainedValue,
   useSidebarRowSubscriptionLease,
@@ -246,7 +249,14 @@ import {
   type TerminalStatusIndicator,
   useLinkedThreadPullRequest,
 } from "./ThreadStatusIndicators";
-import { resolveSnoozePresets, snoozeWakeLabel, type SnoozePreset } from "./Sidebar.snooze";
+import {
+  offersSnoozeUntilAttention,
+  resolveSnoozePresets,
+  SNOOZE_UNTIL_ATTENTION,
+  snoozeWakeLabel,
+  type SnoozeChoice,
+} from "./Sidebar.snooze";
+import { SnoozedUntilAttentionIndicator } from "./SnoozedUntilAttentionIndicator";
 import { ProjectFavicon, type ProjectFaviconProject } from "./ProjectFavicon";
 import { ThreadSearchMatchExcerpt } from "./ThreadSearchMatch";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
@@ -572,10 +582,11 @@ function SidebarThreadTooltip({
 function SnoozeMenuButton(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSnooze: (preset: Pick<SnoozePreset, "snoozedUntil">) => void;
+  onSnooze: (choice: SnoozeChoice) => void;
+  canSnoozeUntilAttention: boolean;
   timestampFormat: TimestampFormat;
 }) {
-  const { open, onOpenChange, onSnooze, timestampFormat } = props;
+  const { open, onOpenChange, onSnooze, canSnoozeUntilAttention, timestampFormat } = props;
   // Presets resolve at open time so "In 1 hour" is relative to the click,
   // not to when the row mounted.
   const presets = useMemo(
@@ -617,6 +628,19 @@ function SnoozeMenuButton(props: {
             <MenuShortcut>{preset.whenLabel}</MenuShortcut>
           </MenuItem>
         ))}
+        {canSnoozeUntilAttention ? (
+          <>
+            <MenuSeparator />
+            <MenuItem
+              onClick={(event) => {
+                event.stopPropagation();
+                onSnooze(SNOOZE_UNTIL_ATTENTION);
+              }}
+            >
+              {SNOOZE_UNTIL_ATTENTION_LABEL}
+            </MenuItem>
+          </>
+        ) : null}
         <MenuSeparator />
         <MenuItem
           onClick={async (event) => {
@@ -1110,6 +1134,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   settlementSupported: boolean;
   // Same contract for thread.snooze/unsnooze.
   snoozeSupported: boolean;
+  // Offers "Until it needs attention" (offersSnoozeUntilAttention).
+  canSnoozeUntilAttention: boolean;
   // Renders the pin glyph. Pinned cards keep the full settle/snooze quick
   // actions: settling clears the pin server-side, and snoozing hides the
   // card until wake with the pin intact underneath. The glyph is also the
@@ -1161,7 +1187,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     event: PointerEvent,
   ) => void;
   onUnsettle: (threadRef: ScopedThreadRef) => void;
-  onSnooze: (threadRef: ScopedThreadRef, preset: Pick<SnoozePreset, "snoozedUntil">) => void;
+  onSnooze: (threadRef: ScopedThreadRef, choice: SnoozeChoice) => void;
   onUnsnooze: (threadRef: ScopedThreadRef) => void;
   onUnpin: (threadRef: ScopedThreadRef) => void;
   onAcknowledgeWoke: (threadRef: ScopedThreadRef, visitedAt: string) => void;
@@ -1525,8 +1551,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     [onUnpin, threadRef],
   );
   const handleSnoozePreset = useCallback(
-    (preset: Pick<SnoozePreset, "snoozedUntil">) => {
-      onSnooze(threadRef, preset);
+    (choice: SnoozeChoice) => {
+      onSnooze(threadRef, choice);
     },
     [onSnooze, threadRef],
   );
@@ -1862,6 +1888,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     <span className="text-xs text-info-foreground tabular-nums">
                       {props.snoozeWakeLabelText}
                     </span>
+                  ) : variantAction === "unsnooze" && thread.snoozedUntilNeedsAttention === true ? (
+                    <SnoozedUntilAttentionIndicator />
                   ) : isWoke ? (
                     // A wake can land straight in the settled tail (e.g. PR
                     // merged while snoozed); the signal must survive the trip.
@@ -2114,6 +2142,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                           open={snoozeMenuOpen}
                           onOpenChange={setSnoozeMenuOpen}
                           onSnooze={handleSnoozePreset}
+                          canSnoozeUntilAttention={props.canSnoozeUntilAttention}
                           timestampFormat={props.timestampFormat}
                         />
                       ) : null}
@@ -2795,7 +2824,12 @@ export default function Sidebar() {
         ).push(
           optimisticDrop.clearsSnooze
             ? projected
-            : { ...projected, snoozedAt: thread.snoozedAt, snoozedUntil: thread.snoozedUntil },
+            : {
+                ...projected,
+                snoozedAt: thread.snoozedAt,
+                snoozedUntil: thread.snoozedUntil,
+                snoozedUntilNeedsAttention: thread.snoozedUntilNeedsAttention === true,
+              },
         );
       } else {
         const section = resolveSidebarThreadSection({
@@ -2843,12 +2877,7 @@ export default function Sidebar() {
             }),
       // Newest send first; finishing and waking again do not move a row.
       workingThreads: sortWorkingThreadsBySend(working),
-      // Soonest wake first: "what comes back next" is the shelf's question.
-      snoozedThreads: snoozed.toSorted(
-        (left, right) =>
-          firstValidTimestampMs(left.snoozedUntil ?? null) -
-          firstValidTimestampMs(right.snoozedUntil ?? null),
-      ),
+      snoozedThreads: sortSnoozedThreads(snoozed),
       settledThreads: sortSettledThreads(settled),
       snoozeNow: preciseNow,
     };
@@ -2910,7 +2939,8 @@ export default function Sidebar() {
 
   // Arm a timeout for the earliest upcoming wake so the shelf empties the
   // moment a snooze expires instead of on the next minute tick. Sorted
-  // soonest-first, so entry 0 is the boundary.
+  // soonest-first, so entry 0 is the boundary; a snooze waiting on a pull
+  // request has no wake time and sorts after every timed one.
   useEffect(() => {
     const nextWakeAtMs =
       snoozedThreads.length > 0 && snoozedThreads[0]?.snoozedUntil != null
@@ -3641,14 +3671,14 @@ export default function Sidebar() {
       if (
         canonicalSection === optimisticDrop.section &&
         thread.pinnedAt == null &&
-        (!optimisticDrop.clearsSnooze || thread.snoozedUntil == null)
+        (!optimisticDrop.clearsSnooze || !threadHoldsSnooze(thread))
       ) {
         setOptimisticDrop(null);
       }
       return;
     }
     if (canonicalSection !== optimisticDrop.section) return;
-    if (optimisticDrop.clearsSnooze && thread.snoozedUntil != null) return;
+    if (optimisticDrop.clearsSnooze && threadHoldsSnooze(thread)) return;
     const destinationKeys = optimisticDrop.section === "pinned" ? pinnedKeys : activeKeys;
     const canonicalDestination = destinationKeys.flatMap((key) => {
       const canonical = canonicalByKey.get(key);
@@ -4147,7 +4177,7 @@ export default function Sidebar() {
   const performSnooze = useCallback(
     async (
       threadRef: ScopedThreadRef,
-      preset: Pick<SnoozePreset, "snoozedUntil">,
+      choice: SnoozeChoice,
       opts: { coSnoozingKeys?: ReadonlySet<string> } = {},
     ) => {
       const threadKey = scopedThreadKey(threadRef);
@@ -4159,7 +4189,7 @@ export default function Sidebar() {
         // Snoozing the open thread moves you forward, same as settle —
         // both park the thread you're done with for now.
         const navigateAfterSnooze = planForwardNavigation(threadKey, opts.coSnoozingKeys);
-        const result = await snoozeThread(threadRef, preset.snoozedUntil);
+        const result = await snoozeThread(threadRef, choice.snoozedUntil);
         if (result._tag === "Failure") {
           // Never navigate away from a thread that did not snooze.
           return isAtomCommandInterrupted(result)
@@ -4189,11 +4219,11 @@ export default function Sidebar() {
   const attemptSnooze = useCallback(
     (
       threadRef: ScopedThreadRef,
-      preset: Pick<SnoozePreset, "snoozedUntil">,
+      choice: SnoozeChoice,
       opts: { coSnoozingKeys?: ReadonlySet<string> } = {},
     ) => {
       void (async () => {
-        const outcome = await performSnooze(threadRef, preset, opts);
+        const outcome = await performSnooze(threadRef, choice, opts);
         if (outcome.status === "failure") {
           toastManager.add(
             stackedThreadToast({
@@ -4239,6 +4269,12 @@ export default function Sidebar() {
         (thread) =>
           serverConfigs.get(thread.environmentId)?.environment.capabilities.threadSnooze === true &&
           canSnooze(thread, { now: selectionNow.toISOString() }),
+      );
+      const canSnoozeSelectionUntilAttention = selectedThreads.every((thread) =>
+        offersSnoozeUntilAttention(
+          thread,
+          serverConfigs.get(thread.environmentId)?.environment.capabilities,
+        ),
       );
       const titleRegenerationThreads = selectedThreads.filter(
         (thread) =>
@@ -4287,6 +4323,16 @@ export default function Sidebar() {
                         label: `${preset.label} (${preset.whenLabel})`,
                         disabled: !canOperateThreads(selectedThreads),
                       })),
+                      ...(canSnoozeSelectionUntilAttention
+                        ? [
+                            {
+                              id: SNOOZE_UNTIL_ATTENTION_MENU_ID,
+                              label: SNOOZE_UNTIL_ATTENTION_LABEL,
+                              separatorBefore: true,
+                              disabled: !canOperateThreads(selectedThreads),
+                            },
+                          ]
+                        : []),
                       {
                         id: "snooze:custom",
                         label: "Custom…",
@@ -4338,7 +4384,9 @@ export default function Sidebar() {
         const preset =
           clicked.value === "snooze:custom"
             ? await requestCustomSnooze()
-            : snoozePresets.find((candidate) => `snooze:${candidate.id}` === clicked.value);
+            : clicked.value === SNOOZE_UNTIL_ATTENTION_MENU_ID
+              ? SNOOZE_UNTIL_ATTENTION
+              : snoozePresets.find((candidate) => `snooze:${candidate.id}` === clicked.value);
         if (preset) {
           // Post-snooze navigation must skip threads snoozing in this same
           // batch — they are all leaving the card block together.
@@ -4601,6 +4649,10 @@ export default function Sidebar() {
               autoSettleEnabled: thread.autoSettleDisabledAt == null,
               isSnoozed,
               canSnoozeNow: canSnooze(thread, { now: new Date().toISOString() }),
+              canSnoozeUntilAttention: offersSnoozeUntilAttention(
+                thread,
+                serverConfigs.get(thread.environmentId)?.environment.capabilities,
+              ),
               isRegeneratingTitle,
               isRunning: !threadRuntimeCanArchive(thread.runtime),
               supports: {
@@ -4621,7 +4673,9 @@ export default function Sidebar() {
           const preset =
             clicked.value === "snooze:custom"
               ? await requestCustomSnooze()
-              : snoozePresets.find((candidate) => `snooze:${candidate.id}` === clicked.value);
+              : clicked.value === SNOOZE_UNTIL_ATTENTION_MENU_ID
+                ? SNOOZE_UNTIL_ATTENTION
+                : snoozePresets.find((candidate) => `snooze:${candidate.id}` === clicked.value);
           if (preset) attemptSnooze(threadRef, preset);
           return;
         }
@@ -5258,6 +5312,10 @@ export default function Sidebar() {
                               serverConfigs.get(thread.environmentId)?.environment.capabilities
                                 .threadSnooze === true
                             }
+                            canSnoozeUntilAttention={offersSnoozeUntilAttention(
+                              thread,
+                              serverConfigs.get(thread.environmentId)?.environment.capabilities,
+                            )}
                             pinningSupported={
                               serverConfigs.get(thread.environmentId)?.environment.capabilities
                                 .threadPinning === true

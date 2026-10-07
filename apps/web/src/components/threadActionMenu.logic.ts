@@ -30,6 +30,10 @@ export type ThreadActionMenuId =
   | "archive"
   | "delete";
 
+/** Snooze menu entry that waits on the thread's pull requests instead of a wake time. */
+export const SNOOZE_UNTIL_ATTENTION_MENU_ID = "snooze:needs-attention" as const;
+export const SNOOZE_UNTIL_ATTENTION_LABEL = "Until it needs attention";
+
 export type DraftActionMenuId =
   | "copy"
   | "copy-path"
@@ -87,6 +91,8 @@ export interface ThreadActionMenuState {
   readonly autoSettleEnabled: boolean;
   readonly isSnoozed: boolean;
   readonly canSnoozeNow: boolean;
+  /** The thread links an open pull request, so it can snooze until that needs attention. */
+  readonly canSnoozeUntilAttention: boolean;
   readonly isRegeneratingTitle: boolean;
   /** Archive rejects a thread with an attached provider, so disable it here rather than let the action fail. */
   readonly isRunning: boolean;
@@ -163,6 +169,15 @@ export function buildThreadActionMenuItems(
                     id: `snooze:${preset.id}` as const,
                     label: `${preset.label} (${preset.whenLabel})`,
                   })),
+                  ...(state.canSnoozeUntilAttention
+                    ? [
+                        {
+                          id: SNOOZE_UNTIL_ATTENTION_MENU_ID,
+                          label: SNOOZE_UNTIL_ATTENTION_LABEL,
+                          separatorBefore: true,
+                        },
+                      ]
+                    : []),
                   { id: "snooze:custom" as const, label: "Custom…", separatorBefore: true },
                 ],
               },

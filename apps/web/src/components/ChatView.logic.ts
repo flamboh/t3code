@@ -35,6 +35,10 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { videoMimeType } from "@t3tools/shared/video";
 import {
+  isPullRequestWatchTask,
+  type PendingBackgroundWorkTask,
+} from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
+import {
   appendCodexArtifactTemplateUsePrompt,
   codexArtifactTemplateUsePrompt,
   type CodexArtifactTemplate,
@@ -1344,4 +1348,16 @@ export function restorePlanFollowUpComposer(input: {
     prompt: input.snapshot.prompt,
     detectTrigger: true,
   });
+}
+
+/**
+ * Background work for the composer banner. An attention-snoozed thread's
+ * status line is its visible state, so its pull request watches stay in the
+ * thread details card instead of the banner.
+ */
+export function composerBackgroundTasks(
+  tasks: ReadonlyArray<PendingBackgroundWorkTask>,
+  snoozedUntilAttention: boolean,
+): ReadonlyArray<PendingBackgroundWorkTask> {
+  return snoozedUntilAttention ? tasks.filter((task) => !isPullRequestWatchTask(task)) : tasks;
 }

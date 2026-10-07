@@ -15,9 +15,14 @@ import {
 import { useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 
-import { resolveSnoozePresets } from "../components/Sidebar.snooze";
+import {
+  offersSnoozeUntilAttention,
+  resolveSnoozePresets,
+  SNOOZE_UNTIL_ATTENTION,
+} from "../components/Sidebar.snooze";
 import {
   buildThreadActionMenuItems,
+  SNOOZE_UNTIL_ATTENTION_MENU_ID,
   threadActionRequiresOperate,
   type ThreadActionMenuId,
 } from "../components/threadActionMenu.logic";
@@ -30,6 +35,7 @@ import {
   readEnvironmentSupportsPinning,
   readEnvironmentSupportsSettlement,
   readEnvironmentSupportsSnooze,
+  readEnvironmentSupportsSnoozeUntilAttention,
   readEnvironmentSupportsTitleRegeneration,
   readThreadShell,
   useProjects,
@@ -156,6 +162,11 @@ export function useThreadActionMenu(input: {
           autoSettleEnabled: thread.autoSettleDisabledAt == null,
           isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
           canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
+          canSnoozeUntilAttention: offersSnoozeUntilAttention(thread, {
+            threadSnoozeUntilAttention: readEnvironmentSupportsSnoozeUntilAttention(
+              threadRef.environmentId,
+            ),
+          }),
           isRegeneratingTitle,
           isRunning: !threadRuntimeCanArchive(thread.runtime),
           supports,
@@ -178,7 +189,9 @@ export function useThreadActionMenu(input: {
           const preset =
             action === "snooze:custom"
               ? await requestCustomSnooze()
-              : snoozePresets.find((candidate) => `snooze:${candidate.id}` === action);
+              : action === SNOOZE_UNTIL_ATTENTION_MENU_ID
+                ? SNOOZE_UNTIL_ATTENTION
+                : snoozePresets.find((candidate) => `snooze:${candidate.id}` === action);
           if (!preset) return;
           const result = await snoozeThread(threadRef, preset.snoozedUntil);
           if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolveSnoozePresets, snoozeWakeDescription } from "./Sidebar.snooze";
+import {
+  offersSnoozeUntilAttention,
+  resolveSnoozePresets,
+  snoozeWakeDescription,
+} from "./Sidebar.snooze";
 
 // Local-time constructor so preset math is timezone-stable in tests.
 function localDate(year: number, month: number, day: number, hour: number, minute = 0): Date {
@@ -92,5 +96,40 @@ describe("snoozeWakeDescription", () => {
     expect(snoozeWakeDescription(localDate(2026, 4, 8, 18).toISOString(), now, "24-hour")).toBe(
       "18:00",
     );
+  });
+});
+
+describe("offersSnoozeUntilAttention", () => {
+  const thread = {
+    pullRequests: [
+      {
+        host: "github.com",
+        repository: "acme/app",
+        number: 1,
+        url: "https://github.com/acme/app/pull/1",
+        source: "agent" as const,
+        linkedAt: "2026-10-06T22:00:00.000Z",
+        snapshot: null,
+        stack: null,
+      },
+    ],
+    settledOverride: null,
+    settledAt: null,
+    lineage: { relationshipToParent: null },
+  };
+
+  it("needs a server that advertises it, not just timed snooze", () => {
+    expect(offersSnoozeUntilAttention(thread, { threadSnoozeUntilAttention: true })).toBe(true);
+    expect(offersSnoozeUntilAttention(thread, {})).toBe(false);
+    expect(offersSnoozeUntilAttention(thread, undefined)).toBe(false);
+  });
+
+  it("needs an open linked pull request", () => {
+    expect(
+      offersSnoozeUntilAttention(
+        { ...thread, pullRequests: [] },
+        { threadSnoozeUntilAttention: true },
+      ),
+    ).toBe(false);
   });
 });

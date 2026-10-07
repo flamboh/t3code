@@ -43,6 +43,7 @@ import {
   readEnvironmentSupportsActiveReorder,
   readEnvironmentSupportsSettlement,
   readEnvironmentSupportsSnooze,
+  readEnvironmentSupportsSnoozeUntilAttention,
   readEnvironmentSupportsVisitedTracking,
   readEnvironmentThreadRefs,
   readProject,
@@ -94,6 +95,18 @@ export class ThreadSnoozeUnsupportedError extends Schema.TaggedError<ThreadSnooz
 ) {
   override get message(): string {
     return "This environment's server does not support snoozing yet. Update the server to use Snooze.";
+  }
+}
+
+export class ThreadSnoozeUntilAttentionUnsupportedError extends Schema.TaggedError<ThreadSnoozeUntilAttentionUnsupportedError>()(
+  "ThreadSnoozeUntilAttentionUnsupportedError",
+  {
+    environmentId: EnvironmentId,
+    threadId: ThreadId,
+  },
+) {
+  override get message(): string {
+    return "This environment's server does not support snoozing until a pull request needs attention yet. Update the server to use it.";
   }
 }
 
@@ -304,6 +317,10 @@ export function useThreadActions() {
   const unsnoozeThreadMutation = useOrchestrationCommand(threadEnvironment.unsnooze, {
     reportFailure: false,
   });
+  const snoozeThreadUntilAttentionMutation = useOrchestrationCommand(
+    threadEnvironment.snoozeUntilAttention,
+    { reportFailure: false },
+  );
   const markThreadUnread = useMarkThreadUnread();
   const stopThreadSession = useOrchestrationCommand(threadEnvironment.stopSession);
   const removeWorktree = useAtomCommand(vcsEnvironment.removeWorktree, {
@@ -787,6 +804,7 @@ export function useThreadActions() {
       const pinOrderKey = resolved?.thread.pinnedAt != null ? resolved.thread.pinOrderKey : null;
       const wasPinned = resolved?.thread.pinnedAt != null;
       const snoozedUntil = resolved?.thread.snoozedUntil ?? null;
+      const snoozedUntilNeedsAttention = resolved?.thread.snoozedUntilNeedsAttention === true;
       // An older unpin/snooze Undo would re-pin or re-snooze, and the server
       // treats either as a promotion that un-settles; settling supersedes them.
       ThreadUndo.invalidate("pin", scopedThreadKey(target));
@@ -822,6 +840,12 @@ export function useThreadActions() {
               input: { threadId: target.threadId, snoozedUntil },
             });
           }
+          if (snoozedUntilNeedsAttention) {
+            return snoozeThreadUntilAttentionMutation({
+              environmentId: target.environmentId,
+              input: { threadId: target.threadId },
+            });
+          }
           return unsettled;
         },
         failureTitle: "Failed to undo settle",
@@ -834,6 +858,7 @@ export function useThreadActions() {
       resolveThreadTarget,
       settleThreadMutation,
       snoozeThreadMutation,
+      snoozeThreadUntilAttentionMutation,
       unsettleThread,
     ],
   );
@@ -925,13 +950,27 @@ export function useThreadActions() {
     [unsnoozeThreadMutation],
   );
 
+  /** Snoozes until `snoozedUntil`, or until a linked pull request needs attention when null. */
   const snoozeThread = useCallback(
-    async (target: ScopedThreadRef, snoozedUntil: string) => {
+    async (target: ScopedThreadRef, snoozedUntil: string | null) => {
       // Version skew: never send the command to a server that predates it.
       if (!readEnvironmentSupportsSnooze(target.environmentId)) {
         return AsyncResult.failure(
           Cause.fail(
             new ThreadSnoozeUnsupportedError({
+              environmentId: target.environmentId,
+              threadId: target.threadId,
+            }),
+          ),
+        );
+      }
+      if (
+        snoozedUntil === null &&
+        !readEnvironmentSupportsSnoozeUntilAttention(target.environmentId)
+      ) {
+        return AsyncResult.failure(
+          Cause.fail(
+            new ThreadSnoozeUntilAttentionUnsupportedError({
               environmentId: target.environmentId,
               threadId: target.threadId,
             }),
@@ -953,10 +992,16 @@ export function useThreadActions() {
         );
       }
       const action = ThreadUndo.begin("snooze", scopedThreadKey(target));
-      const result = await snoozeThreadMutation({
-        environmentId: target.environmentId,
-        input: { threadId: target.threadId, snoozedUntil },
-      });
+      const result =
+        snoozedUntil === null
+          ? await snoozeThreadUntilAttentionMutation({
+              environmentId: target.environmentId,
+              input: { threadId: target.threadId },
+            })
+          : await snoozeThreadMutation({
+              environmentId: target.environmentId,
+              input: { threadId: target.threadId, snoozedUntil },
+            });
       if (result._tag !== "Success") {
         action.finish();
         return result;
@@ -970,7 +1015,7 @@ export function useThreadActions() {
       });
       return result;
     },
-    [resolveThreadTarget, snoozeThreadMutation, unsnoozeThread],
+    [resolveThreadTarget, snoozeThreadMutation, snoozeThreadUntilAttentionMutation, unsnoozeThread],
   );
 
   const confirmAndDeleteThread = useCallback(

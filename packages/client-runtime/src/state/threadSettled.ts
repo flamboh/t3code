@@ -1,4 +1,6 @@
 // @effect-diagnostics globalDate:off -- UI snooze presets use local calendar boundaries and Intl labels.
+import type { OrchestrationV2AppThreadLineage, ThreadPullRequestLink } from "@t3tools/contracts";
+import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import * as DateTime from "effect/DateTime";
 
 interface SettlementRunLike {
@@ -155,6 +157,25 @@ export function canSnooze(
   if (shell.hasPendingApprovals || shell.hasPendingUserInput) return false;
   if (hasQueuedTurnStart(shell, options)) return false;
   return true;
+}
+
+/**
+ * Whether "Snooze until it needs attention" applies: the thread is not settled, is not a subagent
+ * (subagents cannot watch pull requests), and links an open pull request to watch. A link not
+ * synced yet counts as open. Client-side twin of the server's checks; the server still reads each
+ * pull request and can refuse.
+ */
+export function canSnoozeUntilAttention(shell: {
+  readonly pullRequests: ReadonlyArray<ThreadPullRequestLink>;
+  readonly settledOverride: "settled" | "active" | null;
+  readonly settledAt: string | null;
+  readonly lineage: Pick<OrchestrationV2AppThreadLineage, "relationshipToParent">;
+}): boolean {
+  if (shell.settledOverride === "settled" || shell.settledAt !== null) return false;
+  if (shell.lineage.relationshipToParent === "subagent") return false;
+  return visibleThreadPullRequests(shell.pullRequests).some(
+    (link) => link.snapshot === null || link.snapshot.state === "open",
+  );
 }
 
 /**

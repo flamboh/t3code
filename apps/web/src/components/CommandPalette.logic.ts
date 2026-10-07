@@ -7,6 +7,11 @@ import {
   THREAD_JUMP_KEYBINDING_COMMANDS,
 } from "@t3tools/contracts";
 import { filterFilesystemBrowseEntries } from "@t3tools/client-runtime/state/filesystem";
+import {
+  canSnooze,
+  effectiveSnoozed,
+  type ThreadSnoozeShell,
+} from "@t3tools/client-runtime/state/thread-settled";
 import type { SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
@@ -14,6 +19,7 @@ import { type ReactNode } from "react";
 import { getThreadSortTimestamp, sortThreads } from "../lib/threadSort";
 import { normalizeSearchText } from "../lib/utils";
 import { formatRelativeTimeLabel } from "../timestampFormat";
+import { offersSnoozeUntilAttention } from "./Sidebar.snooze";
 import { type Project, type SidebarThreadSummary, type Thread } from "../types";
 
 export const RECENT_THREAD_LIMIT = 12;
@@ -37,6 +43,24 @@ export function buildLinkedThreadActionItems(
     icon: input.icon,
     run: () => input.runThread({ environmentId: input.environmentId, id: thread.id }),
   }));
+}
+
+/** The snooze action the palette offers for the current thread: wake it when snoozed, otherwise snooze it until it needs attention. */
+export function resolveActiveThreadSnoozeAction(input: {
+  readonly thread: ThreadSnoozeShell & Parameters<typeof offersSnoozeUntilAttention>[0];
+  readonly capabilities:
+    | { readonly threadSnooze?: boolean; readonly threadSnoozeUntilAttention?: boolean }
+    | undefined;
+  readonly now: string;
+}):
+  | { readonly kind: "wake" }
+  | { readonly kind: "snooze-until-attention"; readonly disabled: boolean }
+  | null {
+  const { thread, capabilities, now } = input;
+  if (capabilities?.threadSnooze !== true) return null;
+  if (effectiveSnoozed(thread, { now })) return { kind: "wake" };
+  if (!offersSnoozeUntilAttention(thread, capabilities)) return null;
+  return { kind: "snooze-until-attention", disabled: !canSnooze(thread, { now }) };
 }
 
 export function browseInputEndPaddingClass(input: {

@@ -87,6 +87,7 @@ vi.mock("../state/threads", () => ({
       "unpin",
       "reorderPin",
       "snooze",
+      "snoozeUntilAttention",
       "unsnooze",
       "stopSession",
     ].map((action) => [action, action]),
@@ -100,6 +101,7 @@ vi.mock("../state/entities", () => ({
   readEnvironmentSupportsPinReorder: () => true,
   readEnvironmentSupportsSettlement: () => true,
   readEnvironmentSupportsSnooze: () => true,
+  readEnvironmentSupportsSnoozeUntilAttention: () => true,
   readThreadShell: (ref: ScopedThreadRef) =>
     state.threads.find(
       (thread) => thread.environmentId === ref.environmentId && thread.id === ref.threadId,
@@ -192,6 +194,10 @@ const operations = [
     name: "snooze",
     run: (actions: ThreadActions, ref: ScopedThreadRef) =>
       actions.snoozeThread(ref, "2099-01-01T00:00:00Z"),
+  },
+  {
+    name: "snoozeUntilAttention",
+    run: (actions: ThreadActions, ref: ScopedThreadRef) => actions.snoozeThread(ref, null),
   },
   {
     name: "unsnooze",

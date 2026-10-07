@@ -303,6 +303,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["usage quota rate limit reset wake recover continue"],
   },
   {
+    id: "snooze-pull-requests-awaiting-review",
+    title: "Snooze pull requests awaiting review",
+    to: "/settings/general",
+    searchTerms: ["agent pr watch wait reviewer approval merge attention wake"],
+  },
+  {
     id: "auto-resume-limited-threads",
     title: "Auto-resume limited threads",
     to: "/settings/general",
