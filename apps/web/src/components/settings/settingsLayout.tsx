@@ -37,6 +37,7 @@ import {
 import { useClearProjectOverrides, useClearScopedSettings } from "./useScopedSettings";
 import {
   SettingInheritance,
+  SettingInheritancePopover,
   type SettingInheritanceState,
   type SettingOverridingProject,
 } from "./SettingInheritance";
@@ -564,7 +565,7 @@ export function SettingsPageContainer({
       >
         <WorkspacePageContainer width={width} className={cn("gap-8", className)}>
           <SettingsScopeSentence />
-          {children}
+          <SettingInheritancePopover>{children}</SettingInheritancePopover>
         </WorkspacePageContainer>
       </div>
     </SettingsSearchTargetProvider>
