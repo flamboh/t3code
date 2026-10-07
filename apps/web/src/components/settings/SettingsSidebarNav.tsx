@@ -50,6 +50,7 @@ import {
 } from "./settingsSearch";
 import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";
 import { validateSettingsScopeSearch } from "./settingsScope";
+import { hasCloudPublicConfig } from "../../cloud/publicConfig";
 
 const SnapShotIcon = createLucideIcon("snap-shot", [
   [
@@ -62,6 +63,8 @@ const SnapShotIcon = createLucideIcon("snap-shot", [
   ["rect", { width: "10", height: "8", x: "7", y: "8", rx: "2", key: "window" }],
   ["circle", { cx: "12", cy: "12", r: "1.5", key: "lens" }],
 ]);
+
+const cloudEnabled = hasCloudPublicConfig();
 
 const T3ConnectSidebarSignIn = lazy(() =>
   import("../clerk/T3ConnectSidebarSignIn").then((module) => ({
@@ -350,16 +353,20 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
-        <Suspense fallback={null}>
-          <T3ConnectSidebarSignIn />
-        </Suspense>
+        {cloudEnabled ? (
+          <Suspense fallback={null}>
+            <T3ConnectSidebarSignIn />
+          </Suspense>
+        ) : null}
         <div className="flex items-center gap-1">
           <div className="min-w-0 flex-1">
             <SidebarUtilityMenu />
           </div>
-          <Suspense fallback={null}>
-            <T3ConnectSidebarAvatar />
-          </Suspense>
+          {cloudEnabled ? (
+            <Suspense fallback={null}>
+              <T3ConnectSidebarAvatar />
+            </Suspense>
+          ) : null}
         </div>
       </SidebarFooter>
     </>
