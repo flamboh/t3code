@@ -48,6 +48,15 @@ function environmentSupportsSnooze(environmentId: EnvironmentThreadShell["enviro
   );
 }
 
+function environmentSupportsSnoozeUntilAttention(
+  environmentId: EnvironmentThreadShell["environmentId"],
+) {
+  return (
+    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
+      .threadSnoozeUntilAttention === true
+  );
+}
+
 function environmentSupportsPinning(environmentId: EnvironmentThreadShell["environmentId"]) {
   return (
     appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
@@ -248,7 +257,11 @@ export function useThreadListActions(): {
   readonly archiveThread: (thread: EnvironmentThreadShell) => void;
   readonly confirmDeleteThread: (thread: EnvironmentThreadShell) => void;
   readonly settleThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
-  readonly snoozeThread: (thread: EnvironmentThreadShell, snoozedUntil: string) => Promise<boolean>;
+  /** Snoozes until `snoozedUntil`, or until a linked pull request needs attention when null. */
+  readonly snoozeThread: (
+    thread: EnvironmentThreadShell,
+    snoozedUntil: string | null,
+  ) => Promise<boolean>;
   readonly unsnoozeThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly unsettleThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly pinThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
@@ -268,6 +281,9 @@ export function useThreadListActions(): {
   const executeAction = useThreadActionExecutor();
   const snoozeMutation = useAtomCommand(threadEnvironment.snooze, { reportFailure: false });
   const unsnoozeMutation = useAtomCommand(threadEnvironment.unsnooze, { reportFailure: false });
+  const snoozeUntilAttentionMutation = useAtomCommand(threadEnvironment.snoozeUntilAttention, {
+    reportFailure: false,
+  });
   const pinMutation = useAtomCommand(threadEnvironment.pin, { reportFailure: false });
   const unpinMutation = useAtomCommand(threadEnvironment.unpin, { reportFailure: false });
   const setAutoSettleMutation = useAtomCommand(threadEnvironment.setAutoSettle, {
@@ -290,7 +306,7 @@ export function useThreadListActions(): {
     [executeAction],
   );
   const snoozeThread = useCallback(
-    async (thread: EnvironmentThreadShell, snoozedUntil: string) => {
+    async (thread: EnvironmentThreadShell, snoozedUntil: string | null) => {
       if (!checkThreadOperationPermission(thread, "Could not snooze thread")) return false;
       const key = scopedThreadKey(thread.environmentId, thread.id);
       if (snoozeInFlightThreadKeys.current.has(key)) {
@@ -302,6 +318,16 @@ export function useThreadListActions(): {
           Alert.alert(
             "Could not snooze thread",
             "This environment's server does not support snoozing yet. Update the server to use Snooze.",
+          );
+          return false;
+        }
+        if (
+          snoozedUntil === null &&
+          !environmentSupportsSnoozeUntilAttention(thread.environmentId)
+        ) {
+          Alert.alert(
+            "Could not snooze thread",
+            "This environment's server does not support snoozing until a pull request needs attention yet. Update the server to use it.",
           );
           return false;
         }
@@ -319,13 +345,18 @@ export function useThreadListActions(): {
         const result = await withThreadDismissal(
           key,
           () =>
-            snoozeMutation({
-              environmentId: thread.environmentId,
-              input: {
-                threadId: thread.id,
-                snoozedUntil,
-              },
-            }),
+            snoozedUntil === null
+              ? snoozeUntilAttentionMutation({
+                  environmentId: thread.environmentId,
+                  input: { threadId: thread.id },
+                })
+              : snoozeMutation({
+                  environmentId: thread.environmentId,
+                  input: {
+                    threadId: thread.id,
+                    snoozedUntil,
+                  },
+                }),
           (result) => result._tag === "Success",
         );
         if (result._tag === "Failure") {
@@ -343,7 +374,7 @@ export function useThreadListActions(): {
         snoozeInFlightThreadKeys.current.delete(key);
       }
     },
-    [snoozeMutation],
+    [snoozeMutation, snoozeUntilAttentionMutation],
   );
   const unsnoozeThread = useCallback(
     async (thread: EnvironmentThreadShell) => {

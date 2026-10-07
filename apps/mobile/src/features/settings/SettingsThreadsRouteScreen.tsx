@@ -25,6 +25,7 @@ import {
 import { planAutoSettleSettingsSync, type AutoSettleSettings } from "./autoSettleSettingsSync";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
 import {
+  everyMobileSettingsTargetSupports,
   planMobileScopedSettingsClear,
   planMobileScopedSettingsPatch,
   resolveMobileSettingsTargets,
@@ -96,6 +97,7 @@ function AutoSettleSettingsRows() {
     patch: Partial<AutoSettleSettings> & {
       autoResumeLimitedThreads?: boolean;
       snoozeLimitedThreads?: boolean;
+      snoozePullRequestsAwaitingReview?: boolean;
     },
   ) => {
     if (
@@ -141,6 +143,10 @@ function AutoSettleSettingsRows() {
   );
   const disabled =
     !canWriteSettings || pendingWrites > 0 || (projectSelected && !supportsProjectOverrides);
+  const supportsSnoozeUntilAttention = everyMobileSettingsTargetSupports(
+    selectedTargets,
+    "threadSnoozeUntilAttention",
+  );
   const hasProjectOverrides =
     projectSelected &&
     syncTargets.some(
@@ -204,6 +210,22 @@ function AutoSettleSettingsRows() {
             value={uniformMobileSetting(displayTargets, "snoozeLimitedThreads")}
             disabled={disabled}
             onValueChange={(value) => writeToAll({ snoozeLimitedThreads: value })}
+          />
+        </SettingsSection>
+      ) : null}
+      {!projectSelected ? (
+        <SettingsSection title="Pull requests">
+          <SettingsSwitchRow
+            icon="eye"
+            label="Snooze pull requests awaiting review"
+            subtitle={
+              supportsSnoozeUntilAttention
+                ? "Let agents snooze threads whose pull requests only wait on someone else's review. They wake when the pull request needs attention."
+                : "Update older servers to let agents snooze pull requests awaiting review."
+            }
+            value={uniformMobileSetting(displayTargets, "snoozePullRequestsAwaitingReview")}
+            disabled={disabled || !supportsSnoozeUntilAttention}
+            onValueChange={(value) => writeToAll({ snoozePullRequestsAwaitingReview: value })}
           />
         </SettingsSection>
       ) : null}

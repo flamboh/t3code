@@ -10,6 +10,7 @@ import { filterFilesystemBrowseEntries } from "@t3tools/client-runtime/state/fil
 import {
   canSnooze,
   effectiveSnoozed,
+  offersSnoozeUntilAttention,
   type ThreadSnoozeShell,
 } from "@t3tools/client-runtime/state/thread-settled";
 import type { SidebarThreadSortOrder } from "@t3tools/contracts/settings";
@@ -19,7 +20,6 @@ import { type ReactNode } from "react";
 import { getThreadSortTimestamp, sortThreads } from "../lib/threadSort";
 import { normalizeSearchText } from "../lib/utils";
 import { formatRelativeTimeLabel } from "../timestampFormat";
-import { offersSnoozeUntilAttention } from "./Sidebar.snooze";
 import { type Project, type SidebarThreadSummary, type Thread } from "../types";
 
 export const RECENT_THREAD_LIMIT = 12;

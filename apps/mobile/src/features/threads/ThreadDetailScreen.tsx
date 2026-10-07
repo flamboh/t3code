@@ -36,6 +36,7 @@ import {
   presentProviderGoal,
 } from "@t3tools/client-runtime/state/thread-execution";
 import { resolveSubagentPillSegment } from "@t3tools/client-runtime/state/thread-subagents";
+import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 import {
   formatModelSelectionEffort,
   type ProviderSubagentStatus,
@@ -138,6 +139,7 @@ import {
   ThreadComposer,
 } from "./ThreadComposer";
 import { ThreadFeed, type ThreadFeedHistoryControls } from "./ThreadFeed";
+import { useThreadListActions } from "../home/useThreadListActions";
 import { useThreadTurnSubagents } from "./ThreadAgentsSheet";
 import { ComposerQueuedEditBanner } from "./ComposerQueuedEdit";
 import { useThreadQueuedCount } from "./ThreadQueueControl";
@@ -470,6 +472,11 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   const pendingBackgroundWork = presentPendingBackgroundWork(
     props.selectedThread.pendingBackgroundTasks,
   );
+  const { unsnoozeThread } = useThreadListActions();
+  const snoozedUntilAttention =
+    props.selectedThread.snoozedUntilNeedsAttention === true &&
+    props.serverConfig?.environment.capabilities.threadSnooze === true &&
+    effectiveSnoozed(props.selectedThread, { now: new Date().toISOString() });
   const floatingStatus = ((): FloatingWorkingStatus | null => {
     const connectionStatus = connectionFloatingStatus({
       connectionError: props.connectionError,
@@ -502,6 +509,13 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     }
     if (props.activeWorkStartedAt !== null && contentPresentationKind === "ready") {
       return { kind: "working", startedAt: props.activeWorkStartedAt };
+    }
+    if (snoozedUntilAttention && contentPresentationKind === "ready") {
+      return {
+        kind: "snoozed",
+        label: "Snoozed until its pull request needs attention",
+        onWake: () => void unsnoozeThread(props.selectedThread),
+      };
     }
     if (pendingBackgroundWork !== null && contentPresentationKind === "ready") {
       return {

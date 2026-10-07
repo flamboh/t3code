@@ -1,5 +1,6 @@
 import {
   isNullableProjectSettingsOverride,
+  type ExecutionEnvironmentCapabilities,
   PROJECT_SCOPED_SERVER_SETTING_KEYS,
   type EnvironmentId,
   type ProjectId,
@@ -44,6 +45,15 @@ export function resolveMobileSettingsTargets(
       },
     ];
   });
+}
+
+export function everyMobileSettingsTargetSupports(
+  environments: readonly Pick<SettingsTarget, "serverConfig">[],
+  capability: keyof ExecutionEnvironmentCapabilities,
+) {
+  return environments.every(
+    (environment) => environment.serverConfig.environment.capabilities[capability] === true,
+  );
 }
 
 export function planMobileScopedSettingsPatch(

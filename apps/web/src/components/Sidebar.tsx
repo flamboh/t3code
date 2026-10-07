@@ -30,12 +30,14 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   canSnooze,
   effectiveSnoozed,
+  offersSnoozeUntilAttention,
   threadWokeAt,
 } from "@t3tools/client-runtime/state/thread-settled";
 import { createInboxReturnTracker } from "@t3tools/client-runtime/state/thread-inbox";
 import {
   resolveSettledThreadTimestamp,
   sortSettledThreads,
+  sortSnoozedThreads,
 } from "@t3tools/client-runtime/state/thread-sort";
 import {
   threadSearchMatchKey,
@@ -216,7 +218,6 @@ import {
   sortInboxThreadsByReturn,
   sortPinnedThreadsForSidebar,
   sortSidebarV2ProjectGroups,
-  sortSnoozedThreads,
   sortThreadsForSidebar,
   sortWorkingThreadsBySend,
   threadHoldsSnooze,
@@ -250,7 +251,6 @@ import {
   useLinkedThreadPullRequest,
 } from "./ThreadStatusIndicators";
 import {
-  offersSnoozeUntilAttention,
   resolveSnoozePresets,
   SNOOZE_UNTIL_ATTENTION,
   snoozeWakeLabel,

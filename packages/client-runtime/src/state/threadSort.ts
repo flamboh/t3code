@@ -68,6 +68,30 @@ export function sortSettledThreads<T extends SettledThreadTimestampInput & { rea
     .map(({ thread }) => thread);
 }
 
+/**
+ * Snoozed shelf order. Soonest wake first, since "what comes back next" is the shelf's question.
+ * Threads waiting on a pull request have no wake time, so they follow, oldest snooze first: a new
+ * one joins the end instead of reshuffling the rows above it. Shared by web and mobile.
+ */
+export function sortSnoozedThreads<
+  T extends {
+    readonly snoozedAt?: string | null | undefined;
+    readonly snoozedUntil?: string | null | undefined;
+    readonly snoozedUntilNeedsAttention?: boolean | undefined;
+  },
+>(threads: ReadonlyArray<T>): T[] {
+  const timestampMs = (iso: string | null | undefined) =>
+    toSortableTimestamp(iso ?? undefined) ?? 0;
+  return [...threads].sort((left, right) => {
+    const leftWaits = left.snoozedUntil == null && left.snoozedUntilNeedsAttention === true;
+    const rightWaits = right.snoozedUntil == null && right.snoozedUntilNeedsAttention === true;
+    if (leftWaits !== rightWaits) return leftWaits ? 1 : -1;
+    return leftWaits
+      ? timestampMs(left.snoozedAt) - timestampMs(right.snoozedAt)
+      : timestampMs(left.snoozedUntil) - timestampMs(right.snoozedUntil);
+  });
+}
+
 function getFirstSortableTimestamp(...values: Array<string | null | undefined>): number | null {
   for (const value of values) {
     const timestamp = toSortableTimestamp(value ?? undefined);

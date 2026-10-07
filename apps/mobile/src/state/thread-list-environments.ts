@@ -15,6 +15,7 @@ export type ThreadListProvider = Pick<
 const capabilityKeys = [
   "threadSettlement",
   "threadSnooze",
+  "threadSnoozeUntilAttention",
   "threadPinning",
   "threadAutoSettleOptOut",
   "threadPinReorder",
@@ -64,6 +65,7 @@ function collectEnvironments(environments: ReadonlyMap<EnvironmentId, ListEnviro
   const machineByEnvironmentId = new Map<EnvironmentId, EnvironmentMachineKind>();
   const settlementEnvironmentIds = new Set<EnvironmentId>();
   const snoozeEnvironmentIds = new Set<EnvironmentId>();
+  const snoozeUntilAttentionEnvironmentIds = new Set<EnvironmentId>();
   const pinningEnvironmentIds = new Set<EnvironmentId>();
   const autoSettleOptOutEnvironmentIds = new Set<EnvironmentId>();
   const pinReorderEnvironmentIds = new Set<EnvironmentId>();
@@ -74,6 +76,9 @@ function collectEnvironments(environments: ReadonlyMap<EnvironmentId, ListEnviro
     machineByEnvironmentId.set(id, machineKind);
     if (capabilities.threadSettlement === true) settlementEnvironmentIds.add(id);
     if (capabilities.threadSnooze === true) snoozeEnvironmentIds.add(id);
+    if (capabilities.threadSnoozeUntilAttention === true) {
+      snoozeUntilAttentionEnvironmentIds.add(id);
+    }
     if (capabilities.threadAutoSettleOptOut === true) autoSettleOptOutEnvironmentIds.add(id);
     if (capabilities.threadPinning === true) pinningEnvironmentIds.add(id);
     if (capabilities.threadPinReorder === true) pinReorderEnvironmentIds.add(id);
@@ -85,6 +90,7 @@ function collectEnvironments(environments: ReadonlyMap<EnvironmentId, ListEnviro
     machineByEnvironmentId,
     settlementEnvironmentIds,
     snoozeEnvironmentIds,
+    snoozeUntilAttentionEnvironmentIds,
     pinningEnvironmentIds,
     autoSettleOptOutEnvironmentIds,
     pinReorderEnvironmentIds,

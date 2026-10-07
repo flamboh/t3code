@@ -22,6 +22,7 @@ import {
   resolveSettledThreadTimestamp,
   sortPinnedThreadsByOrderKey,
   sortSettledThreads,
+  sortSnoozedThreads,
 } from "@t3tools/client-runtime/state/thread-sort";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
@@ -86,15 +87,25 @@ export type ThreadListV2Status =
   | "ready";
 export type ThreadListV2SwipeAction = "archive" | "settle" | "unsettle" | "snooze" | "unsnooze";
 
+/** Snooze menu entry that waits on the thread's pull requests instead of a wake time. */
+export const THREAD_LIST_V2_SNOOZE_UNTIL_ATTENTION_ACTION = {
+  id: "snooze:needs-attention",
+  title: "Until it needs attention",
+} as const;
+
 export function resolveThreadListV2SnoozeMenuSelection(input: {
   readonly event: string;
   readonly displayedPresets: ReadonlyArray<SnoozePreset>;
   readonly now: Date;
 }):
   | { readonly _tag: "selected"; readonly preset: SnoozePreset }
+  | { readonly _tag: "until-attention" }
   | { readonly _tag: "expired" }
   | { readonly _tag: "not-snooze" } {
   if (!input.event.startsWith("snooze:")) return { _tag: "not-snooze" };
+  if (input.event === THREAD_LIST_V2_SNOOZE_UNTIL_ATTENTION_ACTION.id) {
+    return { _tag: "until-attention" };
+  }
 
   const currentPreset = resolveSnoozePresets(input.now).find(
     (candidate) => input.event === `snooze:${candidate.id}`,
@@ -108,6 +119,18 @@ export function resolveThreadListV2SnoozeMenuSelection(input: {
     return { _tag: "selected", preset: displayedPreset };
   }
   return { _tag: "expired" };
+}
+
+/** Spoken snooze state for a snoozed-shelf row, whose eye and countdown are visual only. */
+export function resolveThreadListV2SnoozeAccessibilityValue(input: {
+  readonly snoozedUntilNeedsAttention: boolean;
+  readonly snoozeWakeLabelText: string | undefined;
+}): string | undefined {
+  if (input.snoozedUntilNeedsAttention) return "Snoozed until its pull request needs attention";
+  if (input.snoozeWakeLabelText === undefined) return undefined;
+  return input.snoozeWakeLabelText === "now"
+    ? "Snoozed, waking now"
+    : `Snoozed, wakes in ${input.snoozeWakeLabelText}`;
 }
 
 export function resolveThreadListV2SwipeActions(input: {
@@ -453,14 +476,16 @@ export function threadListV2ListItemsAreEqual(
 
 /** The timestamp a row renders when it shows no status label: the settle
     stamp on settled slim rows, otherwise the latest activity. Blank for
-    status-labelled cards and snoozed rows with a wake countdown — those
-    never draw a time, so their minute tick must not invalidate the cell. */
+    status-labelled cards and snoozed rows with a wake countdown or the
+    attention eye — those never draw a time, so their minute tick must not
+    invalidate the cell. */
 function resolveThreadListV2ItemTimeLabel(
   item: ThreadListV2Item,
   showSnoozeWakeLabel: boolean,
 ): string {
   const { thread, variant, snoozed } = item;
   if (showSnoozeWakeLabel) return "";
+  if (snoozed && thread.snoozedUntilNeedsAttention === true) return "";
   if (
     variant === "card" &&
     (resolveThreadListV2Status(thread) !== "ready" || threadHasUnseenCompletion(thread))
@@ -731,10 +756,7 @@ export function buildThreadListV2Items(input: {
     : applyPendingThreadOrder(sortThreadsForListV2(active), "active", pending);
   // Newest send first; finishing and waking again do not move a row.
   const orderedWorking = sortWorkingThreadsBySend(working);
-  const orderedSnoozed = [...snoozed].sort(
-    (left, right) =>
-      parseTimestampMs(left.snoozedUntil ?? "") - parseTimestampMs(right.snoozedUntil ?? ""),
-  );
+  const orderedSnoozed = sortSnoozedThreads(snoozed);
   const selectedThreadKey = input.selectedThreadKey ?? null;
   const visibleWorking =
     input.workingShelfExpanded === true

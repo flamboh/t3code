@@ -6,7 +6,11 @@ import {
   settlePromise,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { canSnooze, effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
+import {
+  canSnooze,
+  effectiveSnoozed,
+  offersSnoozeUntilAttention,
+} from "@t3tools/client-runtime/state/thread-settled";
 import {
   AuthOrchestrationOperateScope,
   type ScopedThreadRef,
@@ -15,11 +19,7 @@ import {
 import { useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 
-import {
-  offersSnoozeUntilAttention,
-  resolveSnoozePresets,
-  SNOOZE_UNTIL_ATTENTION,
-} from "../components/Sidebar.snooze";
+import { resolveSnoozePresets, SNOOZE_UNTIL_ATTENTION } from "../components/Sidebar.snooze";
 import {
   buildThreadActionMenuItems,
   SNOOZE_UNTIL_ATTENTION_MENU_ID,

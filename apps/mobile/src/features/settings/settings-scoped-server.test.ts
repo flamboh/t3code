@@ -4,10 +4,12 @@ import {
   type ProjectId,
   type ServerSettings,
 } from "@t3tools/contracts";
+import { supportsSharedSettingsSync } from "@t3tools/client-runtime/state/shared-settings";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { SettingsTarget } from "./settings-environment-filter";
 import {
+  everyMobileSettingsTargetSupports,
   planMobileScopedSettingsClear,
   planMobileScopedSettingsPatch,
   resolveMobileSettingsTargets,
@@ -19,8 +21,12 @@ const secondId = "second" as EnvironmentId;
 const firstProject = "first-project" as ProjectId;
 const secondProject = "second-project" as ProjectId;
 
-describe("mobile usage-limit settings across environments", () => {
-  it.each(["autoResumeLimitedThreads", "snoozeLimitedThreads"] as const)(
+describe("mobile thread behavior switches across environments", () => {
+  it.each([
+    "autoResumeLimitedThreads",
+    "snoozeLimitedThreads",
+    "snoozePullRequestsAwaitingReview",
+  ] as const)(
     "shows %s as mixed and can enable it everywhere without changing other settings",
     (key) => {
       const targets = resolveMobileSettingsTargets(
@@ -53,6 +59,30 @@ describe("mobile usage-limit settings across environments", () => {
       expect(uniformMobileSetting([], key)).toBeNull();
     },
   );
+});
+
+describe("mobile settings capability across selected environments", () => {
+  it("counts an older server that other rows skip for lacking auto-settlement", () => {
+    const current = {
+      connection: { phase: "connected" },
+      serverConfig: {
+        environment: {
+          capabilities: { threadAutoSettlement: true, threadSnoozeUntilAttention: true },
+        },
+      },
+    } as SettingsTarget;
+    const older = {
+      connection: { phase: "connected" },
+      serverConfig: { environment: { capabilities: {} } },
+    } as SettingsTarget;
+
+    expect([current, older].filter(supportsSharedSettingsSync)).toEqual([current]);
+
+    expect(everyMobileSettingsTargetSupports([current], "threadSnoozeUntilAttention")).toBe(true);
+    expect(everyMobileSettingsTargetSupports([current, older], "threadSnoozeUntilAttention")).toBe(
+      false,
+    );
+  });
 });
 
 function environment(environmentId: EnvironmentId, settings: ServerSettings): SettingsTarget {
