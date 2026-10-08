@@ -84,6 +84,8 @@ export const ChatHeader = memo(function ChatHeader({
   onNewThreadInProject,
   onOpenProjectSettings,
 }: ChatHeaderProps) {
+  const [draftTitle, setDraftTitle] = useState(isServerThread ? undefined : activeThreadTitle);
+  if (!isServerThread && draftTitle !== activeThreadTitle) setDraftTitle(activeThreadTitle);
   const activeProjectName = activeProject?.title;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const activeThreadRef = useMemo(
@@ -336,7 +338,14 @@ export const ChatHeader = memo(function ChatHeader({
                 }
               >
                 <h2 className="min-w-0">
-                  <TitleSlotRoll regenerating={isRegeneratingTitle}>
+                  <TitleSlotRoll
+                    regenerating={isRegeneratingTitle}
+                    from={
+                      draftTitle === undefined ? undefined : (
+                        <WorkspaceBreadcrumbText>{draftTitle}</WorkspaceBreadcrumbText>
+                      )
+                    }
+                  >
                     <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
                   </TitleSlotRoll>
                 </h2>

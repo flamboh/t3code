@@ -6,14 +6,22 @@ type Phase = "idle" | "parked" | "rolling" | "landing";
 
 export function TitleSlotRoll({
   regenerating,
+  from,
   children,
 }: {
   regenerating: boolean;
+  from?: ReactNode;
   children: ReactNode;
 }) {
-  const [phase, setPhase] = useState<Phase>(regenerating ? "parked" : "idle");
+  const [phase, setPhase] = useState<Phase>(
+    regenerating ? (from === undefined ? "parked" : "rolling") : "idle",
+  );
+  const [outgoing, setOutgoing] = useState(regenerating ? from : undefined);
   if (regenerating && (phase === "idle" || phase === "landing")) setPhase("rolling");
-  if (!regenerating && (phase === "rolling" || phase === "parked")) setPhase("landing");
+  if (!regenerating && (phase === "rolling" || phase === "parked")) {
+    setPhase("landing");
+    setOutgoing(undefined);
+  }
 
   if (phase === "idle") return children;
 
@@ -31,7 +39,7 @@ export function TitleSlotRoll({
           if (event.target === event.currentTarget && phase === "landing") setPhase("idle");
         }}
       >
-        <span className="block truncate">{children}</span>
+        <span className="block truncate">{outgoing ?? children}</span>
         <span
           aria-hidden
           ref={observeVisibleAnimation}
