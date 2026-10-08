@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 
 import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 
-type Phase = "idle" | "rolling" | "landing";
+type Phase = "idle" | "parked" | "rolling" | "landing";
 
 export function TitleSlotRoll({
   regenerating,
@@ -11,9 +11,9 @@ export function TitleSlotRoll({
   regenerating: boolean;
   children: ReactNode;
 }) {
-  const [phase, setPhase] = useState<Phase>(regenerating ? "rolling" : "idle");
-  if (regenerating && phase !== "rolling") setPhase("rolling");
-  if (!regenerating && phase === "rolling") setPhase("landing");
+  const [phase, setPhase] = useState<Phase>(regenerating ? "parked" : "idle");
+  if (regenerating && (phase === "idle" || phase === "landing")) setPhase("rolling");
+  if (!regenerating && (phase === "rolling" || phase === "parked")) setPhase("landing");
 
   if (phase === "idle") return children;
 
@@ -21,9 +21,11 @@ export function TitleSlotRoll({
     <span className="block overflow-hidden">
       <span
         className={
-          phase === "rolling"
-            ? "title-slot-roll-out relative block"
-            : "title-slot-roll-in relative block"
+          phase === "parked"
+            ? "relative block -translate-y-full"
+            : phase === "rolling"
+              ? "title-slot-roll-out relative block"
+              : "title-slot-roll-in relative block"
         }
         onAnimationEnd={(event) => {
           if (event.target === event.currentTarget && phase === "landing") setPhase("idle");
