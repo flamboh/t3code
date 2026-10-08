@@ -129,6 +129,7 @@ export const ChatHeader = memo(function ChatHeader({
     )
       return;
     renameCommittedRef.current = false;
+    setDraftTitle(undefined);
     setRenaming({
       environmentId: activeThreadEnvironmentId,
       threadId: activeThreadId,
