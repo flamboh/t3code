@@ -84,8 +84,16 @@ export const ChatHeader = memo(function ChatHeader({
   onNewThreadInProject,
   onOpenProjectSettings,
 }: ChatHeaderProps) {
-  const [draftTitle, setDraftTitle] = useState(isServerThread ? undefined : activeThreadTitle);
-  if (!isServerThread && draftTitle !== activeThreadTitle) setDraftTitle(activeThreadTitle);
+  const [draftTitle, setDraftTitle] = useState(
+    isServerThread ? undefined : { threadId: activeThreadId, title: activeThreadTitle },
+  );
+  if (
+    !isServerThread &&
+    (draftTitle?.threadId !== activeThreadId || draftTitle.title !== activeThreadTitle)
+  ) {
+    setDraftTitle({ threadId: activeThreadId, title: activeThreadTitle });
+  }
+  const rollFromTitle = draftTitle?.threadId === activeThreadId ? draftTitle.title : undefined;
   const activeProjectName = activeProject?.title;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const activeThreadRef = useMemo(
@@ -342,8 +350,8 @@ export const ChatHeader = memo(function ChatHeader({
                   <TitleSlotRoll
                     regenerating={isRegeneratingTitle}
                     from={
-                      draftTitle === undefined ? undefined : (
-                        <WorkspaceBreadcrumbText>{draftTitle}</WorkspaceBreadcrumbText>
+                      rollFromTitle === undefined ? undefined : (
+                        <WorkspaceBreadcrumbText>{rollFromTitle}</WorkspaceBreadcrumbText>
                       )
                     }
                   >
