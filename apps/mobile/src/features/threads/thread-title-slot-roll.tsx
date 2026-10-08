@@ -16,6 +16,7 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { AppText as Text } from "../../components/AppText";
+import { cn } from "../../lib/cn";
 
 const ROLL_TIMING = {
   duration: 400,
@@ -59,7 +60,7 @@ function SlotDot(props: { readonly delay: number; readonly className: string }) 
   const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
   return (
     <Animated.View style={style}>
-      <Text className={props.className}>•</Text>
+      <Text className={cn("text-base", props.className)}>•</Text>
     </Animated.View>
   );
 }
@@ -74,8 +75,7 @@ export function ThreadTitleSlotRoll(props: {
       <LayoutAnimationConfig skipEntering>
         {props.regenerating ? (
           <Animated.View key="dots" entering={rollIn} exiting={rollOut}>
-            <View className="opacity-0">{props.children}</View>
-            <View className="absolute inset-0 flex-row items-center gap-1">
+            <View className="flex-row items-center gap-1">
               <SlotDot delay={0} className={props.dotClassName} />
               <SlotDot delay={150} className={props.dotClassName} />
               <SlotDot delay={300} className={props.dotClassName} />
