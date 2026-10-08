@@ -6,7 +6,7 @@ import {
   type ServerSettings,
   type WorktreeSubmodules,
 } from "@t3tools/contracts";
-import type { ReactNode } from "react";
+import { createContext, use, useState, type ReactNode } from "react";
 import { CheckIcon, LayersIcon } from "lucide-react";
 import * as Equal from "effect/Equal";
 
@@ -16,8 +16,8 @@ import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { resolveEnvModeLabel, WORKTREE_SUBMODULES_LABELS } from "../BranchToolbar.logic";
 import { PULL_REQUEST_MERGE_METHOD_LABELS } from "../pullRequest/pullRequestDetail.logic";
 import { Button, InlineButton } from "../ui/button";
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { Popover, PopoverCreateHandle, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { Tooltip, TooltipCreateHandle, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { ProjectOverrideEntry, ScopedSettingsTarget } from "./scopedSettings";
 import { isProjectScopedSettingKey } from "./scopedSettings";
 
@@ -171,25 +171,30 @@ interface SettingInheritanceDetailsProps {
   onClearOverrides?: (entries: readonly ProjectOverrideEntry[]) => void;
 }
 
+const SettingInheritanceHandlesContext = createContext<{
+  popover: ReturnType<typeof PopoverCreateHandle<SettingInheritanceDetailsProps>>;
+  tooltip: ReturnType<typeof TooltipCreateHandle<string>>;
+} | null>(null);
+
 export function SettingInheritancePopover({ children }: { children: ReactNode }) {
+  const [handles] = useState(() => ({
+    popover: PopoverCreateHandle<SettingInheritanceDetailsProps>(),
+    tooltip: TooltipCreateHandle<string>(),
+  }));
   return (
-    <Popover<SettingInheritanceDetailsProps>>
-      {({ payload }) => (
-        <>
-          <Tooltip<string>>
-            {({ payload: summary }) => (
-              <>
-                {children}
-                <TooltipPopup side="top">{summary}</TooltipPopup>
-              </>
-            )}
-          </Tooltip>
+    <SettingInheritanceHandlesContext value={handles}>
+      {children}
+      <Popover handle={handles.popover}>
+        {({ payload }) => (
           <PopoverPopup align="start" width="md" padding="none">
             {payload ? <SettingInheritanceDetails {...payload} /> : null}
           </PopoverPopup>
-        </>
-      )}
-    </Popover>
+        )}
+      </Popover>
+      <Tooltip handle={handles.tooltip}>
+        {({ payload: summary }) => <TooltipPopup side="top">{summary}</TooltipPopup>}
+      </Tooltip>
+    </SettingInheritanceHandlesContext>
   );
 }
 
@@ -315,17 +320,21 @@ export function SettingInheritance({
   state: SettingInheritanceState;
   summary: string;
 }) {
+  const handles = use(SettingInheritanceHandlesContext);
   const key = keys[0];
   if (!key || targets.length === 0) return null;
+  if (!handles) throw new Error("SettingInheritance requires SettingInheritancePopover");
   const overrideSummary =
     overridingProjects.length > 0
       ? `${summary} · ${overridingProjects.length} project ${overridingProjects.length === 1 ? "override" : "overrides"}`
       : summary;
   return (
     <TooltipTrigger
+      handle={handles.tooltip}
       payload={overrideSummary}
       render={
         <PopoverTrigger
+          handle={handles.popover}
           payload={{ targets, environments, keys, overridingProjects, onClearOverrides }}
           render={
             <Button
