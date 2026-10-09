@@ -19,6 +19,7 @@ import { Button, InlineButton } from "../ui/button";
 import { Popover, PopoverCreateHandle, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipCreateHandle, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { ProjectOverrideEntry, ScopedSettingsTarget } from "./scopedSettings";
+import { useSharedPopup, type SharedPopup } from "./useSharedPopup";
 import { isProjectScopedSettingKey } from "./scopedSettings";
 
 interface InheritanceLayer {
@@ -173,25 +174,39 @@ interface SettingInheritanceDetailsProps {
 
 const SettingInheritanceHandlesContext = createContext<{
   popover: ReturnType<typeof PopoverCreateHandle<SettingInheritanceDetailsProps>>;
+  popoverTriggerRef: SharedPopup["triggerRef"];
   tooltip: ReturnType<typeof TooltipCreateHandle<string>>;
+  tooltipTriggerRef: SharedPopup["triggerRef"];
 } | null>(null);
 
 export function SettingInheritancePopover({ children }: { children: ReactNode }) {
+  const popoverPopup = useSharedPopup();
+  const tooltipPopup = useSharedPopup();
   const [handles] = useState(() => ({
     popover: PopoverCreateHandle<SettingInheritanceDetailsProps>(),
+    popoverTriggerRef: popoverPopup.triggerRef,
     tooltip: TooltipCreateHandle<string>(),
+    tooltipTriggerRef: tooltipPopup.triggerRef,
   }));
   return (
     <SettingInheritanceHandlesContext value={handles}>
       {children}
-      <Popover handle={handles.popover}>
+      <Popover
+        handle={handles.popover}
+        actionsRef={popoverPopup.actionsRef}
+        onOpenChange={popoverPopup.onOpenChange}
+      >
         {({ payload }) => (
           <PopoverPopup align="start" width="md" padding="none">
             {payload ? <SettingInheritanceDetails {...payload} /> : null}
           </PopoverPopup>
         )}
       </Popover>
-      <Tooltip handle={handles.tooltip}>
+      <Tooltip
+        handle={handles.tooltip}
+        actionsRef={tooltipPopup.actionsRef}
+        onOpenChange={tooltipPopup.onOpenChange}
+      >
         {({ payload: summary }) => <TooltipPopup side="top">{summary}</TooltipPopup>}
       </Tooltip>
     </SettingInheritanceHandlesContext>
@@ -324,17 +339,20 @@ export function SettingInheritance({
   const key = keys[0];
   if (!key || targets.length === 0) return null;
   if (!handles) throw new Error("SettingInheritance requires SettingInheritancePopover");
+  const { popover, popoverTriggerRef, tooltip, tooltipTriggerRef } = handles;
   const overrideSummary =
     overridingProjects.length > 0
       ? `${summary} · ${overridingProjects.length} project ${overridingProjects.length === 1 ? "override" : "overrides"}`
       : summary;
   return (
     <TooltipTrigger
-      handle={handles.tooltip}
+      handle={tooltip}
+      ref={tooltipTriggerRef}
       payload={overrideSummary}
       render={
         <PopoverTrigger
-          handle={handles.popover}
+          handle={popover}
+          ref={popoverTriggerRef}
           payload={{ targets, environments, keys, overridingProjects, onClearOverrides }}
           render={
             <Button

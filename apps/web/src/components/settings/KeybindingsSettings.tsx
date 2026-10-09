@@ -16,6 +16,8 @@ import {
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
+  createContext,
+  use,
   useCallback,
   useEffect,
   useMemo,
@@ -73,6 +75,7 @@ import {
   whenNodeRemoveLabel,
 } from "./KeybindingsSettings.logic";
 import { SettingsGroup } from "./SettingsGroup";
+import { useSharedPopup, type SharedPopup } from "./useSharedPopup";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { keybindingSearchAnchorId, searchableSetting } from "./settingsSearch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -846,12 +849,20 @@ function KeybindingKeyControl({
   );
 }
 
+const WhenClauseTriggerRefContext = createContext<SharedPopup["triggerRef"] | null>(null);
+
 function WhenClausePopover({ children }: { children: ReactNode }) {
+  const popup = useSharedPopup();
   return (
-    <Popover<WhenExpressionBuilderProps>>
+    <Popover<WhenExpressionBuilderProps>
+      actionsRef={popup.actionsRef}
+      onOpenChange={popup.onOpenChange}
+    >
       {({ payload }) => (
         <>
-          {children}
+          <WhenClauseTriggerRefContext value={popup.triggerRef}>
+            {children}
+          </WhenClauseTriggerRefContext>
           <PopoverContent align="start" sideOffset={6}>
             {payload ? <WhenExpressionBuilder {...payload} /> : null}
           </PopoverContent>
@@ -877,8 +888,10 @@ function WhenClauseControl({
   onChange: (value: KeybindingWhenNode | undefined) => void;
   onValidityChange: (valid: boolean) => void;
 }) {
+  const triggerRef = use(WhenClauseTriggerRefContext);
   return (
     <PopoverTrigger
+      ref={triggerRef}
       payload={
         { value, variables, onChange, onValidityChange } satisfies WhenExpressionBuilderProps
       }
