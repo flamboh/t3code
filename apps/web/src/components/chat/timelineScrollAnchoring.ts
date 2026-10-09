@@ -162,8 +162,6 @@ export interface RememberedTimelinePosition {
   };
 }
 
-// LegendList keeps measurements from every thread the mounted list has shown,
-// so only the given rows count toward this thread's estimate.
 export function averageMeasuredRowSize(
   rows: ReadonlyArray<{ readonly id: string }>,
   measuredSizes: ReadonlyMap<string, number>,
