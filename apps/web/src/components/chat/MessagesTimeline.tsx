@@ -179,6 +179,7 @@ import { ChangedFilesCard } from "./ChangedFilesTree";
 import { useFileContextMenuHandler } from "../../fileContextMenu";
 import { useProject, useThreadShell } from "../../state/entities";
 import {
+  averageMeasuredRowSize,
   CHAT_TIMELINE_ANCHOR_OFFSET,
   readTimelinePosition,
   rememberTimelinePosition,
@@ -1204,17 +1205,14 @@ const ConversationTimeline = memo(function ConversationTimeline({
       const element = listRef.current?.getScrollableNode();
       if (row && element) {
         const viewportRect = element.getBoundingClientRect();
-        const itemSizes = Object.values(state.getAverageItemSizes());
-        const measuredItemCount = itemSizes.reduce((sum, item) => sum + item.count, 0);
-        const measuredItemSize =
-          itemSizes.reduce((sum, item) => sum + item.average * item.count, 0) / measuredItemCount;
+        const measuredItemSize = averageMeasuredRowSize(rows, state.sizes);
         rememberTimelinePosition(listIdentityKey, {
           ...position,
           // DOM geometry includes the header and the virtualizer's layout adjustment.
           offsetWithinRow: viewportRect.top - row.getBoundingClientRect().top,
           scrollOffset: element.scrollTop,
           atEnd: isAtEnd,
-          ...(measuredItemCount > 0
+          ...(measuredItemSize !== undefined
             ? {
                 itemSize: {
                   viewportWidth: Math.round(viewportRect.width),

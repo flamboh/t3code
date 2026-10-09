@@ -162,6 +162,23 @@ export interface RememberedTimelinePosition {
   };
 }
 
+// LegendList keeps measurements from every thread the mounted list has shown,
+// so only the given rows count toward this thread's estimate.
+export function averageMeasuredRowSize(
+  rows: ReadonlyArray<{ readonly id: string }>,
+  measuredSizes: ReadonlyMap<string, number>,
+) {
+  let total = 0;
+  let count = 0;
+  for (const row of rows) {
+    const size = measuredSizes.get(row.id);
+    if (size === undefined) continue;
+    total += size;
+    count++;
+  }
+  return count > 0 ? total / count : undefined;
+}
+
 // Scoped thread keys keep separate environments independent. Bound the session cache.
 const rememberedTimelinePositions = new Map<string, RememberedTimelinePosition>();
 

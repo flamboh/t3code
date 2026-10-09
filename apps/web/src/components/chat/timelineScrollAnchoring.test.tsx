@@ -1,6 +1,7 @@
 import { MessageId, RunId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import {
+  averageMeasuredRowSize,
   observeTimelineRun,
   getAnchoredTurnMetrics,
   getRowBottom,
@@ -280,5 +281,24 @@ describe("remembered timeline positions", () => {
     expect(readTimelinePosition("scroll-test-a:unvisited")).toBeUndefined();
     rememberTimelinePosition("scroll-test-a:thread-1", following);
     expect(readTimelinePosition("scroll-test-a:thread-1")).toEqual(following);
+  });
+});
+
+describe("averageMeasuredRowSize", () => {
+  it("ignores measurements the retained list kept from previously visited threads", () => {
+    const compactRows = Array.from({ length: 255 }, (_, index) => ({ id: `fold-${index}` }));
+    const longRows = Array.from({ length: 160 }, (_, index) => ({ id: `assistant-${index}` }));
+    const measuredSizes = new Map([
+      ...compactRows.map((row) => [row.id, 30] as const),
+      ...longRows.slice(0, 17).map((row) => [row.id, 300] as const),
+    ]);
+    expect(averageMeasuredRowSize(longRows, measuredSizes)).toBe(300);
+    expect(averageMeasuredRowSize(compactRows, measuredSizes)).toBe(30);
+  });
+
+  it("reports nothing until a current row has been measured", () => {
+    expect(averageMeasuredRowSize([{ id: "unmeasured" }], new Map([["other", 40]]))).toBe(
+      undefined,
+    );
   });
 });
