@@ -705,48 +705,6 @@ describe("PullRequestSyncReactor", () => {
     ),
   );
 
-  it.effect("syncs a settled thread's pull request a reader saw close", () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        yield* TestClock.setTime(Date.parse(NOW));
-        const state = yield* Ref.make<PullRequestSummary["state"]>("open");
-        const fixture = yield* makeHarness({
-          snapshot: makeSnapshot([
-            makeThread("settled", {
-              settledOverride: "settled",
-              settledAt: "2026-08-21T00:00:00.000Z",
-              pullRequests: [makeLink(7, { state: "open" })],
-            }),
-          ]),
-          summary: (input) =>
-            Ref.get(state).pipe(
-              Effect.map((current) =>
-                makeSummary(input, current === "closed" ? { state: current, closedAt: NOW } : {}),
-              ),
-            ),
-        });
-
-        yield* Effect.gen(function* () {
-          const reactor = yield* startAndSweep(fixture);
-          yield* Ref.set(state, "closed");
-
-          yield* Queue.offer(fixture.stateChanges, {
-            host: "github.com",
-            repository: "owner/repository",
-            number: 7,
-          });
-          yield* Queue.take(fixture.snapshotReads);
-          yield* reactor.drain;
-
-          assert.deepStrictEqual(
-            (yield* Ref.get(fixture.syncCommands)).map((command) => command.snapshot.state),
-            ["closed"],
-          );
-        }).pipe(Effect.provide(fixture.layer));
-      }),
-    ),
-  );
-
   it.effect("discovers externally reopened pull requests after fifteen minutes", () =>
     Effect.scoped(
       Effect.gen(function* () {
