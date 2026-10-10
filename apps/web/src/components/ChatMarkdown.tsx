@@ -106,6 +106,7 @@ import { parseComposerContextHref } from "@t3tools/shared/composerContextReferen
 import { parseThreadLinkHref } from "@t3tools/shared/threadLinks";
 import { AssistantCitationChip } from "./chat/AssistantCitationChip";
 import { MarkdownThreadLink } from "./chat/MarkdownThreadLink";
+import { RunShellCommandDialog } from "./chat/RunShellCommandDialog";
 import { isWindowsAbsolutePath } from "@t3tools/shared/path";
 import {
   artifactTemplateFromHastProperties,
@@ -865,10 +866,13 @@ function MarkdownCodeBlock({
 }) {
   const [copied, setCopied] = useState(false);
   const [wrapped, setWrapped] = useState(readInitialWordWrapSetting);
+  const [confirmingRun, setConfirmingRun] = useState(false);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wrapLabel = wrapped ? "Disable line wrap" : "Wrap lines";
   const copyLabel = copied ? "Copied" : "Copy code";
   const command = code.trim();
+  const lineCount = command.split("\n").length;
+  const runLabel = lineCount > 1 ? `Run ${lineCount} lines in terminal` : "Run in terminal";
   const canRun =
     onRunShellCommand !== undefined &&
     !isStreaming &&
@@ -876,9 +880,10 @@ function MarkdownCodeBlock({
     code.endsWith("\n") &&
     command.length > 0 &&
     !command.endsWith("\\") &&
+    !/^[$>] /m.test(command) &&
     // Control and invisible format characters (bidi overrides, zero-width) can
     // make the rendered command differ from what the terminal would receive.
-    !/[\p{Cc}\p{Cf}]/u.test(code.slice(0, -1));
+    !/[\p{Cc}\p{Cf}]/u.test(code.slice(0, -1).replace(/[\n\t]/g, ""));
 
   const handleCopy = useCallback(() => {
     if (typeof navigator === "undefined" || navigator.clipboard == null) {
@@ -987,14 +992,20 @@ function MarkdownCodeBlock({
                     type="button"
                     variant="ghost-muted"
                     size="icon-xs"
-                    onClick={() => onRunShellCommand(command)}
-                    aria-label="Run in terminal"
+                    onClick={() => {
+                      if (lineCount > 1) {
+                        setConfirmingRun(true);
+                      } else {
+                        onRunShellCommand(command);
+                      }
+                    }}
+                    aria-label={runLabel}
                   />
                 }
               >
                 <PlayIcon className="size-3" />
               </TooltipTrigger>
-              <TooltipPopup side="top">Run in terminal</TooltipPopup>
+              <TooltipPopup side="top">{runLabel}</TooltipPopup>
             </Tooltip>
           ) : null}
           {copyButton}
@@ -1002,6 +1013,15 @@ function MarkdownCodeBlock({
       }
     >
       {children}
+      {confirmingRun && onRunShellCommand ? (
+        <RunShellCommandDialog
+          command={command}
+          onClose={() => setConfirmingRun(false)}
+          onRun={onRunShellCommand}
+        >
+          {children}
+        </RunShellCommandDialog>
+      ) : null}
     </MarkdownCodeBlockFrame>
   );
 }
