@@ -92,7 +92,7 @@ describe("new thread project environment", () => {
   );
 
   it.each([{}, { defaultEnvironmentId: null }])(
-    "preserves an offline context for Automatic %j",
+    "prefers a connected copy over an offline context for Automatic %j",
     (override) => {
       expect(
         resolveNewThreadProjectRef({
@@ -102,11 +102,62 @@ describe("new thread project environment", () => {
           connectedEnvironmentIds: new Set([mac.environmentId]),
         }),
       ).toEqual({
-        projectRef: padRef,
+        projectRef: macRef,
         environmentSelection: "auto",
       });
     },
   );
+
+  it("keeps a manual offline pick ahead of connected copies", () => {
+    expect(
+      resolveNewThreadProjectRef({
+        ...input,
+        manualProjectRef: padRef,
+        connectedEnvironmentIds: new Set([mac.environmentId]),
+      }),
+    ).toEqual({ projectRef: padRef, environmentSelection: "manual" });
+  });
+
+  it("uses the first connected copy when context and primary are offline", () => {
+    const server = { environmentId: EnvironmentId.make("server"), id: ProjectId.make("server") };
+    expect(
+      resolveNewThreadProjectRef({
+        ...input,
+        settingsByEnvironment: settings(),
+        members: [mac, pad, server],
+        contextProjectRef: padRef,
+        connectedEnvironmentIds: new Set([server.environmentId]),
+      }),
+    ).toEqual({
+      projectRef: { environmentId: server.environmentId, projectId: server.id },
+      environmentSelection: "auto",
+    });
+  });
+
+  it("keeps context, primary, then member order when nothing is connected", () => {
+    const offline = {
+      ...input,
+      settingsByEnvironment: settings(),
+      connectedEnvironmentIds: new Set<EnvironmentId>(),
+    };
+    expect(
+      resolveNewThreadProjectRef({ ...offline, contextProjectRef: padRef }).projectRef,
+    ).toEqual(padRef);
+    expect(
+      resolveNewThreadProjectRef({
+        ...offline,
+        contextProjectRef: null,
+        primaryEnvironmentId: pad.environmentId,
+      }).projectRef,
+    ).toEqual(padRef);
+    expect(
+      resolveNewThreadProjectRef({
+        ...offline,
+        contextProjectRef: null,
+        primaryEnvironmentId: null,
+      }).projectRef,
+    ).toEqual(macRef);
+  });
 
   it("falls back to the context machine for another project, then primary, then first member", () => {
     const automatic = { ...input, settingsByEnvironment: settings() };
