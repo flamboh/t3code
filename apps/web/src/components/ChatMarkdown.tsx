@@ -871,6 +871,7 @@ function MarkdownCodeBlock({
   const wrapLabel = wrapped ? "Disable line wrap" : "Wrap lines";
   const copyLabel = copied ? "Copied" : "Copy code";
   const command = code.trim();
+  if (confirmingCommand !== null && confirmingCommand !== command) setConfirmingCommand(null);
   const lineCount = command.split("\n").length;
   const runLabel = lineCount > 1 ? `Run ${lineCount} lines in terminal` : "Run in terminal";
   const canRun =
@@ -883,7 +884,7 @@ function MarkdownCodeBlock({
     !/^[$>] /m.test(command) &&
     // Control and invisible format characters (bidi overrides, zero-width) can
     // make the rendered command differ from what the terminal would receive.
-    !/[\p{Cc}\p{Cf}]/u.test(code.slice(0, -1).replace(/[\n\t]/g, ""));
+    !/[\p{Cc}\p{Cf}]/u.test(code.slice(0, -1).replace(lineCount > 1 ? /[\n\t]/g : /\n/g, ""));
 
   const handleCopy = useCallback(() => {
     if (typeof navigator === "undefined" || navigator.clipboard == null) {

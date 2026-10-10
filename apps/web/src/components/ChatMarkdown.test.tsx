@@ -340,10 +340,12 @@ describe("ChatMarkdown shell scripts", () => {
     await click(playButton());
     await renderScript("echo one\necho three");
     expect(dialog()).toBeNull();
+    await renderScript("echo one\necho two");
+    expect(dialog()).toBeNull();
     expect(onRunShellCommand).not.toHaveBeenCalled();
   });
 
-  it.each(["echo one\necho two\\", "$ echo one\noutput", "echo one\necho \u202etwo"])(
+  it.each(["echo one\necho two\\", "$ echo one\noutput", "echo one\necho \u202etwo", "echo\tone"])(
     "does not offer to run %j",
     async (script) => {
       await renderScript(script);
