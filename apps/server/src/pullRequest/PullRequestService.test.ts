@@ -4974,17 +4974,13 @@ it.effect("announces state a detail read sees first or newly", () =>
 
 it.effect("announces a routed reading's new state without trusting it", () =>
   Effect.gen(function* () {
+    let detail = { state: "open" as "open" | "closed", updatedAt: "2026-07-02T00:00:00Z" };
     const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
     const service = yield* makeService({
       projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
       providers: [
         fakeProvider("github", {
-          getChangeRequest: () =>
-            Effect.succeed({
-              ...hostedChangeRequest("body"),
-              state: "closed",
-              updatedAt: "2026-07-03T00:00:00Z",
-            }),
+          getChangeRequest: () => Effect.succeed({ ...hostedChangeRequest("body"), ...detail }),
         }),
       ],
     });
@@ -4992,17 +4988,26 @@ it.effect("announces a routed reading's new state without trusting it", () =>
     yield* Stream.runForEach(yield* service.subscribeStateChanges, (key) =>
       Effect.sync(() => announced.push(`${key.host}/${key.repository}#${key.number}`)),
     ).pipe(Effect.forkChild({ startImmediately: true }));
-    const note = (state: "closed" | "merged") =>
+    const note = (state: "open" | "closed" | "merged") =>
       service.noteReading({ reference, state }).pipe(Effect.andThen(Effect.yieldNow));
+    const readDetail = Effect.gen(function* () {
+      yield* service.invalidate({ reference });
+      yield* service.detail(reference);
+      yield* Effect.yieldNow;
+    });
 
+    yield* readDetail;
     yield* note("closed");
     yield* note("closed");
-    assert.deepStrictEqual(announced, ["github.com/acme/web#1"]);
+    assert.strictEqual(announced.length, 2);
+
+    yield* note("open");
+    assert.strictEqual(announced.length, 3);
 
     yield* note("merged");
-    yield* service.detail(reference);
-    yield* Effect.yieldNow;
-    assert.strictEqual(announced.length, 3);
+    detail = { state: "closed", updatedAt: "2026-07-03T00:00:00Z" };
+    yield* readDetail;
+    assert.strictEqual(announced.length, 5);
   }),
 );
 

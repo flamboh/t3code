@@ -3131,9 +3131,7 @@ export const make = Effect.gen(function* () {
       Effect.flatMap((ref) =>
         Effect.suspend(() => {
           const scope = refScope(ref);
-          if (hintedStates.get(scope) === state || detailStates.get(scope)?.state === state) {
-            return Effect.void;
-          }
+          if (hintedStates.get(scope) === state) return Effect.void;
           hintedStates.delete(scope);
           if (hintedStates.size >= REF_EPOCH_CAPACITY) {
             const oldest = hintedStates.keys().next().value;
