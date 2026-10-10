@@ -179,9 +179,10 @@ import { ChangedFilesCard } from "./ChangedFilesTree";
 import { useFileContextMenuHandler } from "../../fileContextMenu";
 import { useProject, useThreadShell } from "../../state/entities";
 import {
-  averageMeasuredRowSize,
   CHAT_TIMELINE_ANCHOR_OFFSET,
+  medianMeasuredRowSize,
   readTimelinePosition,
+  rememberTimelineItemSize,
   rememberTimelinePosition,
   timelineContentOverflowsViewport,
 } from "./timelineScrollAnchoring";
@@ -648,7 +649,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     canvas.container.width > 0;
   const estimatedItemSize =
     rememberedItemSize && rememberedItemSize.viewportWidth === canvas?.container.width
-      ? rememberedItemSize.average
+      ? rememberedItemSize.median
       : 90;
   const [expandedRunIds, setExpandedRunIds] = useState<ReadonlySet<RunId>>(
     () => rememberedPosition?.disclosures?.runs ?? new Set(),
@@ -1204,22 +1205,12 @@ const ConversationTimeline = memo(function ConversationTimeline({
       const row = index === undefined ? undefined : state.elementAtIndex(index);
       const element = listRef.current?.getScrollableNode();
       if (row && element) {
-        const viewportRect = element.getBoundingClientRect();
-        const measuredItemSize = averageMeasuredRowSize(rows, state.sizes);
         rememberTimelinePosition(listIdentityKey, {
           ...position,
           // DOM geometry includes the header and the virtualizer's layout adjustment.
-          offsetWithinRow: viewportRect.top - row.getBoundingClientRect().top,
+          offsetWithinRow: element.getBoundingClientRect().top - row.getBoundingClientRect().top,
           scrollOffset: element.scrollTop,
           atEnd: isAtEnd,
-          ...(measuredItemSize !== undefined
-            ? {
-                itemSize: {
-                  viewportWidth: Math.round(viewportRect.width),
-                  average: measuredItemSize,
-                },
-              }
-            : {}),
           disclosures: {
             runs: paintedExpandedRunIds,
             workGroups: paintedExpandedWorkGroupIds,
@@ -1290,6 +1281,24 @@ const ConversationTimeline = memo(function ConversationTimeline({
     const frame = requestAnimationFrame(handleScroll);
     return () => cancelAnimationFrame(frame);
   }, [handleScroll, rows.length]);
+
+  const canvasWidth = canvas?.container.width;
+  const departingTimelineRef = useRef({ rows, canvasWidth });
+  useLayoutEffect(() => {
+    departingTimelineRef.current = { rows, canvasWidth };
+  });
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!timelineViewportElement || !list) return;
+    return () => {
+      const { rows: departingRows, canvasWidth: viewportWidth } = departingTimelineRef.current;
+      const sizes = list.getState?.()?.sizes;
+      const median = sizes && medianMeasuredRowSize(departingRows, sizes);
+      if (viewportWidth && median !== undefined) {
+        rememberTimelineItemSize(listIdentityKey, { viewportWidth, median });
+      }
+    };
+  }, [listIdentityKey, listRef, timelineViewportElement]);
 
   useEffect(() => {
     if (!timelineViewportElement) {

@@ -149,7 +149,7 @@ export interface RememberedTimelinePosition {
   readonly atEnd: boolean;
   readonly itemSize?: {
     readonly viewportWidth: number;
-    readonly average: number;
+    readonly median: number;
   };
   readonly disclosures?: {
     readonly runs: ReadonlySet<RunId>;
@@ -162,19 +162,14 @@ export interface RememberedTimelinePosition {
   };
 }
 
-export function averageMeasuredRowSize(
+export function medianMeasuredRowSize(
   rows: ReadonlyArray<{ readonly id: string }>,
   measuredSizes: ReadonlyMap<string, number>,
 ) {
-  let total = 0;
-  let count = 0;
-  for (const row of rows) {
-    const size = measuredSizes.get(row.id);
-    if (size === undefined) continue;
-    total += size;
-    count++;
-  }
-  return count > 0 ? total / count : undefined;
+  const sizes = rows
+    .flatMap((row) => measuredSizes.get(row.id) ?? [])
+    .toSorted((left, right) => left - right);
+  return sizes[Math.floor(sizes.length / 2)];
 }
 
 // Scoped thread keys keep separate environments independent. Bound the session cache.
@@ -191,4 +186,12 @@ export function rememberTimelinePosition(threadKey: string, position: Remembered
     const oldest = rememberedTimelinePositions.keys().next().value;
     if (oldest !== undefined) rememberedTimelinePositions.delete(oldest);
   }
+}
+
+export function rememberTimelineItemSize(
+  threadKey: string,
+  itemSize: NonNullable<RememberedTimelinePosition["itemSize"]>,
+) {
+  const position = rememberedTimelinePositions.get(threadKey);
+  if (position) rememberedTimelinePositions.set(threadKey, { ...position, itemSize });
 }

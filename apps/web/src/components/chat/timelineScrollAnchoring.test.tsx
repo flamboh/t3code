@@ -1,7 +1,7 @@
 import { MessageId, RunId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import {
-  averageMeasuredRowSize,
+  medianMeasuredRowSize,
   observeTimelineRun,
   getAnchoredTurnMetrics,
   getRowBottom,
@@ -284,7 +284,7 @@ describe("remembered timeline positions", () => {
   });
 });
 
-describe("averageMeasuredRowSize", () => {
+describe("medianMeasuredRowSize", () => {
   it("ignores measurements the retained list kept from previously visited threads", () => {
     const compactRows = Array.from({ length: 255 }, (_, index) => ({ id: `fold-${index}` }));
     const longRows = Array.from({ length: 160 }, (_, index) => ({ id: `assistant-${index}` }));
@@ -292,13 +292,23 @@ describe("averageMeasuredRowSize", () => {
       ...compactRows.map((row) => [row.id, 30] as const),
       ...longRows.slice(0, 17).map((row) => [row.id, 300] as const),
     ]);
-    expect(averageMeasuredRowSize(longRows, measuredSizes)).toBe(300);
-    expect(averageMeasuredRowSize(compactRows, measuredSizes)).toBe(30);
+    expect(medianMeasuredRowSize(longRows, measuredSizes)).toBe(300);
+    expect(medianMeasuredRowSize(compactRows, measuredSizes)).toBe(30);
+  });
+
+  it("is not inflated by a few very tall rows", () => {
+    const rows = ["a", "b", "c", "d", "e"].map((id) => ({ id }));
+    const measuredSizes = new Map([
+      ["a", 60],
+      ["b", 3000],
+      ["c", 64],
+      ["d", 2400],
+      ["e", 58],
+    ]);
+    expect(medianMeasuredRowSize(rows, measuredSizes)).toBe(64);
   });
 
   it("reports nothing until a current row has been measured", () => {
-    expect(averageMeasuredRowSize([{ id: "unmeasured" }], new Map([["other", 40]]))).toBe(
-      undefined,
-    );
+    expect(medianMeasuredRowSize([{ id: "unmeasured" }], new Map([["other", 40]]))).toBe(undefined);
   });
 });
