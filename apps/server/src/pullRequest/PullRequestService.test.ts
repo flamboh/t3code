@@ -5000,14 +5000,17 @@ it.effect("announces a routed reading's new state without trusting it", () =>
     yield* note("closed");
     yield* note("closed");
     assert.strictEqual(announced.length, 2);
+    yield* TestClock.adjust("5 minutes");
+    yield* note("closed");
+    assert.strictEqual(announced.length, 3);
 
     yield* note("open");
-    assert.strictEqual(announced.length, 3);
+    assert.strictEqual(announced.length, 4);
 
     yield* note("merged");
     detail = { state: "closed", updatedAt: "2026-07-03T00:00:00Z" };
     yield* readDetail;
-    assert.strictEqual(announced.length, 5);
+    assert.strictEqual(announced.length, 6);
   }),
 );
 

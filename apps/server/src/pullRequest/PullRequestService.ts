@@ -161,6 +161,8 @@ const detailTimeToLive = (state: PullRequestState | undefined) =>
  * page and a watched pull request's change reaches its watch.
  */
 const CHECKS_CACHE_TTL = Duration.seconds(15);
+/** How long a repeated routed hint is skipped, so a wrong one cannot hide a real change for long. */
+const HINT_DEDUPE_MS = 5 * 60 * 1_000;
 const DIFF_CACHE_TTL = Duration.seconds(60);
 /** A commit is content-addressed, so its own diff cannot change under its key. */
 const COMMIT_DIFF_CACHE_TTL = Duration.minutes(10);
@@ -3125,19 +3127,23 @@ export const make = Effect.gen(function* () {
     });
   // The last state each routed reading hinted, kept apart from `detailStates`: an unverified hint
   // must never outrank a reading this environment made itself.
-  const hintedStates = new Map<string, PullRequestState>();
+  const hintedStates = new Map<
+    string,
+    { readonly state: PullRequestState; readonly atMs: number }
+  >();
   const noteReading: PullRequestService["Service"]["noteReading"] = ({ reference, state }) =>
-    canonicalRef(reference).pipe(
-      Effect.flatMap((ref) =>
+    Effect.all([canonicalRef(reference), Clock.currentTimeMillis]).pipe(
+      Effect.flatMap(([ref, nowMs]) =>
         Effect.suspend(() => {
           const scope = refScope(ref);
-          if (hintedStates.get(scope) === state) return Effect.void;
+          const hinted = hintedStates.get(scope);
+          if (hinted?.state === state && nowMs - hinted.atMs < HINT_DEDUPE_MS) return Effect.void;
           hintedStates.delete(scope);
           if (hintedStates.size >= REF_EPOCH_CAPACITY) {
             const oldest = hintedStates.keys().next().value;
             if (oldest !== undefined) hintedStates.delete(oldest);
           }
-          hintedStates.set(scope, state);
+          hintedStates.set(scope, { state, atMs: nowMs });
           return ref.host === undefined
             ? Effect.void
             : PubSub.publish(stateChanges, {
