@@ -16,7 +16,7 @@ export function WizardPopup({
 }) {
   return (
     <DialogPopup {...props} className={size === "wide" ? "max-w-3xl" : "max-w-xl"}>
-      <ScrollArea>
+      <ScrollArea className="*:data-[slot=scroll-area-scrollbar]:data-[orientation=vertical]:my-4">
         <div className="flex min-h-0 flex-col">{children}</div>
       </ScrollArea>
     </DialogPopup>
