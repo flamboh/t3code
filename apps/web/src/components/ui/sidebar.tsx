@@ -390,14 +390,19 @@ function SidebarRail({
       sidebarContainer.getBoundingClientRect().width,
       resolvedResizable,
     );
-    const transitionTargets = [
+    const widthTargets = [
       sidebarRoot.querySelector<HTMLElement>("[data-slot='sidebar-gap']"),
       sidebarContainer,
     ].filter((element): element is HTMLElement => element !== null);
-    transitionTargets.forEach((element) => {
+    const applyWidth = (nextWidth: number) => {
+      widthTargets.forEach((element) => {
+        element.style.setProperty("width", `${nextWidth}px`);
+      });
+    };
+    widthTargets.forEach((element) => {
       element.style.setProperty("transition-duration", "0ms");
     });
-    wrapper.style.setProperty("--sidebar-width", `${width}px`);
+    applyWidth(width);
 
     return {
       width,
@@ -416,7 +421,7 @@ function SidebarRail({
             wrapper,
           }) ?? true;
         if (accepted) {
-          wrapper.style.setProperty("--sidebar-width", `${nextWidth}px`);
+          applyWidth(nextWidth);
           width = nextWidth;
         }
         return width;
@@ -434,7 +439,9 @@ function SidebarRail({
         options?.onResize?.(finalWidth);
       },
       cleanup() {
-        transitionTargets.forEach((element) => {
+        wrapper.style.setProperty("--sidebar-width", `${width}px`);
+        widthTargets.forEach((element) => {
+          element.style.removeProperty("width");
           element.style.removeProperty("transition-duration");
         });
       },
