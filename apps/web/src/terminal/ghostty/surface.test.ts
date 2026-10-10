@@ -626,6 +626,7 @@ describe("GhosttyTerminalSurface visibility", () => {
     expect(surface.isAtBottom()).toBe(true);
     expect(harness.renderedSnapshot.rowData[0]?.text).toBe(latest);
     expect(surface.getSelection()).not.toBe("");
+    expect(surface.getSelectionPosition()?.end.y).toBe(39);
   });
 
   it("pastes the terminal selection, and only that, on a Linux middle click", async () => {
