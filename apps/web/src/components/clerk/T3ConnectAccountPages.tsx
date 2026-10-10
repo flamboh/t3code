@@ -14,6 +14,14 @@ const T3ConnectUserProfilePage = lazy(() =>
   })),
 );
 
+function AccountPageFallback({ label }: { readonly label: string }) {
+  return (
+    <p className="py-4 text-xs text-muted-foreground" role="status">
+      Loading {label}…
+    </p>
+  );
+}
+
 /** Custom pages in the Clerk account modal, in menu order. */
 export const T3_CONNECT_ACCOUNT_PAGES = [
   {
@@ -21,7 +29,7 @@ export const T3_CONNECT_ACCOUNT_PAGES = [
     url: "mobile-clients",
     icon: <SmartphoneIcon className="size-4" />,
     content: (
-      <Suspense fallback={null}>
+      <Suspense fallback={<AccountPageFallback label="mobile clients" />}>
         <MobileClientsUserProfilePage />
       </Suspense>
     ),
@@ -31,7 +39,7 @@ export const T3_CONNECT_ACCOUNT_PAGES = [
     url: "t3-connect",
     icon: <ServerIcon className="size-4" />,
     content: (
-      <Suspense fallback={null}>
+      <Suspense fallback={<AccountPageFallback label="T3 Connect" />}>
         <T3ConnectUserProfilePage />
       </Suspense>
     ),
