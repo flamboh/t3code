@@ -42,6 +42,8 @@ import {
   type PullRequestFilesViewedResult,
   type PullRequestDiffResult,
   type PullRequestInvalidateInput,
+  type PullRequestNoteReadingInput,
+  type PullRequestReading,
   type PullRequestListEntry,
   type PullRequestListFilters,
   type PullRequestListInput,
@@ -97,8 +99,6 @@ import * as ViewedFiles from "./pullRequestViewedFiles.ts";
 export interface PullRequestMergeEvent extends PullRequestRef {
   readonly mergedAt: string;
 }
-
-type PullRequestReading = Pick<PullRequestSummary, "state" | "updatedAt" | "observedAt">;
 
 /** Whether `next` is a newer reading of a pull request than `current`. Merged is final. */
 function supersedesReading(current: PullRequestReading | undefined, next: PullRequestReading) {
@@ -244,6 +244,13 @@ export class PullRequestService extends Context.Service<
       never,
       Scope.Scope
     >;
+    /**
+     * A reading of a pull request that a read routed to another environment saw. It joins this
+     * environment's own detail readings, so a new state reaches `subscribeStateChanges`.
+     */
+    readonly noteReading: (
+      input: PullRequestNoteReadingInput,
+    ) => Effect.Effect<void, PullRequestError>;
     readonly subscribeRefreshes: Stream.Stream<number>;
     readonly refreshAfterTurn: (projectId: ProjectId) => Effect.Effect<void>;
     readonly detail: (input: PullRequestRef) => Effect.Effect<PullRequestDetail, PullRequestError>;
@@ -3092,7 +3099,7 @@ export const make = Effect.gen(function* () {
    * fresh merge brings the thread's link and its settlement along, rather than leaving them to
    * the next sync sweep.
    */
-  const noteDetailReading = (ref: PullRequestRef, next: PullRequestSummary) =>
+  const noteDetailReading = (ref: PullRequestRef, next: PullRequestReading) =>
     Effect.suspend(() => {
       const scope = refScope(ref);
       const current = detailStates.get(scope);
@@ -3432,6 +3439,8 @@ export const make = Effect.gen(function* () {
     subscribeStateChanges: PubSub.subscribe(stateChanges).pipe(
       Effect.map((subscription) => Stream.fromSubscription(subscription)),
     ),
+    noteReading: ({ reference, ...reading }) =>
+      canonicalRef(reference).pipe(Effect.flatMap((ref) => noteDetailReading(ref, reading))),
     subscribeRefreshes: SubscriptionRef.changes(pullRequestRefreshes).pipe(
       Stream.filter((revision) => revision > 0),
     ),

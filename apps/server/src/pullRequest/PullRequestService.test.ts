@@ -4972,6 +4972,38 @@ it.effect("announces state a detail read sees first or newly", () =>
   }),
 );
 
+it.effect("announces a new state a routed reading reports", () =>
+  Effect.gen(function* () {
+    const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
+      providers: [
+        fakeProvider("github", {
+          getChangeRequest: () =>
+            Effect.succeed({
+              ...hostedChangeRequest("body"),
+              state: "closed",
+              updatedAt: "2026-07-03T00:00:00Z",
+            }),
+        }),
+      ],
+    });
+    const announced: Array<string> = [];
+    yield* Stream.runForEach(yield* service.subscribeStateChanges, (key) =>
+      Effect.sync(() => announced.push(`${key.host}/${key.repository}#${key.number}`)),
+    ).pipe(Effect.forkChild({ startImmediately: true }));
+
+    yield* service.noteReading({ reference, state: "closed", updatedAt: "2026-07-03T00:00:00Z" });
+    yield* Effect.yieldNow;
+    assert.deepStrictEqual(announced, ["github.com/acme/web#1"]);
+
+    // The environment's own read of the same state adds nothing.
+    yield* service.detail(reference);
+    yield* Effect.yieldNow;
+    assert.strictEqual(announced.length, 1);
+  }),
+);
+
 it.effect("does not let a stale detail reopen overwrite a fresher linked summary", () =>
   Effect.gen(function* () {
     const gate = yield* Deferred.make<void>();

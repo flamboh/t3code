@@ -992,6 +992,60 @@ it.effect.each(
   ),
 );
 
+it.live("tells the origin what an alternate's detail read saw", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const noted = yield* Deferred.make<unknown>();
+      const clientFor = (local: boolean) =>
+        ({
+          [local ? WS_METHODS.pullRequestsRoutingIdentity : WS_METHODS.pullRequestsRouting]: () =>
+            Effect.succeed({
+              host: "github.com",
+              provider: "github",
+              viewer: "maria-rcks",
+              accountId: "123",
+            }),
+          [WS_METHODS.pullRequestsDetail]: () =>
+            local
+              ? Effect.succeed({
+                  projectId: "local-project",
+                  state: "closed",
+                  updatedAt: "2026-10-10T01:52:36Z",
+                  observedAt: 1,
+                })
+              : Effect.never,
+          ...(local
+            ? {}
+            : {
+                [WS_METHODS.pullRequestsNoteReading]: (input: unknown) =>
+                  Deferred.succeed(noted, input).pipe(Effect.asVoid),
+              }),
+        }) as unknown as WsRpcProtocolClient;
+      const { environmentRegistry, supervisor } = yield* makeTestRuntime(
+        clientFor(false),
+        clientFor(true),
+      );
+      const reference = {
+        projectId: ProjectId.make("project-1"),
+        repository: "acme/web",
+        number: 7,
+      };
+      yield* createPullRequestRouter()(WS_METHODS.pullRequestsDetail, reference).pipe(
+        Effect.provideService(EnvironmentRegistry.EnvironmentRegistry, environmentRegistry),
+        Effect.provideService(GitHubRoutingPermissions, trustedRouting),
+        Effect.provideService(RpcPermissionGuard, { authorize: () => Effect.void }),
+        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+      );
+      expect(yield* Deferred.await(noted)).toEqual({
+        reference,
+        state: "closed",
+        updatedAt: "2026-10-10T01:52:36Z",
+        observedAt: 1,
+      });
+    }),
+  ),
+);
+
 it.live("keeps source workspace metadata when an alternate answers a detail read", () =>
   Effect.scoped(
     Effect.gen(function* () {
