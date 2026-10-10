@@ -16,8 +16,6 @@ import {
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
-  createContext,
-  use,
   useCallback,
   useEffect,
   useMemo,
@@ -75,7 +73,6 @@ import {
   whenNodeRemoveLabel,
 } from "./KeybindingsSettings.logic";
 import { SettingsGroup } from "./SettingsGroup";
-import { useSharedPopup, type SharedPopup } from "./useSharedPopup";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { keybindingSearchAnchorId, searchableSetting } from "./settingsSearch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -561,19 +558,17 @@ function WhenExpressionNodeEditor({
   );
 }
 
-interface WhenExpressionBuilderProps {
-  value: KeybindingWhenNode | undefined;
-  variables: ReadonlyArray<WhenVariableOption>;
-  onChange: (value: KeybindingWhenNode | undefined) => void;
-  onValidityChange?: (valid: boolean) => void;
-}
-
 function WhenExpressionBuilder({
   value,
   variables,
   onChange,
   onValidityChange,
-}: WhenExpressionBuilderProps) {
+}: {
+  value: KeybindingWhenNode | undefined;
+  variables: ReadonlyArray<WhenVariableOption>;
+  onChange: (value: KeybindingWhenNode | undefined) => void;
+  onValidityChange?: (valid: boolean) => void;
+}) {
   const expression = whenAstToExpression(value);
   const [expressionDraft, setExpressionDraft] = useState(expression);
   const parseResult = useMemo(() => parseWhenExpressionDraft(expressionDraft), [expressionDraft]);
@@ -849,29 +844,6 @@ function KeybindingKeyControl({
   );
 }
 
-const WhenClauseTriggerRefContext = createContext<SharedPopup["triggerRef"] | null>(null);
-
-function WhenClausePopover({ children }: { children: ReactNode }) {
-  const popup = useSharedPopup();
-  return (
-    <Popover<WhenExpressionBuilderProps>
-      actionsRef={popup.actionsRef}
-      onOpenChange={popup.onOpenChange}
-    >
-      {({ payload }) => (
-        <>
-          <WhenClauseTriggerRefContext value={popup.triggerRef}>
-            {children}
-          </WhenClauseTriggerRefContext>
-          <PopoverContent align="start" sideOffset={6}>
-            {payload ? <WhenExpressionBuilder {...payload} /> : null}
-          </PopoverContent>
-        </>
-      )}
-    </Popover>
-  );
-}
-
 /** Quiet inline trigger showing the when clause; opens the expression builder. */
 function WhenClauseControl({
   label,
@@ -888,25 +860,30 @@ function WhenClauseControl({
   onChange: (value: KeybindingWhenNode | undefined) => void;
   onValidityChange: (valid: boolean) => void;
 }) {
-  const triggerRef = use(WhenClauseTriggerRefContext);
   return (
-    <PopoverTrigger
-      ref={triggerRef}
-      payload={
-        { value, variables, onChange, onValidityChange } satisfies WhenExpressionBuilderProps
-      }
-      render={
-        <Button
-          variant={expression ? "ghost" : "ghost-muted"}
-          size="micro"
-          className="min-w-0 shrink"
+    <Popover>
+      <PopoverTrigger
+        render={
+          <Button
+            variant={expression ? "ghost" : "ghost-muted"}
+            size="micro"
+            className="min-w-0 shrink"
+          />
+        }
+        aria-label={`Edit when clause for ${label}`}
+      >
+        <span className="truncate font-mono">{expression || "Always"}</span>
+        <ChevronDownIcon className="size-3.5 shrink-0 opacity-60" />
+      </PopoverTrigger>
+      <PopoverContent align="start" sideOffset={6}>
+        <WhenExpressionBuilder
+          value={value}
+          variables={variables}
+          onChange={onChange}
+          onValidityChange={onValidityChange}
         />
-      }
-      aria-label={`Edit when clause for ${label}`}
-    >
-      <span className="truncate font-mono">{expression || "Always"}</span>
-      <ChevronDownIcon className="size-3.5 shrink-0 opacity-60" />
-    </PopoverTrigger>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -1510,78 +1487,76 @@ export function KeybindingsSettingsPanel() {
   };
 
   return (
-    <WhenClausePopover>
-      <SettingsPageContainer>
-        <SettingsSection
-          {...searchableSetting("keybindings")}
-          headerAction={!isElectron ? <BrowserKeybindingNotice /> : null}
-        >
-          <div className="flex flex-wrap items-center gap-2 px-3 py-3 sm:px-4">
-            <KeybindingsSearchInput query={query} onChange={setQuery} inputRef={searchInputRef} />
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isAddingBinding || !canWriteSettings}
-              onClick={() => setIsAddingBinding(true)}
-            >
-              <PlusIcon aria-hidden className="size-4" />
-              Add keybinding
-            </Button>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    disabled={!keybindingsConfigPath || !canOpenKeybindingsFile}
-                    onClick={openKeybindingsFile}
-                    aria-label="Open keybindings.json"
-                  >
-                    <FileJsonIcon aria-hidden className="size-4" />
-                  </Button>
-                }
-              />
-              <TooltipPopup side="top">Open keybindings.json</TooltipPopup>
-            </Tooltip>
-          </div>
-        </SettingsSection>
-
-        {!canWriteSettings ? (
-          <p className="text-xs text-muted-foreground">
-            This connection can view keybindings but cannot change them.
-          </p>
-        ) : null}
-        <div inert={!canWriteSettings}>
-          {isAddingBinding ? (
-            <SettingsGroup>
-              <NewKeybindingSettingsRow
-                commandOptions={commandOptions}
-                allRows={rows}
-                variables={whenVariables}
-                isSaving={savingCommand !== null}
-                onSave={saveKeybinding}
-                onCancel={cancelAdd}
-              />
-            </SettingsGroup>
-          ) : null}
-
-          {groups.length > 0 ? (
-            <KeybindingsGroups
-              groups={groups}
-              anchorIds={anchorIds}
-              savingCommand={savingCommand}
-              {...rowActions}
+    <SettingsPageContainer>
+      <SettingsSection
+        {...searchableSetting("keybindings")}
+        headerAction={!isElectron ? <BrowserKeybindingNotice /> : null}
+      >
+        <div className="flex flex-wrap items-center gap-2 px-3 py-3 sm:px-4">
+          <KeybindingsSearchInput query={query} onChange={setQuery} inputRef={searchInputRef} />
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isAddingBinding || !canWriteSettings}
+            onClick={() => setIsAddingBinding(true)}
+          >
+            <PlusIcon aria-hidden className="size-4" />
+            Add keybinding
+          </Button>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  disabled={!keybindingsConfigPath || !canOpenKeybindingsFile}
+                  onClick={openKeybindingsFile}
+                  aria-label="Open keybindings.json"
+                >
+                  <FileJsonIcon aria-hidden className="size-4" />
+                </Button>
+              }
             />
-          ) : (
-            <SettingsGroup>
-              <div className="px-4 py-12 text-center text-sm text-muted-foreground">
-                No keybindings match your search.
-              </div>
-            </SettingsGroup>
-          )}
+            <TooltipPopup side="top">Open keybindings.json</TooltipPopup>
+          </Tooltip>
         </div>
-      </SettingsPageContainer>
-    </WhenClausePopover>
+      </SettingsSection>
+
+      {!canWriteSettings ? (
+        <p className="text-xs text-muted-foreground">
+          This connection can view keybindings but cannot change them.
+        </p>
+      ) : null}
+      <div inert={!canWriteSettings}>
+        {isAddingBinding ? (
+          <SettingsGroup>
+            <NewKeybindingSettingsRow
+              commandOptions={commandOptions}
+              allRows={rows}
+              variables={whenVariables}
+              isSaving={savingCommand !== null}
+              onSave={saveKeybinding}
+              onCancel={cancelAdd}
+            />
+          </SettingsGroup>
+        ) : null}
+
+        {groups.length > 0 ? (
+          <KeybindingsGroups
+            groups={groups}
+            anchorIds={anchorIds}
+            savingCommand={savingCommand}
+            {...rowActions}
+          />
+        ) : (
+          <SettingsGroup>
+            <div className="px-4 py-12 text-center text-sm text-muted-foreground">
+              No keybindings match your search.
+            </div>
+          </SettingsGroup>
+        )}
+      </div>
+    </SettingsPageContainer>
   );
 }

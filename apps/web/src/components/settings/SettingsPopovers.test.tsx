@@ -6,8 +6,6 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-const keybindings = vi.hoisted(() => ({ current: [] as readonly unknown[] }));
-
 vi.mock("@tanstack/react-router", () => ({
   useLocation: ({ select }: { select: (location: unknown) => unknown }) =>
     select({ hash: "", state: {} }),
@@ -22,46 +20,23 @@ vi.mock("../../state/session", () => ({
   readEnvironmentScope: () => true,
   useEnvironmentsWithScope: () => new Set(["primary-settings"]),
 }));
-vi.mock("../../state/server", () => ({
-  serverEnvironment: { upsertKeybinding: vi.fn(), removeKeybinding: vi.fn() },
-}));
-vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: (command: unknown) => command }));
-vi.mock("../../editorPreferences", () => ({ useOpenInPreferredEditor: () => vi.fn() }));
 vi.mock("../../hooks/useSettings", () => ({ usePrimarySettingsAvailable: () => true }));
-vi.mock("../ProjectFavicon", () => ({ ProjectFavicon: () => null }));
 vi.mock("./SettingsScopeSentence", () => ({ SettingsScopeSentence: () => null }));
 vi.mock("./useScopedSettings", () => ({
   useClearScopedSettings: () => vi.fn(),
   useClearProjectOverrides: () => vi.fn(),
 }));
-vi.mock("./SettingsScopeContext", () => ({
-  useOptionalSettingsScope: () => null,
-  useSettingsScope: () => {
-    const environment = {
-      environmentId: "primary-settings",
-      serverConfig: {
-        keybindings: keybindings.current,
-        keybindingsConfigPath: null,
-        availableEditors: [],
-      },
-    };
-    return { environment, connectedEnvironments: [environment] };
-  },
-}));
+vi.mock("./SettingsScopeContext", () => ({ useOptionalSettingsScope: () => null }));
 
-import { compileResolvedKeybindingsConfig } from "@t3tools/shared/keybindings";
 import { Tooltip, TooltipPopup } from "../ui/tooltip";
 import { SettingInheritance } from "./SettingInheritance";
 import { DiagnosticsTooltip, DiagnosticsTooltips } from "./DiagnosticsTooltip";
-import { KeybindingsSettingsPanel } from "./KeybindingsSettings";
-import { commandLabel } from "./KeybindingsSettings.logic";
 import { SettingsPageContainer } from "./settingsLayout";
 
 let root: Root;
 let container: HTMLDivElement;
 
 beforeEach(() => {
-  keybindings.current = [];
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
     "ResizeObserver",
@@ -117,26 +92,6 @@ describe("settings shared popover routing", () => {
     );
   });
 
-  it("opens the when-expression builder inside the page's inheritance provider", async () => {
-    await act(async () => root.render(<KeybindingsSettingsPanel />));
-    const trigger = container.querySelector<HTMLButtonElement>(
-      'button[aria-label^="Edit when clause for"]',
-    );
-    if (!trigger) throw new Error("Missing when-clause trigger");
-
-    await act(async () => trigger.click());
-
-    const expression = document.querySelector<HTMLInputElement>(
-      'input[aria-label="When expression"]',
-    );
-    expect(expression).not.toBeNull();
-    await act(async () => {
-      expression?.focus();
-      expression?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    });
-    expect(document.querySelector('input[aria-label="When expression"]')).toBeNull();
-  });
-
   it("shows Diagnostics content inside the page's inheritance provider", async () => {
     await act(async () => {
       root.render(
@@ -161,29 +116,6 @@ describe("settings shared popover routing", () => {
 });
 
 describe("settings shared popovers close with their trigger", () => {
-  it("closes the when-expression builder when its keybinding is replaced", async () => {
-    keybindings.current = compileResolvedKeybindingsConfig([
-      { command: "thread.copyReference", key: "mod+alt+c", when: "terminalFocus" },
-    ]);
-    await act(async () => root.render(<KeybindingsSettingsPanel />));
-    const trigger = container.querySelector<HTMLButtonElement>(
-      `button[aria-label="Edit when clause for ${commandLabel("thread.copyReference")}"]`,
-    );
-    if (!trigger) throw new Error("Missing when-clause trigger");
-    await act(async () => trigger.click());
-    expect(
-      document.querySelector<HTMLInputElement>('input[aria-label="When expression"]')?.value,
-    ).toBe("terminalFocus");
-
-    keybindings.current = compileResolvedKeybindingsConfig([
-      { command: "thread.copyReference", key: "mod+alt+shift+c", when: "!terminalFocus" },
-    ]);
-    await act(async () => root.render(<KeybindingsSettingsPanel />));
-
-    expect(trigger.isConnected).toBe(false);
-    expect(document.querySelector('input[aria-label="When expression"]')).toBeNull();
-  });
-
   it("closes the Diagnostics tooltip when its row disappears", async () => {
     const render = (shown: boolean) => (
       <DiagnosticsTooltips>
