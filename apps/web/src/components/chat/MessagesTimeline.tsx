@@ -1203,7 +1203,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
               workGroupState: workGroupViewState,
             },
           },
-          liveFollowEnabled,
+          liveFollowEnabled && !anchoredEndSpace,
         );
       }
     }
@@ -1257,6 +1257,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     rows,
     listIdentityKey,
     liveFollowEnabled,
+    anchoredEndSpace,
     paintOnly,
     restoringThreadPosition,
     listRef,
