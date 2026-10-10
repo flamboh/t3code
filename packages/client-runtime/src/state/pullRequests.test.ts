@@ -1018,7 +1018,7 @@ it.live("keeps source workspace metadata when an alternate answers a detail read
                   updatedAt: "2026-10-10T01:52:36Z",
                 })
               : Effect.never,
-          [WS_METHODS.pullRequestsNoteReading]: (input: unknown) =>
+          [WS_METHODS.pullRequestsReportState]: (input: unknown) =>
             Deferred.succeed(noted, input).pipe(Effect.asVoid),
         }) as unknown as WsRpcProtocolClient;
       const { environmentRegistry, supervisor } = yield* makeTestRuntime(

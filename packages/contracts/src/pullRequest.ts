@@ -831,11 +831,11 @@ export type PullRequestInvalidateInput = typeof PullRequestInvalidateInput.Type;
  * for so its thread links can catch up. A hint only: that environment confirms with the host
  * before writing anything.
  */
-export const PullRequestNoteReadingInput = Schema.Struct({
+export const PullRequestReportStateInput = Schema.Struct({
   reference: PullRequestRef,
   state: PullRequestState,
 });
-export type PullRequestNoteReadingInput = typeof PullRequestNoteReadingInput.Type;
+export type PullRequestReportStateInput = typeof PullRequestReportStateInput.Type;
 
 export const PullRequestDetail = Schema.Struct({
   provider: SourceControlProviderKind,

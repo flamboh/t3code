@@ -4972,7 +4972,7 @@ it.effect("announces state a detail read sees first or newly", () =>
   }),
 );
 
-it.effect("announces a routed reading's new state without trusting it", () =>
+it.effect("announces a reported state without trusting it", () =>
   Effect.gen(function* () {
     let detail = { state: "open" as "open" | "closed", updatedAt: "2026-07-02T00:00:00Z" };
     const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
@@ -4989,7 +4989,7 @@ it.effect("announces a routed reading's new state without trusting it", () =>
       Effect.sync(() => announced.push(`${key.host}/${key.repository}#${key.number}`)),
     ).pipe(Effect.forkChild({ startImmediately: true }));
     const note = (state: "open" | "closed" | "merged") =>
-      service.noteReading({ reference, state }).pipe(Effect.andThen(Effect.yieldNow));
+      service.reportState({ reference, state }).pipe(Effect.andThen(Effect.yieldNow));
     const readDetail = Effect.gen(function* () {
       yield* service.invalidate({ reference });
       yield* service.detail(reference);

@@ -42,7 +42,7 @@ import {
   type PullRequestFilesViewedResult,
   type PullRequestDiffResult,
   type PullRequestInvalidateInput,
-  type PullRequestNoteReadingInput,
+  type PullRequestReportStateInput,
   type PullRequestListEntry,
   type PullRequestListFilters,
   type PullRequestListInput,
@@ -161,8 +161,8 @@ const detailTimeToLive = (state: PullRequestState | undefined) =>
  * page and a watched pull request's change reaches its watch.
  */
 const CHECKS_CACHE_TTL = Duration.seconds(15);
-/** How long a repeated routed hint is skipped, so a wrong one cannot hide a real change for long. */
-const HINT_DEDUPE_MS = 5 * 60 * 1_000;
+/** How long a repeated reported state is skipped, so a wrong one cannot hide a real change for long. */
+const REPORTED_STATE_DEDUPE_MS = 5 * 60 * 1_000;
 const DIFF_CACHE_TTL = Duration.seconds(60);
 /** A commit is content-addressed, so its own diff cannot change under its key. */
 const COMMIT_DIFF_CACHE_TTL = Duration.minutes(10);
@@ -249,10 +249,10 @@ export class PullRequestService extends Context.Service<
     >;
     /**
      * The state a read routed to another environment saw. A new one reaches
-     * `subscribeStateChanges`, so the host is asked again; the hint itself is never trusted.
+     * `subscribeStateChanges`, so the host is asked again; the report itself is never trusted.
      */
-    readonly noteReading: (
-      input: PullRequestNoteReadingInput,
+    readonly reportState: (
+      input: PullRequestReportStateInput,
     ) => Effect.Effect<void, PullRequestError>;
     readonly subscribeRefreshes: Stream.Stream<number>;
     readonly refreshAfterTurn: (projectId: ProjectId) => Effect.Effect<void>;
@@ -3125,25 +3125,26 @@ export const make = Effect.gen(function* () {
           })
         : Effect.void;
     });
-  // The last state each routed reading hinted, kept apart from `detailStates`: an unverified hint
+  // The last state each routed read reported, kept apart from `detailStates`: an unverified report
   // must never outrank a reading this environment made itself.
-  const hintedStates = new Map<
+  const reportedStates = new Map<
     string,
     { readonly state: PullRequestState; readonly atMs: number }
   >();
-  const noteReading: PullRequestService["Service"]["noteReading"] = ({ reference, state }) =>
+  const reportState: PullRequestService["Service"]["reportState"] = ({ reference, state }) =>
     Effect.all([canonicalRef(reference), Clock.currentTimeMillis]).pipe(
       Effect.flatMap(([ref, nowMs]) =>
         Effect.suspend(() => {
           const scope = refScope(ref);
-          const hinted = hintedStates.get(scope);
-          if (hinted?.state === state && nowMs - hinted.atMs < HINT_DEDUPE_MS) return Effect.void;
-          hintedStates.delete(scope);
-          if (hintedStates.size >= REF_EPOCH_CAPACITY) {
-            const oldest = hintedStates.keys().next().value;
-            if (oldest !== undefined) hintedStates.delete(oldest);
+          const reported = reportedStates.get(scope);
+          if (reported?.state === state && nowMs - reported.atMs < REPORTED_STATE_DEDUPE_MS)
+            return Effect.void;
+          reportedStates.delete(scope);
+          if (reportedStates.size >= REF_EPOCH_CAPACITY) {
+            const oldest = reportedStates.keys().next().value;
+            if (oldest !== undefined) reportedStates.delete(oldest);
           }
-          hintedStates.set(scope, { state, atMs: nowMs });
+          reportedStates.set(scope, { state, atMs: nowMs });
           return ref.host === undefined
             ? Effect.void
             : PubSub.publish(stateChanges, {
@@ -3471,7 +3472,7 @@ export const make = Effect.gen(function* () {
     subscribeStateChanges: PubSub.subscribe(stateChanges).pipe(
       Effect.map((subscription) => Stream.fromSubscription(subscription)),
     ),
-    noteReading,
+    reportState,
     subscribeRefreshes: SubscriptionRef.changes(pullRequestRefreshes).pipe(
       Stream.filter((revision) => revision > 0),
     ),

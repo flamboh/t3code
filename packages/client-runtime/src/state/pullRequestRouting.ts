@@ -58,7 +58,7 @@ const writes = new Set<string>([
   WS_METHODS.pullRequestsSetLabels,
 ]);
 const isRef = Schema.is(PullRequestRef);
-const isReading = Schema.is(Schema.Struct({ state: PullRequestState }));
+const hasState = Schema.is(Schema.Struct({ state: PullRequestState }));
 const isInvalidation = Schema.is(PullRequestInvalidateInput);
 const readTimeout = (environmentId: EnvironmentId) =>
   Effect.timeoutOrElse({
@@ -214,11 +214,11 @@ const invalidateTarget = Effect.fn("PullRequestRouting.invalidateTarget")(functi
  * The origin owns the threads linked to this pull request, but a routed read never reaches it.
  * Tell it which state the read saw so it checks again. Best effort, and never holds up the read.
  */
-const noteReading = (
+const reportState = (
   { allowStale: _allowStale, expectedAccountId: _expectedAccountId, ...reference }: PullRequestRef,
   state: PullRequestState,
 ) =>
-  request(WS_METHODS.pullRequestsNoteReading, { reference, state }).pipe(
+  request(WS_METHODS.pullRequestsReportState, { reference, state }).pipe(
     Effect.timeoutOption("5 seconds"),
     Effect.ignore,
     Effect.forkDetach,
@@ -374,8 +374,8 @@ export function createPullRequestRouter() {
         : registry.run(id, request(tag, routedInput))
       ).pipe(
         Effect.tap((result) =>
-          id !== origin.target.environmentId && isReading(result)
-            ? noteReading(ref, result.state)
+          id !== origin.target.environmentId && hasState(result)
+            ? reportState(ref, result.state)
             : Effect.void,
         ),
         Effect.tap(() =>
