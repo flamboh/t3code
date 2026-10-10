@@ -866,7 +866,7 @@ function MarkdownCodeBlock({
 }) {
   const [copied, setCopied] = useState(false);
   const [wrapped, setWrapped] = useState(readInitialWordWrapSetting);
-  const [confirmingRun, setConfirmingRun] = useState(false);
+  const [confirmingCommand, setConfirmingCommand] = useState<string | null>(null);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wrapLabel = wrapped ? "Disable line wrap" : "Wrap lines";
   const copyLabel = copied ? "Copied" : "Copy code";
@@ -994,7 +994,7 @@ function MarkdownCodeBlock({
                     size="icon-xs"
                     onClick={() => {
                       if (lineCount > 1) {
-                        setConfirmingRun(true);
+                        setConfirmingCommand(command);
                       } else {
                         onRunShellCommand(command);
                       }
@@ -1013,10 +1013,10 @@ function MarkdownCodeBlock({
       }
     >
       {children}
-      {confirmingRun && onRunShellCommand ? (
+      {canRun && confirmingCommand === command ? (
         <RunShellCommandDialog
           command={command}
-          onClose={() => setConfirmingRun(false)}
+          onClose={() => setConfirmingCommand(null)}
           onRun={onRunShellCommand}
         >
           {children}

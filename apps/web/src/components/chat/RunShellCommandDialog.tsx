@@ -34,7 +34,9 @@ export function RunShellCommandDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="px-6 pb-6">
-          <div className="chat-markdown max-h-80 overflow-auto whitespace-pre">{children}</div>
+          <div className="chat-markdown max-h-80 overflow-auto whitespace-pre [&_pre.invisible]:visible">
+            {children}
+          </div>
         </div>
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>

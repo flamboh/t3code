@@ -335,6 +335,14 @@ describe("ChatMarkdown shell scripts", () => {
     expect(onRunShellCommand).not.toHaveBeenCalled();
   });
 
+  it("closes the dialog when the script changes after it opens", async () => {
+    await renderScript("echo one\necho two");
+    await click(playButton());
+    await renderScript("echo one\necho three");
+    expect(dialog()).toBeNull();
+    expect(onRunShellCommand).not.toHaveBeenCalled();
+  });
+
   it.each(["echo one\necho two\\", "$ echo one\noutput", "echo one\necho \u202etwo"])(
     "does not offer to run %j",
     async (script) => {
