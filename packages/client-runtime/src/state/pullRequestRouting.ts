@@ -2,7 +2,7 @@ import {
   WS_METHODS,
   PullRequestRef,
   PullRequestInvalidateInput,
-  PullRequestReading,
+  PullRequestState,
   type EnvironmentId,
   type PullRequestRoutingResult,
   type PullRequestRoutingIdentityResult,
@@ -58,7 +58,7 @@ const writes = new Set<string>([
   WS_METHODS.pullRequestsSetLabels,
 ]);
 const isRef = Schema.is(PullRequestRef);
-const isReading = Schema.is(PullRequestReading);
+const isReading = Schema.is(Schema.Struct({ state: PullRequestState }));
 const isInvalidation = Schema.is(PullRequestInvalidateInput);
 const readTimeout = (environmentId: EnvironmentId) =>
   Effect.timeoutOrElse({
@@ -212,18 +212,18 @@ const invalidateTarget = Effect.fn("PullRequestRouting.invalidateTarget")(functi
 
 /**
  * The origin owns the threads linked to this pull request, but a routed read never reaches it.
- * Tell it what the read saw so those links catch up. Best effort, and never holds up the read.
+ * Tell it which state the read saw so it checks again. Best effort, and never holds up the read.
  */
 const noteReading = (
   { allowStale: _allowStale, expectedAccountId: _expectedAccountId, ...reference }: PullRequestRef,
-  reading: PullRequestReading,
+  state: PullRequestState,
 ) =>
-  request(WS_METHODS.pullRequestsNoteReading, {
-    reference,
-    state: reading.state,
-    updatedAt: reading.updatedAt,
-    ...(reading.observedAt === undefined ? {} : { observedAt: reading.observedAt }),
-  }).pipe(Effect.timeoutOption("5 seconds"), Effect.ignore, Effect.forkDetach, Effect.asVoid);
+  request(WS_METHODS.pullRequestsNoteReading, { reference, state }).pipe(
+    Effect.timeoutOption("5 seconds"),
+    Effect.ignore,
+    Effect.forkDetach,
+    Effect.asVoid,
+  );
 
 /** Credentials stay on their environments. Only a verified host and account cross the wire. */
 export function createPullRequestRouter() {
@@ -375,7 +375,7 @@ export function createPullRequestRouter() {
       ).pipe(
         Effect.tap((result) =>
           id !== origin.target.environmentId && isReading(result)
-            ? noteReading(ref, result)
+            ? noteReading(ref, result.state)
             : Effect.void,
         ),
         Effect.tap(() =>

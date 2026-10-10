@@ -4972,7 +4972,7 @@ it.effect("announces state a detail read sees first or newly", () =>
   }),
 );
 
-it.effect("announces a new state a routed reading reports", () =>
+it.effect("announces a routed reading's new state without trusting it", () =>
   Effect.gen(function* () {
     const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
     const service = yield* makeService({
@@ -4992,15 +4992,17 @@ it.effect("announces a new state a routed reading reports", () =>
     yield* Stream.runForEach(yield* service.subscribeStateChanges, (key) =>
       Effect.sync(() => announced.push(`${key.host}/${key.repository}#${key.number}`)),
     ).pipe(Effect.forkChild({ startImmediately: true }));
+    const note = (state: "closed" | "merged") =>
+      service.noteReading({ reference, state }).pipe(Effect.andThen(Effect.yieldNow));
 
-    yield* service.noteReading({ reference, state: "closed", updatedAt: "2026-07-03T00:00:00Z" });
-    yield* Effect.yieldNow;
+    yield* note("closed");
+    yield* note("closed");
     assert.deepStrictEqual(announced, ["github.com/acme/web#1"]);
 
-    // The environment's own read of the same state adds nothing.
+    yield* note("merged");
     yield* service.detail(reference);
     yield* Effect.yieldNow;
-    assert.strictEqual(announced.length, 1);
+    assert.strictEqual(announced.length, 3);
   }),
 );
 

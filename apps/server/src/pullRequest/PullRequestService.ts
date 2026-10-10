@@ -43,7 +43,6 @@ import {
   type PullRequestDiffResult,
   type PullRequestInvalidateInput,
   type PullRequestNoteReadingInput,
-  type PullRequestReading,
   type PullRequestListEntry,
   type PullRequestListFilters,
   type PullRequestListInput,
@@ -99,6 +98,8 @@ import * as ViewedFiles from "./pullRequestViewedFiles.ts";
 export interface PullRequestMergeEvent extends PullRequestRef {
   readonly mergedAt: string;
 }
+
+type PullRequestReading = Pick<PullRequestSummary, "state" | "updatedAt" | "observedAt">;
 
 /** Whether `next` is a newer reading of a pull request than `current`. Merged is final. */
 function supersedesReading(current: PullRequestReading | undefined, next: PullRequestReading) {
@@ -245,8 +246,8 @@ export class PullRequestService extends Context.Service<
       Scope.Scope
     >;
     /**
-     * A reading of a pull request that a read routed to another environment saw. It joins this
-     * environment's own detail readings, so a new state reaches `subscribeStateChanges`.
+     * The state a read routed to another environment saw. A new one reaches
+     * `subscribeStateChanges`, so the host is asked again; the hint itself is never trusted.
      */
     readonly noteReading: (
       input: PullRequestNoteReadingInput,
@@ -3099,7 +3100,7 @@ export const make = Effect.gen(function* () {
    * fresh merge brings the thread's link and its settlement along, rather than leaving them to
    * the next sync sweep.
    */
-  const noteDetailReading = (ref: PullRequestRef, next: PullRequestReading) =>
+  const noteDetailReading = (ref: PullRequestRef, next: PullRequestSummary) =>
     Effect.suspend(() => {
       const scope = refScope(ref);
       const current = detailStates.get(scope);
@@ -3122,6 +3123,33 @@ export const make = Effect.gen(function* () {
           })
         : Effect.void;
     });
+  // The last state each routed reading hinted, kept apart from `detailStates`: an unverified hint
+  // must never outrank a reading this environment made itself.
+  const hintedStates = new Map<string, PullRequestState>();
+  const noteReading: PullRequestService["Service"]["noteReading"] = ({ reference, state }) =>
+    canonicalRef(reference).pipe(
+      Effect.flatMap((ref) =>
+        Effect.suspend(() => {
+          const scope = refScope(ref);
+          if (hintedStates.get(scope) === state || detailStates.get(scope)?.state === state) {
+            return Effect.void;
+          }
+          hintedStates.delete(scope);
+          if (hintedStates.size >= REF_EPOCH_CAPACITY) {
+            const oldest = hintedStates.keys().next().value;
+            if (oldest !== undefined) hintedStates.delete(oldest);
+          }
+          hintedStates.set(scope, state);
+          return ref.host === undefined
+            ? Effect.void
+            : PubSub.publish(stateChanges, {
+                host: ref.host,
+                repository: ref.repository,
+                number: ref.number,
+              });
+        }),
+      ),
+    );
   const detail: PullRequestService["Service"]["detail"] = (input) => {
     const key = refCacheKey(input);
     // Record the summary from a host or cache read, not the stale value
@@ -3439,8 +3467,7 @@ export const make = Effect.gen(function* () {
     subscribeStateChanges: PubSub.subscribe(stateChanges).pipe(
       Effect.map((subscription) => Stream.fromSubscription(subscription)),
     ),
-    noteReading: ({ reference, ...reading }) =>
-      canonicalRef(reference).pipe(Effect.flatMap((ref) => noteDetailReading(ref, reading))),
+    noteReading,
     subscribeRefreshes: SubscriptionRef.changes(pullRequestRefreshes).pipe(
       Stream.filter((revision) => revision > 0),
     ),

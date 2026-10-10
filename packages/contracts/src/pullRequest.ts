@@ -826,21 +826,14 @@ export const PullRequestInvalidateInput = Schema.Struct({
 });
 export type PullRequestInvalidateInput = typeof PullRequestInvalidateInput.Type;
 
-/** The part of a summary or detail that says which state a pull request was seen in, and when. */
-export const PullRequestReading = Schema.Struct({
-  state: PullRequestState,
-  updatedAt: IsoDateTime,
-  observedAt: Schema.optional(Schema.Finite),
-});
-export type PullRequestReading = typeof PullRequestReading.Type;
-
 /**
- * What a read routed to another environment saw, reported to the environment the read was for so
- * its thread links can catch up. That environment confirms with the host before writing anything.
+ * The state a read routed to another environment saw, reported to the environment the read was
+ * for so its thread links can catch up. A hint only: that environment confirms with the host
+ * before writing anything.
  */
 export const PullRequestNoteReadingInput = Schema.Struct({
   reference: PullRequestRef,
-  ...PullRequestReading.fields,
+  state: PullRequestState,
 });
 export type PullRequestNoteReadingInput = typeof PullRequestNoteReadingInput.Type;
 

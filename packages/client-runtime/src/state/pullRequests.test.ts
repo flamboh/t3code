@@ -1046,7 +1046,6 @@ it.live("keeps source workspace metadata when an alternate answers a detail read
       expect(yield* Deferred.await(noted)).toEqual({
         reference: { projectId: "project-1", repository: "acme/web", number: 7 },
         state: "closed",
-        updatedAt: "2026-10-10T01:52:36Z",
       });
     }),
   ),
