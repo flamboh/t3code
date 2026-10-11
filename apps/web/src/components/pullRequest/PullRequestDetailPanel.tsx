@@ -1096,7 +1096,7 @@ export function PullRequestDetailPanel({
   ): Promise<{ draftId: DraftId } | null> => {
     const session =
       opened ??
-      (await newThread(projectRef, { environmentSelection: "manual" }).then(
+      (await newThread(projectRef).then(
         (result) => result,
         () => null,
       ));
