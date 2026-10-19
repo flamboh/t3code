@@ -10,6 +10,7 @@ const ATTACHMENT_PATH_PATTERN = /^\/user-attachments\/assets\/[\w-]+$/u;
 const LEGACY_ATTACHMENT_PATH_PATTERN = /^\/[^/]+\/[^/]+\/assets\/\d+\/[\w-]+$/u;
 /** `blob` and `raw` both address file bytes; `raw` is the one the token is honoured on. */
 const REPOSITORY_FILE_PATTERN = /^\/([^/]+)\/([^/]+)\/(?:raw|blob)\/(.*[^/])$/u;
+const COMMIT_SHA_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu;
 
 function canonicalUrl(host: string, url: URL): string {
   return `https://${host}${url.pathname}${url.search}`;
@@ -38,19 +39,15 @@ export function githubMediaFetchUrl(source: string): string | null {
     : null;
 }
 
-export function isGithubAttachmentUrl(source: string): boolean {
-  let url: URL;
-  try {
-    url = new URL(source);
-  } catch {
-    return false;
-  }
-  return (
-    url.protocol === "https:" &&
-    (url.hostname === "github.com" || url.hostname === "www.github.com") &&
-    (ATTACHMENT_PATH_PATTERN.test(url.pathname) ||
-      LEGACY_ATTACHMENT_PATH_PATTERN.test(url.pathname))
-  );
+/** Branch and tag refs can move; only uploads and files read at a full commit SHA are fixed. */
+export function immutableGithubMediaUrl(source: string): string | null {
+  const fetchUrl = githubMediaFetchUrl(source);
+  if (fetchUrl === null) return null;
+  const url = new URL(fetchUrl);
+  if (url.hostname === "github.com") return fetchUrl;
+  if (url.hostname !== RAW_HOST) return null;
+  const ref = url.pathname.split("/")[3] ?? "";
+  return COMMIT_SHA_PATTERN.test(ref) ? `https://${RAW_HOST}${url.pathname}` : null;
 }
 
 export function githubMediaFileName(fetchUrl: string): string {

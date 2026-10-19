@@ -1,5 +1,5 @@
 import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
-import { isGithubAttachmentUrl } from "@t3tools/shared/githubMedia";
+import { immutableGithubMediaUrl } from "@t3tools/shared/githubMedia";
 import type { ImageSource } from "expo-image";
 
 /**
@@ -23,8 +23,10 @@ export function assetImageCacheKey(
         resource.itemId,
         resource.index,
       ])}`;
-    case "github-media":
-      return isGithubAttachmentUrl(resource.url) ? `t3-github-media:${resource.url}` : undefined;
+    case "github-media": {
+      const url = immutableGithubMediaUrl(resource.url);
+      return url === null ? undefined : `t3-github-media:${url}`;
+    }
     case "workspace-file":
     case "media-file":
     case "draft-workspace-file":

@@ -88,6 +88,24 @@ describe("assetImageSource", () => {
     expect(branchFile).toBeUndefined();
   });
 
+  it("keys repository files pinned to a commit SHA across blob and raw links", () => {
+    const sha = "0123456789abcdef0123456789abcdef01234567";
+    const key = (url: string) =>
+      assetImageCacheKey(environmentId, { _tag: "github-media", cwd: "/repo", url });
+
+    const pinned = key(`https://raw.githubusercontent.com/owner/repo/${sha}/docs/shot.png`);
+
+    expect(pinned).toBeDefined();
+    expect(key(`https://github.com/owner/repo/blob/${sha}/docs/shot.png`)).toBe(pinned);
+    expect(
+      key(`https://raw.githubusercontent.com/owner/repo/${"a".repeat(64)}/shot.png`),
+    ).toBeDefined();
+    expect(key("https://github.com/owner/repo/blob/v1.2.3/docs/shot.png")).toBeUndefined();
+    expect(
+      key(`https://raw.githubusercontent.com/owner/repo/${sha.slice(0, 12)}/shot.png`),
+    ).toBeUndefined();
+  });
+
   it("keys host files by the version the server read, and by URL without one", () => {
     const resource = {
       _tag: "media-file",
