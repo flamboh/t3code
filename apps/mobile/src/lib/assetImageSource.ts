@@ -25,7 +25,7 @@ export function assetImageCacheKey(
       ])}`;
     case "github-media": {
       const url = immutableGithubMediaUrl(resource.url);
-      return url === null ? undefined : `t3-github-media:${url}`;
+      return url === null ? undefined : `t3-github-media:${JSON.stringify([environmentId, url])}`;
     }
     case "workspace-file":
     case "media-file":

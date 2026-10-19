@@ -86,6 +86,13 @@ describe("assetImageSource", () => {
 
     expect(upload).toBeDefined();
     expect(branchFile).toBeUndefined();
+    expect(
+      assetImageCacheKey(EnvironmentId.make("environment-2"), {
+        _tag: "github-media",
+        cwd: "/repo",
+        url: "https://github.com/user-attachments/assets/0f3c2b1a-1111-2222-3333-444455556666",
+      }),
+    ).not.toBe(upload);
   });
 
   it("keys repository files pinned to a commit SHA across blob and raw links", () => {
