@@ -198,6 +198,16 @@ describe("DesktopApplicationMenu", () => {
       const host = { isDestroyed: () => false, pasteAndMatchStyle: vi.fn() };
       press(host);
       assert.equal(host.pasteAndMatchStyle.mock.calls.length, 1);
+
+      // Electron reports a mounted preview guest as focused while the host's composer has focus.
+      const guest = {
+        isDestroyed: () => false,
+        pasteAndMatchStyle: vi.fn(),
+        hostWebContents: host,
+      };
+      press(guest);
+      assert.equal(host.pasteAndMatchStyle.mock.calls.length, 2);
+      assert.equal(guest.pasteAndMatchStyle.mock.calls.length, 0);
       assert.isFalse(yield* Deferred.isDone(selectedAction));
     }),
   );
