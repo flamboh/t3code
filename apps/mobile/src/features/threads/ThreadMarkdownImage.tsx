@@ -15,6 +15,7 @@ import { PresentationSource } from "../../components/ui/NativePresentation";
 import { useMediaActions } from "../../state/mediaActions";
 import type { MediaActionsSource } from "../../lib/mediaActionsSource";
 import { useAssetUrlState } from "../../state/assets";
+import { assetImageCacheKey } from "../../lib/assetImageSource";
 import {
   MARKDOWN_IMAGE_MAX_WIDTH,
   type MarkdownImageDisplaySize,
@@ -33,6 +34,7 @@ export const MarkdownImageAvailableWidthContext = createContext(0);
 export function ThreadMarkdownImageView(props: {
   readonly uri: string | null;
   readonly sourceKey: string;
+  readonly cacheKey?: string | undefined;
   readonly unavailable: boolean;
   readonly unavailableDetail?: string | undefined;
   readonly alt: string | null;
@@ -131,6 +133,7 @@ export function ThreadMarkdownImageView(props: {
                 <ThreadMarkdownImageRequest
                   key={props.sourceKey}
                   uri={props.uri}
+                  cacheKey={props.cacheKey}
                   format={props.format}
                   onLoad={setDecodedSize}
                   onError={() => setFailedUri(props.uri)}
@@ -151,6 +154,7 @@ export function ThreadMarkdownImageView(props: {
 
 function ThreadMarkdownImageRequest(props: {
   readonly uri: string;
+  readonly cacheKey: string | undefined;
   readonly onLoad: (sourceSize: { width: number; height: number }) => void;
   readonly onError: () => void;
   readonly format?: "svg";
@@ -170,7 +174,7 @@ function ThreadMarkdownImageRequest(props: {
         />
       ) : (
         <Image
-          source={{ uri: props.uri }}
+          source={{ uri: props.uri, cacheKey: props.cacheKey }}
           contentFit="contain"
           cachePolicy="memory-disk"
           accessible={false}
@@ -253,6 +257,11 @@ export function ThreadMarkdownImage(props: {
   return (
     <ThreadMarkdownImageView
       uri={assetUrl._tag === "Success" ? assetUrl.url + (props.srcFragment ?? "") : null}
+      cacheKey={
+        assetUrl._tag === "Success"
+          ? assetImageCacheKey(props.environmentId, props.resource, assetUrl.fileRevision)
+          : undefined
+      }
       sourceKey={
         props.resource._tag === "attachment"
           ? `attachment:${props.resource.attachmentId}`

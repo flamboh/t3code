@@ -38,6 +38,21 @@ export function githubMediaFetchUrl(source: string): string | null {
     : null;
 }
 
+export function isGithubAttachmentUrl(source: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(source);
+  } catch {
+    return false;
+  }
+  return (
+    url.protocol === "https:" &&
+    (url.hostname === "github.com" || url.hostname === "www.github.com") &&
+    (ATTACHMENT_PATH_PATTERN.test(url.pathname) ||
+      LEGACY_ATTACHMENT_PATH_PATTERN.test(url.pathname))
+  );
+}
+
 export function githubMediaFileName(fetchUrl: string): string {
   const segment = new URL(fetchUrl).pathname.split("/").pop() ?? "";
   let decoded: string;

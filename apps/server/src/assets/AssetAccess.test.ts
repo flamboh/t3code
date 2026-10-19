@@ -5,6 +5,7 @@ import * as NodeFSP from "node:fs/promises";
 import {
   AssetAccessError,
   AssetPreviewTypeValidationError,
+  type AssetResource,
   ThreadId,
   TurnItemId,
 } from "@t3tools/contracts";
@@ -637,6 +638,35 @@ describe("AssetAccess", () => {
       yield* fs.rename(replacement, filePath);
       const replaced = yield* issueAssetUrl(input);
       expect(replaced.fileRevision).not.toBe(edited.fileRevision);
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("versions host files across mints and changes the version after an edit", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-asset-content-version-" });
+      const filePath = path.join(root, "shot.png");
+      yield* fs.writeFileString(filePath, "first");
+      yield* Effect.promise(() => NodeFSP.utimes(filePath, 1_000, 1_000));
+      const threadId = ThreadId.make("thread-1");
+      const issue = (resource: AssetResource) => issueAssetUrl({ resource, workspaceRoot: root });
+      const versions = () =>
+        Effect.all([
+          issue({ _tag: "media-file", threadId, path: filePath }),
+          issue({ _tag: "workspace-file", threadId, path: "shot.png" }),
+        ]).pipe(Effect.map((results) => results.map((result) => result.fileRevision)));
+
+      const first = yield* versions();
+      const again = yield* versions();
+      yield* fs.writeFileString(filePath, "secnd");
+      yield* Effect.promise(() => NodeFSP.utimes(filePath, 2_000, 2_000));
+      const edited = yield* versions();
+
+      expect(first.every((version) => version !== undefined)).toBe(true);
+      expect(again).toEqual(first);
+      expect(edited[0]).not.toBe(first[0]);
+      expect(edited[1]).not.toBe(first[1]);
     }).pipe(Effect.provide(layerTest)),
   );
 

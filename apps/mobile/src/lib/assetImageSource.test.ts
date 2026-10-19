@@ -1,7 +1,7 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, TurnItemId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { assetImageSource } from "./assetImageSource";
+import { assetImageCacheKey, assetImageSource } from "./assetImageSource";
 
 const environmentId = EnvironmentId.make("environment-1");
 
@@ -54,5 +54,51 @@ describe("assetImageSource", () => {
     );
 
     expect(source).toStrictEqual({ uri: "https://host/api/assets/token-a/logo.png" });
+  });
+
+  it("keys tool output images by their item and position", () => {
+    const resource = {
+      _tag: "tool-output-image",
+      threadId: ThreadId.make("thread-1"),
+      itemId: TurnItemId.make("item-1"),
+      index: 0,
+    } as const;
+
+    expect(assetImageCacheKey(environmentId, resource)).toBe(
+      assetImageCacheKey(environmentId, { ...resource }),
+    );
+    expect(assetImageCacheKey(environmentId, resource)).not.toBe(
+      assetImageCacheKey(environmentId, { ...resource, index: 1 }),
+    );
+  });
+
+  it("keys GitHub uploads but not repository files that can change at a branch", () => {
+    const upload = assetImageCacheKey(environmentId, {
+      _tag: "github-media",
+      cwd: "/repo",
+      url: "https://github.com/user-attachments/assets/0f3c2b1a-1111-2222-3333-444455556666",
+    });
+    const branchFile = assetImageCacheKey(environmentId, {
+      _tag: "github-media",
+      cwd: "/repo",
+      url: "https://raw.githubusercontent.com/owner/repo/main/docs/shot.png",
+    });
+
+    expect(upload).toBeDefined();
+    expect(branchFile).toBeUndefined();
+  });
+
+  it("keys host files by the version the server read, and by URL without one", () => {
+    const resource = {
+      _tag: "media-file",
+      threadId: ThreadId.make("thread-1"),
+      path: "/tmp/shot.png",
+    } as const;
+    const first = assetImageCacheKey(environmentId, resource, "5:1000");
+
+    expect(first).toBeDefined();
+    expect(assetImageCacheKey(environmentId, resource, "5:1000")).toBe(first);
+    expect(assetImageCacheKey(environmentId, resource, "5:2000")).not.toBe(first);
+    expect(assetImageCacheKey(environmentId, resource)).toBeUndefined();
   });
 });
