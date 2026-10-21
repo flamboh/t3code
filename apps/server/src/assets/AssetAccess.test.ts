@@ -670,6 +670,32 @@ describe("AssetAccess", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  it.effect("changes the version after a same-size edit within one millisecond", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-asset-content-version-ns-" });
+      const filePath = path.join(root, "shot.png");
+      const threadId = ThreadId.make("thread-1");
+      const versionAt = (contents: string, seconds: number) =>
+        Effect.gen(function* () {
+          yield* fs.writeFileString(filePath, contents);
+          yield* Effect.promise(() => NodeFSP.utimes(filePath, seconds, seconds));
+          const result = yield* issueAssetUrl({
+            resource: { _tag: "workspace-file", threadId, path: "shot.png" },
+            workspaceRoot: root,
+          });
+          return result.fileRevision;
+        });
+
+      const first = yield* versionAt("first", 1_000.0001);
+      const edited = yield* versionAt("secnd", 1_000.0002);
+
+      expect(first).toBeDefined();
+      expect(edited).not.toBe(first);
+    }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect("keeps in-place edits readable but requires a new URL after atomic replacement", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
