@@ -665,6 +665,7 @@ describe("AssetAccess", () => {
 
       expect(first.every((version) => version !== undefined)).toBe(true);
       expect(again).toEqual(first);
+      expect(edited.every((version) => version !== undefined)).toBe(true);
       expect(edited[0]).not.toBe(first[0]);
       expect(edited[1]).not.toBe(first[1]);
     }).pipe(Effect.provide(layerTest)),
@@ -692,6 +693,7 @@ describe("AssetAccess", () => {
       const edited = yield* versionAt("secnd", 1_000.0002);
 
       expect(first).toBeDefined();
+      expect(edited).toBeDefined();
       expect(edited).not.toBe(first);
     }).pipe(Effect.provide(layerTest)),
   );
