@@ -71,45 +71,40 @@ describe("assetImageSource", () => {
     ).toStrictEqual({ uri: "https://host/api/assets/token-a/image-1.png" });
   });
 
-  it("keys GitHub uploads but not repository files that can change at a branch", () => {
-    const upload = assetImageCacheKey(environmentId, {
-      _tag: "github-media",
-      cwd: "/repo",
-      url: "https://github.com/user-attachments/assets/0f3c2b1a-1111-2222-3333-444455556666",
-    });
-    const branchFile = assetImageCacheKey(environmentId, {
-      _tag: "github-media",
-      cwd: "/repo",
-      url: "https://raw.githubusercontent.com/owner/repo/main/docs/shot.png",
-    });
-
-    expect(upload).toBeDefined();
-    expect(branchFile).toBeUndefined();
-    expect(
-      assetImageCacheKey(EnvironmentId.make("environment-2"), {
-        _tag: "github-media",
-        cwd: "/repo",
-        url: "https://github.com/user-attachments/assets/0f3c2b1a-1111-2222-3333-444455556666",
-      }),
-    ).not.toBe(upload);
-  });
-
-  it("keys repository files pinned to a 40-hex commit SHA across blob and raw links", () => {
+  it("keys GitHub uploads and pinned files per environment, sharing blob and raw links", () => {
     const sha = "0123456789abcdef0123456789abcdef01234567";
-    const key = (url: string) =>
-      assetImageCacheKey(environmentId, { _tag: "github-media", cwd: "/repo", url });
-
+    const key = (url: string, environment = environmentId) =>
+      assetImageCacheKey(environment, { _tag: "github-media", cwd: "/repo", url });
+    const upload = key(
+      "https://github.com/user-attachments/assets/0f3c2b1a-1111-2222-3333-444455556666",
+    );
     const pinned = key(`https://raw.githubusercontent.com/owner/repo/${sha}/docs/shot.png`);
 
+    expect(upload).toBeDefined();
     expect(pinned).toBeDefined();
     expect(key(`https://github.com/owner/repo/blob/${sha}/docs/shot.png`)).toBe(pinned);
     expect(
-      key(`https://raw.githubusercontent.com/owner/repo/${"a".repeat(64)}/shot.png`),
-    ).toBeUndefined();
-    expect(key("https://github.com/owner/repo/blob/v1.2.3/docs/shot.png")).toBeUndefined();
-    expect(
-      key(`https://raw.githubusercontent.com/owner/repo/${sha.slice(0, 12)}/shot.png`),
-    ).toBeUndefined();
+      key(
+        "https://github.com/user-attachments/assets/0f3c2b1a-1111-2222-3333-444455556666",
+        EnvironmentId.make("environment-2"),
+      ),
+    ).not.toBe(upload);
+  });
+
+  it("keeps GitHub files at branches, tags, short SHAs and 64-hex refs keyed by URL", () => {
+    const urls = [
+      "https://raw.githubusercontent.com/owner/repo/main/docs/shot.png",
+      "https://github.com/owner/repo/blob/v1.2.3/docs/shot.png",
+      "https://raw.githubusercontent.com/owner/repo/0123456789ab/shot.png",
+      `https://raw.githubusercontent.com/owner/repo/${"a".repeat(64)}/shot.png`,
+    ];
+
+    for (const url of urls) {
+      expect(
+        assetImageCacheKey(environmentId, { _tag: "github-media", cwd: "/repo", url }),
+        url,
+      ).toBeUndefined();
+    }
   });
 
   it("keys host files by the version the server read, and by URL without one", () => {
