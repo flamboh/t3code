@@ -10,7 +10,8 @@ const ATTACHMENT_PATH_PATTERN = /^\/user-attachments\/assets\/[\w-]+$/u;
 const LEGACY_ATTACHMENT_PATH_PATTERN = /^\/[^/]+\/[^/]+\/assets\/\d+\/[\w-]+$/u;
 /** `blob` and `raw` both address file bytes; `raw` is the one the token is honoured on. */
 const REPOSITORY_FILE_PATTERN = /^\/([^/]+)\/([^/]+)\/(?:raw|blob)\/(.*[^/])$/u;
-const COMMIT_SHA_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu;
+/** GitHub rejects 40-hex branch and tag names, and serves no SHA-256 repositories. */
+const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/iu;
 
 function canonicalUrl(host: string, url: URL): string {
   return `https://${host}${url.pathname}${url.search}`;
