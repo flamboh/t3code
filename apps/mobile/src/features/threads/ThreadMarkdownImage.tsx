@@ -133,7 +133,7 @@ export function ThreadMarkdownImageView(props: {
                   cacheKey={props.cacheKey}
                   format={props.format}
                   onLoad={(size) => {
-                    setDecodedSize(size);
+                    if (size) setDecodedSize(size);
                     loadRetry.onLoad();
                   }}
                   onError={loadRetry.onError}
@@ -155,7 +155,7 @@ export function ThreadMarkdownImageView(props: {
 function ThreadMarkdownImageRequest(props: {
   readonly uri: string;
   readonly cacheKey: string | undefined;
-  readonly onLoad: (sourceSize: { width: number; height: number }) => void;
+  readonly onLoad: (sourceSize: { width: number; height: number } | null) => void;
   readonly onError: () => void;
   readonly format?: "svg";
 }) {
@@ -168,7 +168,7 @@ function ThreadMarkdownImageRequest(props: {
           uri={props.uri}
           onLoad={(size) => {
             setLoaded(true);
-            if (size) props.onLoad(size);
+            props.onLoad(size);
           }}
           onError={props.onError}
         />
