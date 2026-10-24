@@ -132,6 +132,7 @@ const AssetClaimsSchema = Schema.Union([
     fileName: Schema.optionalKey(Schema.String),
     mimeType: Schema.optionalKey(Schema.String),
     renderIntent: Schema.optionalKey(Schema.Literal("mcp-app")),
+    fileRevision: Schema.optionalKey(Schema.String),
     expiresAt: Schema.Number,
   }),
   Schema.Struct({
@@ -340,21 +341,26 @@ const readImageDimensionsFromOpenFile = (filePath: string, file: OpenMediaFile) 
     Effect.orElseSucceed((): ImageDimensions | null => null),
   );
 
+const mediaFileRevision = ({ info }: OpenMediaFile) =>
+  `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`;
+
 /**
  * Opens through `openMediaFile` so a path swapped for a FIFO cannot block the
  * request; a regular open would wait for a writer that never comes.
  */
-const readImageDimensionsFromHeader = (filePath: string) =>
+const inspectImageFile = (filePath: string) =>
   openMediaFile(filePath).pipe(
     Effect.flatMap((file) =>
-      file === null ? Effect.succeed(null) : readImageDimensionsFromOpenFile(filePath, file),
+      file === null
+        ? Effect.succeed(null)
+        : Effect.map(readImageDimensionsFromOpenFile(filePath, file), (dimensions) => ({
+            dimensions,
+            fileRevision: mediaFileRevision(file),
+          })),
     ),
     Effect.scoped,
-    Effect.orElseSucceed((): ImageDimensions | null => null),
+    Effect.orElseSucceed(() => null),
   );
-
-const mediaFileRevision = ({ info }: OpenMediaFile) =>
-  `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`;
 
 const isImageMimeType = (mimeType: string | null) => mimeType?.startsWith("image/") === true;
 
@@ -703,7 +709,12 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
           ? inlinePreviewMimeTypeForExtension(extension)
           : undefined;
       if (!isGenericFile) {
-        imageDimensions = yield* readImageDimensionsFromHeader(attachmentPath);
+        const canonicalFile = yield* resolveCanonicalFile(attachmentPath).pipe(
+          Effect.orElseSucceed(() => null),
+        );
+        const inspected = canonicalFile ? yield* inspectImageFile(canonicalFile) : null;
+        imageDimensions = inspected?.dimensions ?? null;
+        fileRevision = inspected?.fileRevision;
       }
       claims = {
         version: 1,
@@ -721,6 +732,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
         ...(input.resource.renderIntent === "mcp-app" && inlinePreviewMimeType === "text/html"
           ? { renderIntent: "mcp-app" as const }
           : {}),
+        ...(fileRevision !== undefined ? { fileRevision } : {}),
         expiresAt,
       };
       fileName = input.resource.fileName ?? path.basename(attachmentPath);
@@ -948,6 +960,28 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       attachmentId: claims.attachmentId,
     });
     if (!attachmentPath) return null;
+    const attachmentAsset = {
+      ...(claims.download ? { download: true } : {}),
+      ...(claims.fileName !== undefined ? { fileName: claims.fileName } : {}),
+      ...(claims.mimeType !== undefined ? { mimeType: claims.mimeType } : {}),
+      ...(claims.renderIntent === "mcp-app" ? { renderIntent: "mcp-app" as const } : {}),
+    };
+    if (claims.fileRevision !== undefined) {
+      const canonicalFile = yield* resolveCanonicalFile(attachmentPath).pipe(
+        Effect.tapError((cause) =>
+          Effect.logError("Failed to resolve canonical attachment path.", {
+            attachmentId: claims.attachmentId,
+            path: attachmentPath,
+            cause,
+          }),
+        ),
+        Effect.orElseSucceed(() => null),
+      );
+      const file = canonicalFile ? yield* openSignedRevision(canonicalFile, claims) : null;
+      return canonicalFile && file
+        ? ({ kind: "file", path: canonicalFile, file, ...attachmentAsset } satisfies ResolvedAsset)
+        : null;
+    }
     const fileSystem = yield* FileSystem.FileSystem;
     const info = yield* optionOnNotFound(fileSystem.stat(attachmentPath)).pipe(
       Effect.tapError((cause) =>
@@ -960,14 +994,7 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       Effect.orElseSucceed(() => Option.none()),
     );
     return Option.isSome(info) && info.value.type === "File"
-      ? ({
-          kind: "file",
-          path: attachmentPath,
-          ...(claims.download ? { download: true } : {}),
-          ...(claims.fileName !== undefined ? { fileName: claims.fileName } : {}),
-          ...(claims.mimeType !== undefined ? { mimeType: claims.mimeType } : {}),
-          ...(claims.renderIntent === "mcp-app" ? { renderIntent: "mcp-app" as const } : {}),
-        } satisfies ResolvedAsset)
+      ? ({ kind: "file", path: attachmentPath, ...attachmentAsset } satisfies ResolvedAsset)
       : null;
   }
 

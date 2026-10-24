@@ -762,6 +762,21 @@ describe("AssetAccess", () => {
         yield* fs.writeFileString(second, "image C");
         yield* Effect.promise(() => NodeFSP.utimes(second, 2_000, 2_000));
         expect(yield* resolveIssued(media.relativeUrl)).toBeNull();
+
+        const config = yield* ServerConfig.ServerConfig;
+        const attachmentId = "thread-1-00000000-0000-4000-8000-000000000041";
+        const attachmentPath = path.join(config.attachmentsDir, `${attachmentId}.png`);
+        yield* fs.makeDirectory(config.attachmentsDir, { recursive: true });
+        yield* fs.writeFileString(attachmentPath, "image D");
+        const attachment = yield* issueAssetUrl({ resource: { _tag: "attachment", attachmentId } });
+        expect(attachment.fileRevision).toBeDefined();
+        expect(yield* servedText(attachment.relativeUrl)).toBe("image D");
+        yield* fs.writeFileString(attachmentPath, "image E");
+        yield* Effect.promise(() => NodeFSP.utimes(attachmentPath, 2_000, 2_000));
+        expect(yield* resolveIssued(attachment.relativeUrl)).toBeNull();
+        const reissued = yield* issueAssetUrl({ resource: { _tag: "attachment", attachmentId } });
+        expect(reissued.fileRevision).not.toBe(attachment.fileRevision);
+        expect(yield* servedText(reissued.relativeUrl)).toBe("image E");
       }).pipe(Effect.provide(layerTest)),
   );
 
