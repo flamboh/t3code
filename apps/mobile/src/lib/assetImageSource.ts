@@ -16,13 +16,6 @@ export function assetImageCacheKey(
   switch (resource._tag) {
     case "attachment":
       return `t3-attachment:${JSON.stringify([environmentId, resource.attachmentId])}`;
-    case "tool-output-image":
-      return `t3-tool-output:${JSON.stringify([
-        environmentId,
-        resource.threadId,
-        resource.itemId,
-        resource.index,
-      ])}`;
     case "github-media": {
       const url = immutableGithubMediaUrl(resource.url);
       return url === null ? undefined : `t3-github-media:${JSON.stringify([environmentId, url])}`;
@@ -39,6 +32,8 @@ export function assetImageCacheKey(
             resource.path,
             fileRevision,
           ])}`;
+    // A tool can replace the image at an index, and nothing cheap identifies its bytes.
+    case "tool-output-image":
     case "project-favicon":
     case "native-app-icon":
       return undefined;

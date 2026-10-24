@@ -56,20 +56,19 @@ describe("assetImageSource", () => {
     expect(source).toStrictEqual({ uri: "https://host/api/assets/token-a/logo.png" });
   });
 
-  it("keys tool output images by their item and position", () => {
-    const resource = {
-      _tag: "tool-output-image",
-      threadId: ThreadId.make("thread-1"),
-      itemId: TurnItemId.make("item-1"),
-      index: 0,
-    } as const;
-
-    expect(assetImageCacheKey(environmentId, resource)).toBe(
-      assetImageCacheKey(environmentId, { ...resource }),
-    );
-    expect(assetImageCacheKey(environmentId, resource)).not.toBe(
-      assetImageCacheKey(environmentId, { ...resource, index: 1 }),
-    );
+  it("keeps tool output images keyed by URL because a tool can replace them", () => {
+    expect(
+      assetImageSource(
+        environmentId,
+        {
+          _tag: "tool-output-image",
+          threadId: ThreadId.make("thread-1"),
+          itemId: TurnItemId.make("item-1"),
+          index: 0,
+        },
+        "https://host/api/assets/token-a/image-1.png",
+      ),
+    ).toStrictEqual({ uri: "https://host/api/assets/token-a/image-1.png" });
   });
 
   it("keys GitHub uploads but not repository files that can change at a branch", () => {
