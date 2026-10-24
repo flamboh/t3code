@@ -7,7 +7,7 @@ import { videoMimeType } from "@t3tools/shared/video";
 import { Pressable, View } from "react-native";
 import { Image } from "expo-image";
 import { AppText } from "../../components/ui/AppText";
-import { useAssetUrlState, useRefreshAssetUrl } from "../../state/assets";
+import { useAssetImageLoadRetry, useAssetUrlState, useRefreshAssetUrl } from "../../state/assets";
 import { assetImageCacheKey } from "../../lib/assetImageSource";
 import { MediaVideoPlayer } from "../../components/MediaVideoPlayer";
 import { VideoAttachmentTile } from "../../components/VideoAttachmentTile";
@@ -41,6 +41,7 @@ export function usePullRequestMediaUrl(url: string) {
         : undefined,
     unavailable: resource !== null && asset._tag === "Failure",
     source: pullRequestMediaSource(url, context),
+    refresh: resource ? refresh : undefined,
     resolvePlaybackUri: resource ? async () => (await refresh()) ?? null : undefined,
   };
 }
@@ -66,6 +67,7 @@ export function PullRequestMedia(props: {
           cacheKey={media.cacheKey}
           unavailable={media.unavailable}
           alt={name}
+          refreshUri={media.refresh}
           onPressPreview={(source) =>
             setImage(
               withGallery({
@@ -119,6 +121,7 @@ export function PullRequestImageAttachment(props: {
   readonly gallery: readonly FilePreviewItem[];
 }) {
   const media = usePullRequestMediaUrl(props.url);
+  const loadRetry = useAssetImageLoadRetry(media.uri, media.refresh);
   const [preview, setPreview] = useState<FilePreviewSource | null>(null);
   return (
     <>
@@ -135,6 +138,8 @@ export function PullRequestImageAttachment(props: {
             style={{ width: 174, height: 112 }}
             contentFit="contain"
             cachePolicy="memory-disk"
+            onLoad={loadRetry.onLoad}
+            onError={loadRetry.onError}
           />
         </View>
         <AppText numberOfLines={1} className="text-xs text-foreground-muted">

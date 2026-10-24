@@ -6,18 +6,23 @@ import { assetImageCacheKey, assetImageSource } from "./assetImageSource";
 const environmentId = EnvironmentId.make("environment-1");
 
 describe("assetImageSource", () => {
-  it("caches an attachment under one key across re-signed URLs", () => {
+  it("caches an attachment under one key per file revision across re-signed URLs", () => {
     const resource = { _tag: "attachment", attachmentId: "thread-1-photo.jpg" } as const;
-    const first = assetImageSource(
-      environmentId,
-      resource,
-      "https://host/api/assets/token-a/p.jpg",
-    );
-    const second = assetImageSource(
-      environmentId,
-      resource,
-      "https://host/api/assets/token-b/p.jpg",
-    );
+    const first = assetImageSource(environmentId, resource, {
+      url: "https://host/api/assets/token-a/p.jpg",
+      fileRevision: "rev-1",
+    });
+    const second = assetImageSource(environmentId, resource, {
+      url: "https://host/api/assets/token-b/p.jpg",
+      fileRevision: "rev-1",
+    });
+    const edited = assetImageSource(environmentId, resource, {
+      url: "https://host/api/assets/token-c/p.jpg",
+      fileRevision: "rev-2",
+    });
+    const olderServer = assetImageSource(environmentId, resource, {
+      url: "https://host/api/assets/token-d/p.jpg",
+    });
 
     expect(first.cacheKey).toBeDefined();
     expect(second).toStrictEqual({
@@ -25,9 +30,13 @@ describe("assetImageSource", () => {
       cacheKey: first.cacheKey,
     });
     expect(
-      assetImageSource(EnvironmentId.make("environment-2"), resource, "https://other/p.jpg")
-        .cacheKey,
+      assetImageSource(EnvironmentId.make("environment-2"), resource, {
+        url: "https://other/p.jpg",
+      }).cacheKey,
     ).not.toBe(first.cacheKey);
+    expect(edited.cacheKey).not.toBe(first.cacheKey);
+    expect(olderServer.cacheKey).toBeDefined();
+    expect(olderServer.cacheKey).not.toBe(first.cacheKey);
   });
 
   it("keeps ids that contain colons from sharing a key", () => {
@@ -35,12 +44,12 @@ describe("assetImageSource", () => {
     const left = assetImageSource(
       EnvironmentId.make("a"),
       { _tag: "attachment", attachmentId: "b:c" },
-      uri,
+      { url: uri },
     );
     const right = assetImageSource(
       EnvironmentId.make("a:b"),
       { _tag: "attachment", attachmentId: "c" },
-      uri,
+      { url: uri },
     );
 
     expect(left.cacheKey).not.toBe(right.cacheKey);
@@ -50,7 +59,7 @@ describe("assetImageSource", () => {
     const source = assetImageSource(
       environmentId,
       { _tag: "draft-workspace-file", cwd: "/repo", path: "logo.png" },
-      "https://host/api/assets/token-a/logo.png",
+      { url: "https://host/api/assets/token-a/logo.png" },
     );
 
     expect(source).toStrictEqual({ uri: "https://host/api/assets/token-a/logo.png" });
@@ -66,7 +75,7 @@ describe("assetImageSource", () => {
           itemId: TurnItemId.make("item-1"),
           index: 0,
         },
-        "https://host/api/assets/token-a/image-1.png",
+        { url: "https://host/api/assets/token-a/image-1.png" },
       ),
     ).toStrictEqual({ uri: "https://host/api/assets/token-a/image-1.png" });
   });

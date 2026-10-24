@@ -4,8 +4,8 @@ import type { ImageSource } from "expo-image";
 
 /**
  * Every mint signs a new URL, so a URL-keyed cache misses each time. Content
- * that cannot change caches under its identity instead, and host files under
- * their path plus the version the server read from disk. Anything else stays
+ * that cannot change caches under its identity instead, and files under their
+ * identity plus the version the server read from disk. Anything else stays
  * keyed by URL, as does GitHub media from servers that send no `accessScope`.
  */
 export function assetImageCacheKey(
@@ -15,7 +15,11 @@ export function assetImageCacheKey(
 ): string | undefined {
   switch (resource._tag) {
     case "attachment":
-      return `t3-attachment:${JSON.stringify([environmentId, resource.attachmentId])}`;
+      return `t3-attachment:${JSON.stringify(
+        version?.fileRevision === undefined
+          ? [environmentId, resource.attachmentId]
+          : [environmentId, resource.attachmentId, version.fileRevision],
+      )}`;
     case "github-media": {
       const url = immutableGithubMediaUrl(resource.url);
       return url === null || version?.accessScope === undefined
@@ -45,8 +49,8 @@ export function assetImageCacheKey(
 export function assetImageSource(
   environmentId: EnvironmentId,
   resource: AssetResource,
-  uri: string,
+  asset: { readonly url: string; readonly fileRevision?: string; readonly accessScope?: string },
 ): ImageSource {
-  const cacheKey = assetImageCacheKey(environmentId, resource);
-  return cacheKey === undefined ? { uri } : { uri, cacheKey };
+  const cacheKey = assetImageCacheKey(environmentId, resource, asset);
+  return cacheKey === undefined ? { uri: asset.url } : { uri: asset.url, cacheKey };
 }

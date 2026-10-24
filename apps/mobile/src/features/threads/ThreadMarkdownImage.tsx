@@ -14,7 +14,7 @@ import { MediaActionsMenu } from "../../components/MediaActionsMenu";
 import { PresentationSource } from "../../components/ui/NativePresentation";
 import { useMediaActions } from "../../state/mediaActions";
 import type { MediaActionsSource } from "../../lib/mediaActionsSource";
-import { useAssetUrlState } from "../../state/assets";
+import { useAssetImageLoadRetry, useAssetUrlState, useRefreshAssetUrl } from "../../state/assets";
 import { assetImageCacheKey } from "../../lib/assetImageSource";
 import {
   MARKDOWN_IMAGE_MAX_WIDTH,
@@ -41,6 +41,7 @@ export function ThreadMarkdownImageView(props: {
   readonly knownSize?: { readonly width: number; readonly height: number } | undefined;
   readonly format?: "svg";
   readonly actionsSource?: MediaActionsSource;
+  readonly refreshUri?: () => Promise<string | null>;
   readonly onPressPreview: (source: FilePreviewSource) => void;
 }) {
   const withGallery = useFilePreviewGallery();
@@ -53,15 +54,11 @@ export function ThreadMarkdownImageView(props: {
       ? Math.min(contextWidth, measuredWidth)
       : contextWidth || measuredWidth;
   const [decodedSize, setDecodedSize] = useState<{ width: number; height: number } | null>(null);
-  const [failedUri, setFailedUri] = useState<string | null>(null);
+  const loadRetry = useAssetImageLoadRetry(props.uri, props.refreshUri);
 
   useEffect(() => {
     setDecodedSize(null);
   }, [props.sourceKey]);
-
-  useEffect(() => {
-    setFailedUri(null);
-  }, [props.uri]);
 
   const sourceSize = decodedSize ?? props.knownSize ?? null;
   const displaySize: MarkdownImageDisplaySize | null =
@@ -72,7 +69,7 @@ export function ThreadMarkdownImageView(props: {
           sourceHeight: sourceSize.height,
           availableWidth,
         });
-  const failed = props.unavailable || (props.uri !== null && failedUri === props.uri);
+  const failed = props.unavailable || loadRetry.failed;
   const placeholderWidth: ViewStyle["width"] =
     availableWidth > 0 ? Math.min(availableWidth, MARKDOWN_IMAGE_MAX_WIDTH) : "100%";
   const frameStyle: ViewStyle = displaySize ?? { width: placeholderWidth, aspectRatio: 16 / 9 };
@@ -135,8 +132,11 @@ export function ThreadMarkdownImageView(props: {
                   uri={props.uri}
                   cacheKey={props.cacheKey}
                   format={props.format}
-                  onLoad={setDecodedSize}
-                  onError={() => setFailedUri(props.uri)}
+                  onLoad={(size) => {
+                    setDecodedSize(size);
+                    loadRetry.onLoad();
+                  }}
+                  onError={loadRetry.onError}
                 />
               </View>
             </Pressable>
@@ -253,6 +253,7 @@ export function ThreadMarkdownImage(props: {
 }) {
   const withGallery = useFilePreviewGallery();
   const assetUrl = useAssetUrlState(props.environmentId, props.resource);
+  const refreshAssetUrl = useRefreshAssetUrl(props.environmentId, props.resource);
 
   return (
     <ThreadMarkdownImageView
@@ -284,6 +285,7 @@ export function ThreadMarkdownImage(props: {
       }
       alt={props.alt}
       actionsSource={props.actionsSource}
+      refreshUri={refreshAssetUrl}
       onPressPreview={(source) => {
         const { uri: _uri, ...rest } = source as FilePreviewSource & { uri?: string };
         props.onPressPreview(

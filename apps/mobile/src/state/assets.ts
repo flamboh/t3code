@@ -8,9 +8,10 @@ import {
   EMPTY_ASSET_URL_ATOM,
 } from "@t3tools/client-runtime/state/assets";
 import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 
 import { connectionAtomRuntime } from "../connection/runtime";
+import { assetImageSource } from "../lib/assetImageSource";
 import { projectFaviconDatabaseCache } from "../lib/projectFaviconDatabaseCache";
 import { type AssetUrlState, deriveAssetUrlState } from "./asset-url-state";
 import { environmentProjectCloneListAtom } from "./projectClones";
@@ -91,4 +92,44 @@ export function useRefreshAssetUrl(
     );
     return state._tag === "Success" ? state.url : null;
   }, [createUrl, environmentId, httpBaseUrl, resource]);
+}
+
+/**
+ * The server refuses a signed image URL once its file or GitHub credential
+ * changes after signing, so a failed load re-signs once. The next retry waits
+ * for a successful load, so an image that cannot decode does not re-sign forever.
+ */
+export function useAssetImageLoadRetry(
+  uri: string | null,
+  refresh: (() => Promise<string | null>) | undefined,
+) {
+  const [retried, setRetried] = useState(false);
+  const [failedUri, setFailedUri] = useState<string | null>(null);
+  return {
+    failed: uri !== null && failedUri === uri,
+    onLoad: () => setRetried(false),
+    onError: () => {
+      if (refresh === undefined || retried) {
+        setFailedUri(uri);
+        return;
+      }
+      setRetried(true);
+      void refresh().then((next) => {
+        if (next === null) setFailedUri(uri);
+      });
+    },
+  };
+}
+
+export function useAssetImage(environmentId: EnvironmentId, resource: AssetResource | null) {
+  const asset = useAssetUrlState(environmentId, resource);
+  const refresh = useRefreshAssetUrl(environmentId, resource);
+  const retry = useAssetImageLoadRetry(asset._tag === "Success" ? asset.url : null, refresh);
+  return {
+    ...retry,
+    source:
+      asset._tag === "Success" && resource !== null
+        ? assetImageSource(environmentId, resource, asset)
+        : null,
+  };
 }
