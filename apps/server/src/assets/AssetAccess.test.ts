@@ -190,7 +190,9 @@ describe("AssetAccess", () => {
         cwd: "/repo",
         expiresAt: Number.MAX_SAFE_INTEGER,
       };
-      expect((yield* githubMediaResponse(asset, {})).status).toBe(404);
+      const signedOut = yield* githubMediaResponse(asset, {});
+      expect(signedOut.status).toBe(404);
+      expect(signedOut.headers["cache-control"]).toBe("private, no-store");
       expect((yield* githubMediaResponse(asset, {})).status).toBe(200);
       expect((yield* githubMediaResponse(asset, {})).status).toBe(200);
       expect(lookups).toBe(3);
@@ -225,6 +227,7 @@ describe("AssetAccess", () => {
         }),
       ),
       Effect.scoped,
+      Effect.provide(NodeServices.layer),
     );
   });
 
@@ -1077,29 +1080,67 @@ describe("AssetAccess", () => {
           cwd: "/repo",
           url: "https://github.com/user-attachments/assets/1a1842fb",
         },
-      }).pipe(Effect.map((result) => result.accessScope));
-      const withFingerprint = (fingerprint: string) =>
-        issue.pipe(
-          Effect.provide(
-            Layer.mock(GitHubCredentials.GitHubCredentials)({
-              get: (host) =>
-                Effect.succeed({
-                  host,
-                  token: Redacted.make("token"),
-                  source: "gh" as const,
-                  fingerprint,
-                }),
-            }),
+      });
+      const asAccount = (fingerprint: string) =>
+        Effect.provide(
+          Layer.mock(GitHubCredentials.GitHubCredentials)({
+            get: (host) =>
+              Effect.succeed({
+                host,
+                token: Redacted.make("token"),
+                source: "gh" as const,
+                fingerprint,
+              }),
+          }),
+        );
+      const serve = (relativeUrl: string) =>
+        Effect.gen(function* () {
+          const suffix = relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+          const separator = suffix.indexOf("/");
+          const asset = yield* resolveAsset(
+            suffix.slice(0, separator),
+            suffix.slice(separator + 1),
+          );
+          if (asset?.kind !== "github-media") return null;
+          return yield* githubMediaResponse(asset, {});
+        }).pipe(
+          Effect.provideService(
+            HttpClient.HttpClient,
+            HttpClient.make((request) =>
+              Effect.succeed(
+                HttpClientResponse.fromWeb(
+                  request,
+                  new Response(null, { headers: { "content-type": "image/png" } }),
+                ),
+              ),
+            ),
           ),
+          Effect.scoped,
         );
 
-      const accountA = yield* withFingerprint("github.com:account-a");
+      const accountA = yield* issue.pipe(asAccount("github.com:account-a"));
       const anonymous = yield* issue;
-      expect(accountA).toBeDefined();
-      expect(anonymous).toBeDefined();
-      expect(yield* withFingerprint("github.com:account-a")).toBe(accountA);
-      expect(yield* withFingerprint("github.com:account-b")).not.toBe(accountA);
-      expect(anonymous).not.toBe(accountA);
+      expect(accountA.accessScope).toBeDefined();
+      expect(anonymous.accessScope).toBeDefined();
+      expect((yield* issue.pipe(asAccount("github.com:account-a"))).accessScope).toBe(
+        accountA.accessScope,
+      );
+      expect((yield* issue.pipe(asAccount("github.com:account-b"))).accessScope).not.toBe(
+        accountA.accessScope,
+      );
+      expect(anonymous.accessScope).not.toBe(accountA.accessScope);
+
+      expect(
+        (yield* serve(accountA.relativeUrl).pipe(asAccount("github.com:account-a")))?.status,
+      ).toBe(200);
+      for (const switched of [
+        serve(accountA.relativeUrl).pipe(asAccount("github.com:account-b")),
+        serve(anonymous.relativeUrl).pipe(asAccount("github.com:account-a")),
+      ]) {
+        const refused = yield* switched;
+        expect(refused?.status).toBe(404);
+        expect(refused?.headers["cache-control"]).toBe("private, no-store");
+      }
     }).pipe(Effect.provide(layerTest)),
   );
 
@@ -1121,6 +1162,7 @@ describe("AssetAccess", () => {
         kind: "github-media",
         url: "https://github.com/user-attachments/assets/1a1842fb-6383-492f-873c-57aa0033fa6c",
         cwd: "/repo",
+        accessScope: attachment.accessScope,
         expiresAt: attachment.expiresAt,
       });
 

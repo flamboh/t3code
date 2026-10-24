@@ -167,6 +167,7 @@ const AssetClaimsSchema = Schema.Union([
     /** Already narrowed to a GitHub media host at mint time; the signature is what keeps it there. */
     url: Schema.String,
     cwd: Schema.String,
+    accessScope: Schema.optionalKey(Schema.String),
     expiresAt: Schema.Number,
   }),
 ]);
@@ -195,6 +196,7 @@ export type ResolvedAsset =
       readonly kind: "github-media";
       readonly url: string;
       readonly cwd: string;
+      readonly accessScope?: string;
       readonly expiresAt: number;
     };
 
@@ -870,15 +872,16 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
       if (fetchUrl === null) {
         return yield* new AssetGitHubMediaUrlValidationError({});
       }
+      accessScope = yield* githubMediaAccessScope.pipe(Effect.orElseSucceed(() => undefined));
       claims = {
         version: 1,
         kind: "github-media",
         url: fetchUrl,
         cwd: input.resource.cwd,
+        ...(accessScope !== undefined ? { accessScope } : {}),
         expiresAt,
       };
       fileName = githubMediaFileName(fetchUrl);
-      accessScope = yield* githubMediaAccessScope.pipe(Effect.orElseSucceed(() => undefined));
       break;
     }
   }
@@ -995,6 +998,7 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       kind: "github-media",
       url: claims.url,
       cwd: claims.cwd,
+      ...(claims.accessScope !== undefined ? { accessScope: claims.accessScope } : {}),
       expiresAt: claims.expiresAt,
     } satisfies ResolvedAsset;
   }
