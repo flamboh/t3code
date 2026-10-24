@@ -77,6 +77,8 @@ export const AssetCreateUrlResult = Schema.Struct({
   imageDimensions: Schema.optional(AssetImageDimensions),
   /** Changes only when the file's contents or identity change, unlike `relativeUrl`, which is re-signed on every mint. */
   fileRevision: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(256))),
+  /** Opaque id of the credential the server reads remote media with, since two credentials can see different bytes behind one URL. */
+  accessScope: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(64))),
 });
 export type AssetCreateUrlResult = typeof AssetCreateUrlResult.Type;
 

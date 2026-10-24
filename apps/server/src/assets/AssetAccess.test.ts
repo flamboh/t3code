@@ -116,6 +116,9 @@ const layerTest = Layer.mergeAll(
   ),
   NativeAppIconResolver.layer.pipe(Layer.provide(layerConfig)),
   ServerSecretStore.layer.pipe(Layer.provide(layerConfig)),
+  Layer.mock(GitHubCredentials.GitHubCredentials)({
+    get: (host) => Effect.fail(new GitHubCredentials.GitHubNotSignedInError({ host })),
+  }),
 ).pipe(Layer.provideMerge(NodeServices.layer));
 
 describe("AssetAccess", () => {
@@ -1063,6 +1066,40 @@ describe("AssetAccess", () => {
 
       expect(result.sourcePath).toBe(path.join("brand", "saved.svg"));
       expect(result.relativeUrl).toMatch(/\/v[0-9a-f]{64}-saved\.svg$/);
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("scopes GitHub media URLs to the credential that reads them", () =>
+    Effect.gen(function* () {
+      const issue = issueAssetUrl({
+        resource: {
+          _tag: "github-media",
+          cwd: "/repo",
+          url: "https://github.com/user-attachments/assets/1a1842fb",
+        },
+      }).pipe(Effect.map((result) => result.accessScope));
+      const withFingerprint = (fingerprint: string) =>
+        issue.pipe(
+          Effect.provide(
+            Layer.mock(GitHubCredentials.GitHubCredentials)({
+              get: (host) =>
+                Effect.succeed({
+                  host,
+                  token: Redacted.make("token"),
+                  source: "gh" as const,
+                  fingerprint,
+                }),
+            }),
+          ),
+        );
+
+      const accountA = yield* withFingerprint("github.com:account-a");
+      const anonymous = yield* issue;
+      expect(accountA).toBeDefined();
+      expect(anonymous).toBeDefined();
+      expect(yield* withFingerprint("github.com:account-a")).toBe(accountA);
+      expect(yield* withFingerprint("github.com:account-b")).not.toBe(accountA);
+      expect(anonymous).not.toBe(accountA);
     }).pipe(Effect.provide(layerTest)),
   );
 

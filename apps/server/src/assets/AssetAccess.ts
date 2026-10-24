@@ -66,6 +66,7 @@ import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as NativeAppIconResolver from "./NativeAppIconResolver.ts";
 import { extractIcnsPng } from "./icns.ts";
 import { openMediaFile, readMediaFileHeader, type OpenMediaFile } from "./MediaFile.ts";
+import { githubMediaAccessScope } from "./GitHubMediaFetch.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 export const ASSET_ROUTE_PREFIX = "/api/assets";
@@ -583,6 +584,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
   let sourcePath: string | undefined;
   let imageDimensions: ImageDimensions | null = null;
   let fileRevision: string | undefined;
+  let accessScope: string | undefined;
 
   switch (input.resource._tag) {
     case "media-file": {
@@ -876,6 +878,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
         expiresAt,
       };
       fileName = githubMediaFileName(fetchUrl);
+      accessScope = yield* githubMediaAccessScope.pipe(Effect.orElseSucceed(() => undefined));
       break;
     }
   }
@@ -913,6 +916,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
     ...(sourcePath !== undefined ? { sourcePath } : {}),
     ...(imageDimensions !== null ? { imageDimensions } : {}),
     ...(fileRevision !== undefined ? { fileRevision } : {}),
+    ...(accessScope !== undefined ? { accessScope } : {}),
   };
 });
 

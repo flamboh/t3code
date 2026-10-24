@@ -1,7 +1,9 @@
 import * as Mime from "effect/http/Mime";
 import { githubMediaFileName } from "@t3tools/shared/githubMedia";
 import * as Clock from "effect/Clock";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import * as Hex from "effect/encoding/Hex";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import {
@@ -55,6 +57,25 @@ const githubToken = GitHubCredentials.GitHubCredentials.pipe(
   Effect.map((credential) => credential.token),
   Effect.orElseSucceed(() => null),
 );
+
+/**
+ * Two credentials can see different bytes behind one URL, so clients cache GitHub media per
+ * scope. It is a hash of the credential's fingerprint: equal for one credential, and it reveals
+ * nothing about the token.
+ */
+export const githubMediaAccessScope = Effect.gen(function* () {
+  const fingerprint = yield* GitHubCredentials.GitHubCredentials.pipe(
+    Effect.flatMap((credentials) => credentials.get("github.com")),
+    Effect.map((credential) => credential.fingerprint),
+    Effect.orElseSucceed(() => "anonymous"),
+  );
+  const crypto = yield* Crypto.Crypto;
+  const digest = yield* crypto.digest(
+    "SHA-256",
+    new TextEncoder().encode(`t3-github-media-scope:${fingerprint}`),
+  );
+  return Hex.encode(digest).slice(0, 16);
+});
 
 const fetchFollowingRedirects = Effect.fn("GitHubMediaFetch.fetchFollowingRedirects")(function* (
   url: string,

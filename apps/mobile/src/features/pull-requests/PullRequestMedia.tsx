@@ -35,7 +35,10 @@ export function usePullRequestMediaUrl(url: string) {
   const refresh = useRefreshAssetUrl(context?.environmentId ?? null, resource);
   return {
     uri: asset._tag === "Success" ? asset.url : resource ? null : url,
-    cacheKey: context && resource ? assetImageCacheKey(context.environmentId, resource) : undefined,
+    cacheKey:
+      context && resource && asset._tag === "Success"
+        ? assetImageCacheKey(context.environmentId, resource, asset)
+        : undefined,
     unavailable: resource !== null && asset._tag === "Failure",
     source: pullRequestMediaSource(url, context),
     resolvePlaybackUri: resource ? async () => (await refresh()) ?? null : undefined,

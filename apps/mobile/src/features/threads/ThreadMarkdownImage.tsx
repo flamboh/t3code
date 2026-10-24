@@ -259,7 +259,7 @@ export function ThreadMarkdownImage(props: {
       uri={assetUrl._tag === "Success" ? assetUrl.url + (props.srcFragment ?? "") : null}
       cacheKey={
         assetUrl._tag === "Success"
-          ? assetImageCacheKey(props.environmentId, props.resource, assetUrl.fileRevision)
+          ? assetImageCacheKey(props.environmentId, props.resource, assetUrl)
           : undefined
       }
       sourceKey={
