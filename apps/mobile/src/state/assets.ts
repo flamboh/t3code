@@ -8,7 +8,7 @@ import {
   EMPTY_ASSET_URL_ATOM,
 } from "@t3tools/client-runtime/state/assets";
 import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 import { assetImageSource } from "../lib/assetImageSource";
@@ -51,7 +51,7 @@ export function useAssetUrlState(
   const result = useAtomValue(
     blocked !== null || environmentId === null || resource === null
       ? EMPTY_ASSET_URL_ATOM
-      : assetEnvironment.createUrl({ environmentId, input: { resource } }),
+      : assetEnvironment.createUrl({ environmentId, input: { resource, bindVersion: true } }),
   );
   const shared =
     blocked ??
@@ -87,7 +87,7 @@ export function useRefreshAssetUrl(
   return useCallback(async () => {
     if (environmentId === null || resource === null || httpBaseUrl === null) return null;
     const state = assetUrlStateFromResult(
-      await createUrl({ environmentId, input: { resource } }),
+      await createUrl({ environmentId, input: { resource, bindVersion: true } }),
       httpBaseUrl,
     );
     return state._tag === "Success" ? state.url : null;
@@ -103,17 +103,20 @@ export function useAssetImageLoadRetry(
   uri: string | null,
   refresh: (() => Promise<string | null>) | undefined,
 ) {
-  const [retried, setRetried] = useState(false);
+  // A ref, since native can report two errors before React commits a state update.
+  const retried = useRef(false);
   const [failedUri, setFailedUri] = useState<string | null>(null);
   return {
     failed: uri !== null && failedUri === uri,
-    onLoad: () => setRetried(false),
+    onLoad: () => {
+      retried.current = false;
+    },
     onError: () => {
-      if (refresh === undefined || retried) {
+      if (refresh === undefined || retried.current) {
         setFailedUri(uri);
         return;
       }
-      setRetried(true);
+      retried.current = true;
       void refresh().then((next) => {
         if (next === null) setFailedUri(uri);
       });
