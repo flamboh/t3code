@@ -64,8 +64,12 @@ function PreviewItemResolver(props: {
         if (cancelled) return;
         if (!asset) throw new Error("Reconnect to this environment and try again.");
         const resolvedUri = asset.url + (source.srcFragment ?? "");
+        // Without a revision an attachment key survives edits, so a cached thumbnail could be stale.
+        const reusesThumbnail =
+          "resource" in source &&
+          (source.resource._tag !== "attachment" || asset.fileRevision !== undefined);
         setImageCacheKey(
-          ("resource" in source && assetImageCacheKey(environmentId, source.resource, asset)) ||
+          (reusesThumbnail && assetImageCacheKey(environmentId, source.resource, asset)) ||
             resolvedUri,
         );
         setUri(resolvedUri);
