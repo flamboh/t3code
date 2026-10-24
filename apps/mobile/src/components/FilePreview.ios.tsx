@@ -58,9 +58,8 @@ function NativeFilePreview(props: {
               ...(imageCacheKey !== undefined ? { imageCacheKey } : {}),
             },
           ];
-    const presentation = Promise.all(items.map(cachedImageUri)).then((uris) => {
-      if (canceled) return;
-      return items.length > 1
+    const present = (uris: readonly string[]) =>
+      items.length > 1
         ? NativeControls.presentFiles(
             uris,
             items.map((item) => item.name ?? "Preview"),
@@ -77,6 +76,15 @@ function NativeFilePreview(props: {
             sourceIdentifier ?? "",
             identifier,
           );
+    const presentation = Promise.all(items.map(cachedImageUri)).then((uris) => {
+      if (canceled) return;
+      return present(uris).catch((error: unknown) => {
+        // expo-image can evict a cached file before native copies it; the remote URL still works.
+        if (canceled || uris.every((cachedUri, index) => cachedUri === items[index]!.uri)) {
+          throw error;
+        }
+        return present(items.map((item) => item.uri));
+      });
     });
     void presentation
       .catch((error: unknown) => {
