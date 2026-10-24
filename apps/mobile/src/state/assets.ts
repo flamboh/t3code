@@ -94,6 +94,27 @@ export function useRefreshAssetUrl(
   }, [createUrl, environmentId, httpBaseUrl, resource]);
 }
 
+/** Re-signs like `useRefreshAssetUrl`, but keeps the version that keys the thumbnail's cache. */
+export function usePreviewAssetUrl(
+  environmentId: EnvironmentId | null,
+  resource: AssetResource | null,
+) {
+  const connection = usePreparedConnection(environmentId);
+  const httpBaseUrl = connection._tag === "Some" ? connection.value.httpBaseUrl : null;
+  const createUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
+    refresh: true,
+    reportFailure: false,
+  });
+  return async () => {
+    if (environmentId === null || resource === null || httpBaseUrl === null) return null;
+    const state = assetUrlStateFromResult(
+      await createUrl({ environmentId, input: { resource, bindVersion: true } }),
+      httpBaseUrl,
+    );
+    return state._tag === "Success" ? state : null;
+  };
+}
+
 /**
  * The server refuses a signed image URL once its file or GitHub credential
  * changes after signing, so a failed load re-signs once. The next retry waits
