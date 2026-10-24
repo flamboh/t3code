@@ -111,6 +111,7 @@ const AssetClaimsSchema = Schema.Union([
     kind: Schema.Literal("workspace-file-exact"),
     workspaceRoot: Schema.String,
     relativePath: Schema.String,
+    fileRevision: Schema.optionalKey(Schema.String),
     expiresAt: Schema.Number,
   }),
   Schema.Struct({
@@ -119,6 +120,7 @@ const AssetClaimsSchema = Schema.Union([
     filePath: Schema.String,
     device: Schema.String,
     inode: Schema.String,
+    fileRevision: Schema.optionalKey(Schema.String),
     expiresAt: Schema.Number,
   }),
   Schema.Struct({
@@ -351,6 +353,39 @@ const readImageDimensionsFromHeader = (filePath: string) =>
 const mediaFileRevision = ({ info }: OpenMediaFile) =>
   `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`;
 
+const isImageMimeType = (mimeType: string | null) => mimeType?.startsWith("image/") === true;
+
+/**
+ * Clients cache an image under the `fileRevision` returned at mint, so serving
+ * different bytes on that URL would store them under the old key for good.
+ * A changed file is refused instead; error responses are never cached.
+ */
+const openSignedRevision = (
+  filePath: string,
+  claims: {
+    readonly device?: string;
+    readonly inode?: string;
+    readonly fileRevision?: string;
+  },
+) =>
+  openMediaFile(
+    filePath,
+    claims.device !== undefined && claims.inode !== undefined
+      ? { device: claims.device, inode: claims.inode }
+      : undefined,
+  ).pipe(
+    Effect.map((file) =>
+      file !== null &&
+      (claims.fileRevision === undefined || mediaFileRevision(file) === claims.fileRevision)
+        ? file
+        : null,
+    ),
+    Effect.tapError((cause) =>
+      Effect.logError("Failed to open canonical media file.", { filePath, cause }),
+    ),
+    Effect.orElseSucceed(() => null),
+  );
+
 const finalizeAbsoluteMediaFileAsset = Effect.fn("AssetAccess.finalizeAbsoluteMediaFileAsset")(
   function* (input: {
     readonly requestedPath: string;
@@ -421,6 +456,9 @@ const finalizeAbsoluteMediaFileAsset = Effect.fn("AssetAccess.finalizeAbsoluteMe
         kind: "media-file-exact" as const,
         filePath: canonicalFile,
         ...opened.identity,
+        ...(isImageMimeType(hostPreviewMimeTypeFromExtension(path.extname(canonicalFile)))
+          ? { fileRevision: opened.fileRevision }
+          : {}),
         expiresAt: input.expiresAt,
       },
       fileName: path.basename(canonicalFile),
@@ -512,6 +550,7 @@ const finalizeWorkspaceFileAsset = Effect.fn("AssetAccess.finalizeWorkspaceFileA
             kind: "workspace-file-exact" as const,
             workspaceRoot: canonicalWorkspaceRoot,
             relativePath: resolved.relativePath,
+            ...(opened ? { fileRevision: opened.fileRevision } : {}),
             expiresAt: input.expiresAt,
           }
         : {
@@ -993,12 +1032,7 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
     if (canonicalFile !== claims.filePath) return null;
     const mimeType = hostPreviewMimeTypeFromExtension(path.extname(canonicalFile));
     if (!mimeType) return null;
-    const file = yield* openMediaFile(canonicalFile, claims).pipe(
-      Effect.tapError((cause) =>
-        Effect.logError("Failed to open canonical media file.", { filePath: canonicalFile, cause }),
-      ),
-      Effect.orElseSucceed(() => null),
-    );
+    const file = yield* openSignedRevision(canonicalFile, claims);
     return file
       ? ({ kind: "file", path: canonicalFile, mimeType, file } satisfies ResolvedAsset)
       : null;
@@ -1009,9 +1043,12 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       workspaceRoot: claims.workspaceRoot,
       relativePath: claims.relativePath,
     });
-    return exactWorkspaceFile
-      ? ({ kind: "file", path: exactWorkspaceFile } satisfies ResolvedAsset)
-      : null;
+    if (!exactWorkspaceFile) return null;
+    if (claims.fileRevision === undefined) {
+      return { kind: "file", path: exactWorkspaceFile } satisfies ResolvedAsset;
+    }
+    const file = yield* openSignedRevision(exactWorkspaceFile, claims);
+    return file ? ({ kind: "file", path: exactWorkspaceFile, file } satisfies ResolvedAsset) : null;
   }
   const segments = decodedPath.split(/[\\/]/);
   if (

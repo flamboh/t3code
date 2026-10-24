@@ -748,6 +748,52 @@ describe("AssetAccess", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  it.effect.skipIf(!symlinksSupported)(
+    "refuses image URLs once the file differs from the signed revision",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-asset-signed-revision-" });
+        const first = path.join(root, "a.png");
+        const second = path.join(root, "b.png");
+        const link = path.join(root, "shot.png");
+        yield* fs.writeFileString(first, "image A");
+        yield* fs.writeFileString(second, "image B");
+        yield* fs.symlink(first, link);
+        const threadId = ThreadId.make("thread-1");
+        const resolveIssued = (relativeUrl: string) => {
+          const suffix = relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+          const separator = suffix.indexOf("/");
+          return resolveAsset(suffix.slice(0, separator), suffix.slice(separator + 1));
+        };
+        const servedText = (relativeUrl: string) =>
+          Effect.gen(function* () {
+            const asset = yield* resolveIssued(relativeUrl);
+            if (asset?.kind !== "file") throw new Error("Expected a file asset");
+            const response = HttpServerResponse.toWeb(yield* assetFileResponse(asset));
+            return yield* Effect.promise(() => response.text());
+          });
+
+        const workspace = yield* issueAssetUrl({
+          resource: { _tag: "workspace-file", threadId, path: "shot.png" },
+          workspaceRoot: root,
+        });
+        expect(yield* servedText(workspace.relativeUrl)).toBe("image A");
+        yield* fs.remove(link);
+        yield* fs.symlink(second, link);
+        expect(yield* resolveIssued(workspace.relativeUrl)).toBeNull();
+
+        const media = yield* issueAssetUrl({
+          resource: { _tag: "media-file", threadId, path: second },
+        });
+        expect(yield* servedText(media.relativeUrl)).toBe("image B");
+        yield* fs.writeFileString(second, "image C");
+        yield* Effect.promise(() => NodeFSP.utimes(second, 2_000, 2_000));
+        expect(yield* resolveIssued(media.relativeUrl)).toBeNull();
+      }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect("issues workspace URLs that resolve the entry file and sibling assets", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -846,7 +892,10 @@ describe("AssetAccess", () => {
         const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
         const token = suffix.slice(0, suffix.indexOf("/"));
 
-        expect(yield* resolveAsset(token, name)).toEqual({ kind: "file", path: canonicalFile });
+        expect(yield* resolveAsset(token, name)).toMatchObject({
+          kind: "file",
+          path: canonicalFile,
+        });
         if (name.endsWith(".png")) {
           expect(yield* resolveAsset(token, "other.png")).toBeNull();
         }
