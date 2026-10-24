@@ -32,6 +32,7 @@ import {
 } from "@t3tools/shared/imageDimensions";
 import { githubMediaFetchUrl, githubMediaFileName } from "@t3tools/shared/githubMedia";
 import { MCP_APP_MAX_HTML_BYTES } from "@t3tools/shared/mcpApp";
+import { imageMimeType } from "@t3tools/shared/image";
 import {
   isProjectFaviconPath,
   PROJECT_FAVICON_FALLBACK_MARKER,
@@ -576,8 +577,27 @@ const finalizeWorkspaceFileAsset = Effect.fn("AssetAccess.finalizeWorkspaceFileA
   },
 );
 
+// Clients that never re-sign after a load error keep loading a URL whose file changed, so
+// they need it to serve the current bytes.
+const withoutVersionBinding = (claims: AssetClaims): AssetClaims => {
+  if (claims.kind === "github-media") {
+    const { accessScope: _accessScope, ...unbound } = claims;
+    return unbound;
+  }
+  if (
+    claims.kind === "attachment" ||
+    claims.kind === "media-file-exact" ||
+    claims.kind === "workspace-file-exact"
+  ) {
+    const { fileRevision: _fileRevision, ...unbound } = claims;
+    return unbound;
+  }
+  return claims;
+};
+
 export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (input: {
   readonly resource: AssetResource;
+  readonly bindVersion?: boolean | undefined;
   readonly workspaceRoot?: string;
   readonly projectFaviconPath?: string;
   /** Where a cloned project's checkout stands, while the clone tracker still knows it. */
@@ -702,13 +722,19 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
       }
       const extension = parseAttachmentFileExtension(input.resource.attachmentId);
       const isGenericFile = extension !== null;
+      const isImage =
+        !isGenericFile ||
+        imageMimeType({
+          name: `attachment.${extension}`,
+          mimeType: input.resource.mimeType ?? "",
+        }) !== null;
       const videoMimeType = input.resource.mimeType?.split(";", 1)[0]?.trim() ?? "";
       const isVideo = INLINE_VIDEO_MIME_TYPE_PATTERN.test(videoMimeType);
       const inlinePreviewMimeType =
         input.resource.disposition === "inline" && extension !== null
           ? inlinePreviewMimeTypeForExtension(extension)
           : undefined;
-      if (!isGenericFile) {
+      if (isImage) {
         const canonicalFile = yield* resolveCanonicalFile(attachmentPath).pipe(
           Effect.orElseSucceed(() => null),
         );
@@ -923,6 +949,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
       Math.ceil(expiresAt / HTML_ATTACHMENT_TOKEN_BUCKET_MS) * HTML_ATTACHMENT_TOKEN_BUCKET_MS;
     claims = { ...claims, expiresAt };
   }
+  if (!input.bindVersion) claims = withoutVersionBinding(claims);
   const encodedPayload = base64UrlEncode(encodeAssetClaims(claims));
   const token = `${encodedPayload}.${signPayload(encodedPayload, signingSecret)}`;
   return {

@@ -59,6 +59,9 @@ export type AssetResource = typeof AssetResource.Type;
 
 export const AssetCreateUrlInput = Schema.Struct({
   resource: AssetResource,
+  /** Signs the returned `fileRevision` and `accessScope` into the URL, so it is refused once
+      they change. Only a client that re-signs after a load error should ask for this. */
+  bindVersion: Schema.optionalKey(Schema.Boolean),
 });
 export type AssetCreateUrlInput = typeof AssetCreateUrlInput.Type;
 

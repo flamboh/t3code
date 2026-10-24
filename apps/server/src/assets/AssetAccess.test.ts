@@ -720,7 +720,7 @@ describe("AssetAccess", () => {
   );
 
   it.effect.skipIf(!symlinksSupported)(
-    "refuses image URLs once the file differs from the signed revision",
+    "refuses bound image URLs once the file differs from the signed revision",
     () =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
@@ -745,38 +745,59 @@ describe("AssetAccess", () => {
             const response = HttpServerResponse.toWeb(yield* assetFileResponse(asset));
             return yield* Effect.promise(() => response.text());
           });
+        const issueBoth = (input: Parameters<typeof issueAssetUrl>[0]) =>
+          Effect.all({
+            bound: issueAssetUrl({ ...input, bindVersion: true }),
+            unbound: issueAssetUrl(input),
+          });
 
-        const workspace = yield* issueAssetUrl({
+        const workspace = yield* issueBoth({
           resource: { _tag: "workspace-file", threadId, path: "shot.png" },
           workspaceRoot: root,
         });
-        expect(yield* servedText(workspace.relativeUrl)).toBe("image A");
+        expect(workspace.unbound.fileRevision).toBe(workspace.bound.fileRevision);
+        expect(yield* servedText(workspace.bound.relativeUrl)).toBe("image A");
         yield* fs.remove(link);
         yield* fs.symlink(second, link);
-        expect(yield* resolveIssued(workspace.relativeUrl)).toBeNull();
+        expect(yield* resolveIssued(workspace.bound.relativeUrl)).toBeNull();
+        expect(yield* servedText(workspace.unbound.relativeUrl)).toBe("image B");
 
-        const media = yield* issueAssetUrl({
+        const media = yield* issueBoth({
           resource: { _tag: "media-file", threadId, path: second },
         });
-        expect(yield* servedText(media.relativeUrl)).toBe("image B");
+        expect(yield* servedText(media.bound.relativeUrl)).toBe("image B");
         yield* fs.writeFileString(second, "image C");
         yield* Effect.promise(() => NodeFSP.utimes(second, 2_000, 2_000));
-        expect(yield* resolveIssued(media.relativeUrl)).toBeNull();
+        expect(yield* resolveIssued(media.bound.relativeUrl)).toBeNull();
+        expect(yield* servedText(media.unbound.relativeUrl)).toBe("image C");
 
         const config = yield* ServerConfig.ServerConfig;
-        const attachmentId = "thread-1-00000000-0000-4000-8000-000000000041";
-        const attachmentPath = path.join(config.attachmentsDir, `${attachmentId}.png`);
         yield* fs.makeDirectory(config.attachmentsDir, { recursive: true });
-        yield* fs.writeFileString(attachmentPath, "image D");
-        const attachment = yield* issueAssetUrl({ resource: { _tag: "attachment", attachmentId } });
-        expect(attachment.fileRevision).toBeDefined();
-        expect(yield* servedText(attachment.relativeUrl)).toBe("image D");
-        yield* fs.writeFileString(attachmentPath, "image E");
-        yield* Effect.promise(() => NodeFSP.utimes(attachmentPath, 2_000, 2_000));
-        expect(yield* resolveIssued(attachment.relativeUrl)).toBeNull();
-        const reissued = yield* issueAssetUrl({ resource: { _tag: "attachment", attachmentId } });
-        expect(reissued.fileRevision).not.toBe(attachment.fileRevision);
-        expect(yield* servedText(reissued.relativeUrl)).toBe("image E");
+        // An image the client sent as a generic file keeps its extension in the id.
+        for (const [attachmentId, fileName] of [
+          [
+            "thread-1-00000000-0000-4000-8000-000000000041",
+            "thread-1-00000000-0000-4000-8000-000000000041.png",
+          ],
+          [
+            "thread-1-00000000-0000-4000-8000-000000000042-png",
+            "thread-1-00000000-0000-4000-8000-000000000042-png.png",
+          ],
+        ] as const) {
+          const attachmentPath = path.join(config.attachmentsDir, fileName);
+          yield* fs.writeFileString(attachmentPath, "image D");
+          const resource = { _tag: "attachment", attachmentId } as const;
+          const attachment = yield* issueBoth({ resource });
+          expect(attachment.bound.fileRevision).toBeDefined();
+          expect(yield* servedText(attachment.bound.relativeUrl)).toBe("image D");
+          yield* fs.writeFileString(attachmentPath, "image E");
+          yield* Effect.promise(() => NodeFSP.utimes(attachmentPath, 2_000, 2_000));
+          expect(yield* resolveIssued(attachment.bound.relativeUrl)).toBeNull();
+          expect(yield* servedText(attachment.unbound.relativeUrl)).toBe("image E");
+          const reissued = yield* issueAssetUrl({ resource, bindVersion: true });
+          expect(reissued.fileRevision).not.toBe(attachment.bound.fileRevision);
+          expect(yield* servedText(reissued.relativeUrl)).toBe("image E");
+        }
       }).pipe(Effect.provide(layerTest)),
   );
 
@@ -1089,13 +1110,12 @@ describe("AssetAccess", () => {
 
   it.effect("scopes GitHub media URLs to the credential that reads them", () =>
     Effect.gen(function* () {
-      const issue = issueAssetUrl({
-        resource: {
-          _tag: "github-media",
-          cwd: "/repo",
-          url: "https://github.com/user-attachments/assets/1a1842fb",
-        },
-      });
+      const resource = {
+        _tag: "github-media",
+        cwd: "/repo",
+        url: "https://github.com/user-attachments/assets/1a1842fb",
+      } as const;
+      const issue = issueAssetUrl({ resource, bindVersion: true });
       const asAccount = (fingerprint: string) =>
         Effect.provide(
           Layer.mock(GitHubCredentials.GitHubCredentials)({
@@ -1156,6 +1176,11 @@ describe("AssetAccess", () => {
         expect(refused?.status).toBe(404);
         expect(refused?.headers["cache-control"]).toBe("private, no-store");
       }
+      const unbound = yield* issueAssetUrl({ resource }).pipe(asAccount("github.com:account-a"));
+      expect(unbound.accessScope).toBe(accountA.accessScope);
+      expect(
+        (yield* serve(unbound.relativeUrl).pipe(asAccount("github.com:account-b")))?.status,
+      ).toBe(200);
     }).pipe(Effect.provide(layerTest)),
   );
 
@@ -1177,7 +1202,6 @@ describe("AssetAccess", () => {
         kind: "github-media",
         url: "https://github.com/user-attachments/assets/1a1842fb-6383-492f-873c-57aa0033fa6c",
         cwd: "/repo",
-        accessScope: attachment.accessScope,
         expiresAt: attachment.expiresAt,
       });
 
