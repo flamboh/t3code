@@ -19,6 +19,7 @@ const testState = vi.hoisted(() => {
     readonly threadId: string;
     readonly projectId?: string;
     readonly logicalProjectKey?: string;
+    readonly loadBalancedEnvironmentId?: string;
     readonly environmentSelection?: "auto" | "manual" | "project-default";
   } | null = null;
   let openDraftRoute: { readonly kind: "draft"; readonly draftId: string } | null = null;
@@ -489,6 +490,7 @@ describe("new threads routed by a project default", () => {
         projectId: "project-primary",
         logicalProjectKey: "remote-project",
         environmentSelection,
+        loadBalancedEnvironmentId: "environment-primary",
         promotedTo: null,
         threadId: "thread-existing",
       });
@@ -499,7 +501,10 @@ describe("new threads routed by a project default", () => {
         "remote-project",
         { environmentId: "environment-primary", projectId: "project-primary" },
         opened!.draftId,
-        expect.objectContaining({ environmentSelection }),
+        expect.objectContaining({
+          environmentSelection,
+          loadBalancedEnvironmentId: "environment-primary",
+        }),
       );
       expect(testState.draftStore.setDraftThreadContext).not.toHaveBeenCalled();
     },

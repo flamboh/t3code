@@ -357,6 +357,7 @@ export function NewTaskFlowProvider(
       props.active === false ||
       props.routeDraftId !== undefined ||
       activeDraftKey !== null ||
+      readNewTaskFlowState(flowKey).draftKey !== null ||
       selectedProject === null
     ) {
       return;

@@ -61,7 +61,6 @@ vi.mock("../../state/session", () => ({
 }));
 vi.mock("../../state/environments", () => ({ useEnvironments: () => ({ environments: [] }) }));
 vi.mock("../../state/server", () => ({ serverEnvironment: { updateSettings: {} } }));
-vi.mock("../../state/environments", () => ({ useEnvironments: () => ({ environments: [] }) }));
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: () => mocks.updateSettings,
 }));

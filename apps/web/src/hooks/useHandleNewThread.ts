@@ -141,7 +141,9 @@ export function createNewThreadHandler(router: AnyRouter) {
       environmentSelection: preserveOpenDraft
         ? (currentDraft.environmentSelection ?? "auto")
         : target.environmentSelection,
-      loadBalancedEnvironmentId: null,
+      loadBalancedEnvironmentId: preserveOpenDraft
+        ? (currentDraft.loadBalancedEnvironmentId ?? null)
+        : null,
     };
     // Read at call time: every provider status push replaces the config map, and
     // subscribing would hand every sidebar row a new handler.
