@@ -31,6 +31,10 @@ describe("device tool helpers", () => {
   it.effect("resolves a host by exact id or case-insensitive label", () =>
     Effect.gen(function* () {
       const mac = "0dc4f37b-5e0a-4f4c-9a51-0c6b8e8a1f2d";
+      expect(yield* resolveHostId(hosts, undefined)).toBeUndefined();
+      expect(yield* resolveHostId([...hosts, { ...hosts[1]!, label: "local" }], "local")).toBe(
+        "local",
+      );
       expect(yield* resolveHostId(hosts, mac)).toBe(mac);
       expect(yield* resolveHostId(hosts, "olivermac")).toBe(mac);
     }),
