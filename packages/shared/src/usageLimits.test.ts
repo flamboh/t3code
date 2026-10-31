@@ -966,7 +966,11 @@ describe("pooled account columns", () => {
         ],
         now,
       );
-      expect(pool!.windows[0]).toMatchObject({ remainingPercent: 0, pace: null, resets: [] });
+      expect(pool!.windows[0]).toMatchObject({
+        remainingPercent: 0,
+        paceHeadroomPercent: null,
+        resets: [],
+      });
       expect(pool!.windows[0]!.columns.map((column) => column.window?.resetsAt)).toEqual([
         undefined,
         undefined,
