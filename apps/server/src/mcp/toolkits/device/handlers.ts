@@ -297,7 +297,10 @@ const handlers = {
       const scope = yield* requireDeviceAccess;
       const devices = yield* DeviceService.DeviceService;
       const threadId = scope.thread.threadId;
-      const hostId = yield* resolveHostId((yield* devices.state).hosts, input.hostId);
+      const hostId =
+        input.hostId === undefined
+          ? undefined
+          : yield* resolveHostId((yield* devices.state).hosts, input.hostId);
       const target =
         input.deviceId === undefined
           ? (yield* devices.sessionsForThread(threadId)).findLast(
@@ -332,7 +335,10 @@ const handlers = {
       const scope = yield* requireDeviceAccess;
       const devices = yield* DeviceService.DeviceService;
       const deviceId = input.deviceId;
-      const inputHostId = yield* resolveHostId((yield* devices.state).hosts, input.hostId);
+      const inputHostId =
+        input.hostId === undefined
+          ? undefined
+          : yield* resolveHostId((yield* devices.state).hosts, input.hostId);
       const open =
         deviceId === undefined
           ? Option.none()
