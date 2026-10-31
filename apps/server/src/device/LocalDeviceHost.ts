@@ -276,7 +276,6 @@ const hubEnvironment = Effect.fn("LocalDeviceHost.hubEnvironment")(function* (
         .run({
           command: emulator,
           args: [`-help-camera-${facing}`],
-          cwd: workingDirectory,
           env,
           timeout: Duration.seconds(5),
         })
@@ -879,6 +878,7 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
                 )
               : command,
           args,
+          cwd: workingDirectory,
           env,
           timeout: Duration.millis(options?.timeoutMs ?? 20_000),
           timeoutBehavior: "timedOutResult",

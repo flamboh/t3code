@@ -655,6 +655,7 @@ it.effect("keeps local Android and iOS available without ffmpeg", () =>
           HOME: baseDir,
           PATH: `${baseDir}/bin`,
           ANDROID_HOME: `${baseDir}/sdk`,
+          JAVA_HOME: "/jdk",
         }),
         Effect.provideService(HostProcess.Platform, "darwin"),
       );
