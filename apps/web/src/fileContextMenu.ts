@@ -1,6 +1,7 @@
 import {
   buildRemoteOpenUrl,
   EDITORS,
+  remoteSchemeForEditor,
   type ContextMenuItem,
   type EditorId,
   type EnvironmentId,
@@ -117,10 +118,11 @@ export function useFileContextMenu(environmentId: EnvironmentId | null) {
   const isLocal = remote.mode === "local-exec";
   // Away from the server's machine, editors open over SSH on this machine, which
   // only works for editors with a remote URL scheme and can't reveal files.
+  // JetBrains SSH URLs open projects rather than individual files.
   const availableEditors = isLocal
     ? (serverConfig?.availableEditors ?? [])
     : remote.mode === "remote-links"
-      ? remoteCapableEditors
+      ? remoteCapableEditors.filter((id) => remoteSchemeForEditor(id) !== "jetbrains")
       : [];
   const [preferredEditor] = usePreferredEditor(availableEditors);
   const capabilities: FileContextMenuCapabilities = {
