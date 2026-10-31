@@ -291,7 +291,11 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
         return;
       }
     }
-    const writeResult = await terminalActions.writeToTerminal(targetTerminalId, data);
+    const writeResult = await terminalActions.writeToTerminal(
+      targetTerminalId,
+      data,
+      activeThreadRef,
+    );
     if (!writeResult) return;
     if (writeResult._tag === "Failure") {
       if (!isAtomCommandInterrupted(writeResult)) {
