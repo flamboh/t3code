@@ -6,13 +6,19 @@ import {
   selectProjectGroupingSettings,
 } from "@t3tools/client-runtime/state/project-grouping";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import type { ScopedProjectRef } from "@t3tools/contracts";
+import type { EnvironmentId, ServerSettings, ScopedProjectRef } from "@t3tools/contracts";
 
-import { useProjects } from "../state/entities";
-import { useConnectedEnvironmentIds, usePrimaryEnvironmentId } from "../state/environments";
-import { serverEnvironment } from "../state/server";
+import { readProjects, useProjects } from "../state/entities";
+import {
+  readPrimaryEnvironmentId,
+  useConnectedEnvironmentIds,
+  usePrimaryEnvironmentId,
+} from "../state/environments";
+import { serverEnvironment, environmentServerConfigsAtom } from "../state/server";
 import { environmentAtomList, environmentIdsKey } from "../state/environmentAtomList";
-import { useClientSettings } from "./useSettings";
+import { appAtomRegistry } from "../rpc/atomRegistry";
+import { environmentSummaries } from "../state/presentation";
+import { getClientSettings, useClientSettings } from "./useSettings";
 
 const environmentSettings = environmentAtomList(
   "new-thread-project-settings",
@@ -35,6 +41,38 @@ export function useNewThreadProjectTarget(
       return value ? [[id, value] as const] : [];
     }),
   );
+  return createProjectTargetResolver(
+    projects,
+    settings,
+    settingsByEnvironment,
+    connectedIds,
+    primaryEnvironmentId,
+    members,
+  );
+}
+
+export function readNewThreadProjectTarget(
+  projectRef: ScopedProjectRef,
+  options?: { readonly manual?: boolean },
+) {
+  const configs = appAtomRegistry.get(environmentServerConfigsAtom);
+  return createProjectTargetResolver(
+    readProjects(),
+    selectProjectGroupingSettings(getClientSettings()),
+    new Map(Array.from(configs, ([id, config]) => [id, config.settings])),
+    new Set(appAtomRegistry.get(environmentSummaries.connectedEnvironmentIdsAtom)),
+    readPrimaryEnvironmentId(),
+  )(projectRef, options);
+}
+
+function createProjectTargetResolver(
+  projects: readonly EnvironmentProject[],
+  settings: ReturnType<typeof selectProjectGroupingSettings>,
+  settingsByEnvironment: ReadonlyMap<EnvironmentId, ServerSettings>,
+  connectedIds: ReadonlySet<EnvironmentId>,
+  primaryEnvironmentId: EnvironmentId | null,
+  members?: ReadonlyArray<Pick<EnvironmentProject, "environmentId" | "id">>,
+) {
   const membersByProjectKey = (() => {
     if (members) return null;
     return new Map(
