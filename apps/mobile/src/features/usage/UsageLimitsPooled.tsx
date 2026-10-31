@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { EnvironmentId } from "@t3tools/contracts";
+import { normalizeProviderAccentColor } from "@t3tools/client-runtime/state/provider-instance-display";
 import {
   collectLimitAccounts,
   collectExternalUsageLinks,
@@ -16,70 +17,149 @@ import {
   type LimitPoolWindow,
 } from "@t3tools/shared/usageLimits";
 import { Fragment, type ReactNode, useId, useState } from "react";
-import { Linking, Pressable, ScrollView, View } from "react-native";
+import { Linking, Pressable, View } from "react-native";
+import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { Defs, Path, Pattern, Rect, Svg } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { SymbolView } from "../../components/AppSymbol";
-import { AppText as Text } from "../../components/AppText";
+import { SymbolView } from "../../components/ui/AppSymbol";
+import { AppText as Text } from "../../components/ui/AppText";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { environmentPresentations } from "../../state/presentation";
 import { ResetCredits } from "./UsageLimitsSection";
-import { useProviderColors } from "./usageProviders";
+import { usageProviderKind, useProviderColors } from "./usageProviders";
 
 const DRIVER_LABEL: Partial<Record<string, string>> = {
   codex: "Codex",
   claudeAgent: "Claude",
+  grok: "Grok",
   antigravity: "Antigravity",
 };
 
 function accountName(account: LimitAccount) {
   if (account.displayName) return account.displayName;
   if (!account.email) return DRIVER_LABEL[account.driver] ?? String(account.driver);
-  const [local = "", domain = ""] = account.email.split("@");
-  return `${local[0] ?? ""}${domain[0] ?? ""}`.toUpperCase() || "Account";
+  return emailInitials(account.email) || "Account";
 }
 
-/** Where even spending would sit: a solid tick taller than the bar, so it reads as a target rather than the fill's edge. */
-function PaceMark({ left }: { readonly left: number }) {
+function emailInitials(email: string) {
+  const [local = "", domain = ""] = email.split("@");
+  return `${local[0] ?? ""}${domain[0] ?? ""}`.toUpperCase();
+}
+
+function accountHue(email: string) {
+  let hash = 0;
+  for (let index = 0; index < email.length; index += 1) {
+    hash = (hash * 31 + email.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash) % 360;
+}
+
+// Same hashed hue as the web account chip, so an account keeps its color across clients.
+function AccountChip({ email }: { readonly email: string }) {
+  const hue = accountHue(email);
   return (
     <View
-      pointerEvents="none"
-      className="absolute -top-1 -bottom-1 w-0.5 -translate-x-px rounded-full bg-foreground-muted"
-      style={{ left: `${left}%` }}
-    />
+      className="size-5 items-center justify-center rounded-full"
+      style={{ backgroundColor: `hsl(${hue}, 45%, 82%)` }}
+    >
+      <Text className="text-[9px] font-t3-bold" style={{ color: `hsl(${hue}, 45%, 28%)` }}>
+        {emailInitials(email)}
+      </Text>
+    </View>
   );
 }
 
-/** The spent share comes back at reset. SVG keeps the hatching static on both platforms. */
+// Same gap-and-tick as the Limits rows: two clipped copies of the segment leave a see-through gap.
+function PaceGap({
+  timeLeft,
+  children,
+}: {
+  readonly timeLeft: number | null;
+  readonly children: ReactNode;
+}) {
+  const [width, setWidth] = useState(0);
+  const tickX =
+    timeLeft === null || width < 6
+      ? null
+      : Math.min(Math.max((width * timeLeft) / 100, 3), width - 3);
+  return (
+    <View
+      pointerEvents="none"
+      className="absolute inset-0"
+      onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+    >
+      {tickX === null
+        ? children
+        : (
+            [
+              [0, tickX - 3],
+              [tickX + 3, width],
+            ] as const
+          ).map(([start, end]) => (
+            <View
+              key={start}
+              className="absolute top-0 bottom-0 overflow-hidden"
+              style={{ left: start, width: end - start }}
+            >
+              <View className="absolute top-0 bottom-0" style={{ left: -start, width }}>
+                {children}
+              </View>
+            </View>
+          ))}
+      {tickX !== null ? (
+        <View
+          className="absolute top-0.5 bottom-0.5 w-0.5 rounded-full bg-foreground"
+          style={{ left: tickX - 1 }}
+        />
+      ) : null}
+    </View>
+  );
+}
+
 function AccountSegment({
   remaining,
   color,
-  pending,
+  refillPercent,
 }: {
   readonly remaining: number;
   readonly color: string;
-  readonly pending: boolean;
+  readonly refillPercent: number;
 }) {
   const patternId = useId().replace(/:/g, "");
+  const [size, setSize] = useState({ width: 0, height: 0 });
   return (
-    <Svg width="100%" height="100%" accessible={false}>
-      <Defs>
-        <Pattern id={patternId} width={6} height={6} patternUnits="userSpaceOnUse">
-          <Path d="M-1 1L1 -1M0 6L6 0M5 7L7 5" stroke={color} strokeWidth={1} opacity={0.22} />
-        </Pattern>
-      </Defs>
-      {pending ? (
-        <Rect
-          x={`${remaining}%`}
-          width={`${100 - remaining}%`}
-          height="100%"
-          fill={`url(#${patternId})`}
-        />
+    <View
+      pointerEvents="none"
+      className="absolute inset-0"
+      onLayout={(event) => {
+        const { width, height } = event.nativeEvent.layout;
+        setSize((previous) =>
+          previous.width === width && previous.height === height ? previous : { width, height },
+        );
+      }}
+    >
+      {size.width > 0 && size.height > 0 ? (
+        // Numeric canvas dimensions clear Android SVG geometry cached before a segment resized.
+        <Svg width={size.width} height={size.height} accessible={false}>
+          <Defs>
+            <Pattern id={patternId} width={6} height={6} patternUnits="userSpaceOnUse">
+              <Path d="M-1 1L1 -1M0 6L6 0M5 7L7 5" stroke={color} strokeWidth={1} opacity={0.22} />
+            </Pattern>
+          </Defs>
+          {refillPercent > 0 ? (
+            <Rect
+              x={`${100 - Math.min(100 - remaining, refillPercent)}%`}
+              width={`${Math.min(100 - remaining, refillPercent)}%`}
+              height="100%"
+              fill={`url(#${patternId})`}
+            />
+          ) : null}
+          <Rect width={`${remaining}%`} height="100%" fill={color} opacity={0.35} />
+        </Svg>
       ) : null}
-      <Rect width={`${remaining}%`} height="100%" fill={color} opacity={0.35} />
-    </Svg>
+    </View>
   );
 }
 
@@ -90,6 +170,7 @@ function PoolWindowCard({
   environmentIds,
   label,
   description,
+  wide,
 }: {
   readonly pool: LimitPoolWindow;
   readonly color: string;
@@ -97,27 +178,27 @@ function PoolWindowCard({
   readonly environmentIds: readonly string[] | null;
   readonly label?: string;
   readonly description?: string;
+  readonly wide: boolean;
 }) {
   const navigation = useNavigation();
-  // The soonest reset that hands anything back; an untouched account resets to no effect.
+  const [barWidth, setBarWidth] = useState(0);
+  // Each segment needs room for its account, percent and reset to label itself.
+  const segmentWidth = barWidth / Math.max(pool.columns.length, 1);
+  const inlineLabels = wide && segmentWidth >= 96;
+  const inlineReset = wide && segmentWidth >= 150;
+  const inlineName = wide && segmentWidth >= 220;
   const nextRefill = pool.resets.find((reset) => reset.restoresPercent > 0);
   const openAccount = (account: LimitAccount) =>
-    navigation.navigate("SettingsSheet", {
-      screen: "SettingsContent",
-      params: {
-        screen: "SettingsUsageAccount",
-        params: {
-          accountKey: account.key,
-          windowId: pool.id,
-          windowKind: pool.kind,
-          environmentIds,
-          now,
-        },
-      },
+    navigation.navigate("SettingsUsageAccount", {
+      accountKey: account.key,
+      windowId: pool.id,
+      windowKind: pool.kind,
+      environmentIds,
+      now,
     });
-  return (
-    <View className="gap-3 rounded-[24px] border-continuous bg-grouped-card p-4">
-      <View className="flex-row items-start justify-between gap-3">
+  const summary = (
+    <>
+      <View className={wide ? "gap-1" : "flex-row items-start justify-between gap-3"}>
         <View className="gap-1">
           <Text className="text-sm font-t3-medium text-foreground">{label ?? pool.label}</Text>
           <View className="flex-row items-baseline gap-1.5">
@@ -147,91 +228,185 @@ function PoolWindowCard({
         ) : null}
       </View>
       {description ? <Text className="text-xs text-foreground-muted">{description}</Text> : null}
-      <View className="flex-row gap-1">
-        {pool.columns.map(({ account, window }, index) => {
-          if (!window) return <View key={account.key} className="h-7 min-w-0 flex-1" />;
-          const timeLeft = paceRemainingPercent(window, now);
+    </>
+  );
+  const bar = (
+    <View
+      className="flex-row gap-1"
+      onLayout={(event) => setBarWidth(event.nativeEvent.layout.width)}
+    >
+      {pool.columns.map((member, index) => {
+        if (!member.window)
           return (
-            <Pressable
-              key={account.key}
-              accessibilityRole="button"
-              accessibilityLabel={`Segment ${index + 1}, ${accountName(account)}, ${remainingPercent(window)}% left${timeLeft === null ? "" : `, ${timeLeft}% of the window left`}`}
-              accessibilityHint="Show account details"
-              onPress={() => openAccount(account)}
-              className="h-7 min-w-0 flex-1 rounded-md bg-subtle"
-            >
+            <View
+              key={member.account.key}
+              className={wide ? "h-9 min-w-0 flex-1" : "h-7 min-w-0 flex-1"}
+            />
+          );
+        const { account, window } = member;
+        const timeLeft = paceRemainingPercent(window, now);
+        const credits = account.limits.resetCredits?.availableCount ?? 0;
+        const resetsIn = formatResetsIn(window, now)?.replace("resets in ", "");
+        return (
+          <Pressable
+            key={account.key}
+            accessibilityRole="button"
+            accessibilityLabel={`Segment ${index + 1}, ${accountName(account)}, ${remainingPercent(window)}% left${timeLeft === null ? "" : `, ${timeLeft}% of the window left`}`}
+            accessibilityHint="Show account details"
+            onPress={() => openAccount(account)}
+            className={wide ? "h-9 min-w-0 flex-1 rounded-md" : "h-7 min-w-0 flex-1 rounded-md"}
+          >
+            <PaceGap timeLeft={timeLeft}>
+              <View className="absolute inset-0 rounded-md bg-subtle" />
               <View className="absolute inset-0 overflow-hidden rounded-md">
                 <AccountSegment
                   remaining={remainingPercent(window)}
-                  color={color}
-                  pending={Boolean(window.resetsAt)}
+                  color={normalizeProviderAccentColor(account.accentColor) ?? color}
+                  refillPercent={window.resetsAt ? member.refillPercent : 0}
                 />
               </View>
-              {timeLeft !== null ? <PaceMark left={timeLeft} /> : null}
-              <View pointerEvents="none" className="absolute inset-0 items-center justify-center">
-                <Text className="text-xs font-t3-medium tabular-nums text-foreground">
-                  {index + 1}
-                </Text>
-              </View>
-            </Pressable>
-          );
-        })}
-      </View>
-      <View>
-        {pool.columns.map(({ account, window }, index) => {
-          if (!window) return null;
-          const credits = account.limits.resetCredits?.availableCount ?? 0;
-          const resetsIn = formatResetsIn(window, now);
-          return (
-            <Pressable
-              key={account.key}
-              accessibilityRole="button"
-              accessibilityLabel={`Segment ${index + 1}, ${accountName(account)}, ${remainingPercent(window)}% left${resetsIn ? `, ${resetsIn}` : ""}${credits ? `, ${credits} reset credits banked` : ""}`}
-              accessibilityHint="Show account details"
-              onPress={() => openAccount(account)}
-              className="min-h-[44px] flex-row items-center gap-2 active:opacity-60"
-            >
-              <View className="size-5 items-center justify-center overflow-hidden rounded-md bg-subtle-strong">
-                <Text className="text-xs font-t3-medium tabular-nums text-foreground">
-                  {index + 1}
-                </Text>
-              </View>
-              <Text
-                numberOfLines={1}
-                className="min-w-0 flex-1 text-sm font-t3-medium text-foreground"
+            </PaceGap>
+            {inlineLabels ? (
+              <View
+                pointerEvents="none"
+                className="absolute inset-0 flex-row items-center justify-between gap-2 overflow-hidden rounded-md px-2"
               >
-                {accountName(account)}
-              </Text>
-              <Text className="text-sm font-t3-medium tabular-nums text-foreground">
-                {remainingPercent(window)}%
-              </Text>
-              <View className="flex-row items-center gap-1">
-                {resetsIn ? (
-                  <>
-                    <SymbolView
-                      name="arrow.clockwise"
-                      size={12}
-                      tintColorClassName="accent-foreground-muted"
-                    />
-                    <Text className="text-xs tabular-nums text-foreground-muted">
-                      {resetsIn.replace("resets in ", "")}
+                <View className="min-w-0 shrink flex-row items-center gap-1.5">
+                  {account.email ? <AccountChip email={account.email} /> : null}
+                  {account.email && !(account.displayName && inlineName) ? null : (
+                    <Text
+                      numberOfLines={1}
+                      className="min-w-0 shrink text-xs font-t3-medium text-foreground"
+                    >
+                      {accountName(account)}
                     </Text>
-                  </>
-                ) : null}
-                {credits ? (
-                  <>
-                    {resetsIn ? <Text className="text-xs text-foreground-tertiary">·</Text> : null}
-                    <SymbolView name="ticket" size={13} tintColorClassName="accent-icon" />
-                    <Text className="text-xs font-t3-medium tabular-nums text-foreground">
-                      {credits}
-                    </Text>
-                  </>
+                  )}
+                  <Text className="text-sm font-t3-bold tabular-nums text-foreground">
+                    {remainingPercent(window)}%
+                  </Text>
+                </View>
+                {inlineReset && (resetsIn || credits) ? (
+                  <View className="shrink-0 flex-row items-center gap-1 rounded bg-grouped-card/85 px-1.5 py-0.5">
+                    {resetsIn ? (
+                      <>
+                        <SymbolView
+                          name="arrow.clockwise"
+                          size={11}
+                          tintColorClassName="accent-foreground-muted"
+                        />
+                        <Text className="text-xs tabular-nums text-foreground-muted">
+                          {resetsIn}
+                        </Text>
+                      </>
+                    ) : null}
+                    {credits ? (
+                      <>
+                        <SymbolView name="ticket" size={12} tintColorClassName="accent-icon" />
+                        <Text className="text-xs font-t3-medium tabular-nums text-foreground">
+                          {credits}
+                        </Text>
+                      </>
+                    ) : null}
+                  </View>
                 ) : null}
               </View>
-            </Pressable>
-          );
-        })}
+            ) : (
+              <View
+                pointerEvents="none"
+                className="absolute inset-0 items-center justify-center overflow-hidden rounded-md"
+              >
+                <Text
+                  numberOfLines={1}
+                  className="max-w-full shrink text-xs font-t3-medium tabular-nums text-foreground"
+                >
+                  {index + 1}
+                </Text>
+              </View>
+            )}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+  const legend = (
+    <View>
+      {pool.columns.map(({ account, window }, index) => {
+        if (!window) return null;
+        const segmentColor = normalizeProviderAccentColor(account.accentColor) ?? color;
+        const credits = account.limits.resetCredits?.availableCount ?? 0;
+        const resetsIn = formatResetsIn(window, now);
+        return (
+          <Pressable
+            key={account.key}
+            accessibilityRole="button"
+            accessibilityLabel={`Segment ${index + 1}, ${accountName(account)}, ${remainingPercent(window)}% left${resetsIn ? `, ${resetsIn}` : ""}${credits ? `, ${credits} reset credits banked` : ""}`}
+            accessibilityHint="Show account details"
+            onPress={() => openAccount(account)}
+            className="min-h-[44px] flex-row items-center gap-2 active:opacity-60"
+          >
+            <View className="relative size-5 items-center justify-center overflow-hidden rounded-md bg-subtle-strong">
+              <View
+                pointerEvents="none"
+                className="absolute inset-0"
+                style={{ backgroundColor: segmentColor, opacity: 0.35 }}
+              />
+              <Text className="text-xs font-t3-medium tabular-nums text-foreground">
+                {index + 1}
+              </Text>
+            </View>
+            <Text
+              numberOfLines={1}
+              className="min-w-0 flex-1 text-sm font-t3-medium text-foreground"
+            >
+              {accountName(account)}
+            </Text>
+            <Text className="text-sm font-t3-medium tabular-nums text-foreground">
+              {remainingPercent(window)}%
+            </Text>
+            <View className="flex-row items-center gap-1">
+              {resetsIn ? (
+                <>
+                  <SymbolView
+                    name="arrow.clockwise"
+                    size={12}
+                    tintColorClassName="accent-foreground-muted"
+                  />
+                  <Text className="text-xs tabular-nums text-foreground-muted">
+                    {resetsIn.replace("resets in ", "")}
+                  </Text>
+                </>
+              ) : null}
+              {credits ? (
+                <>
+                  {resetsIn ? <Text className="text-xs text-foreground-tertiary">·</Text> : null}
+                  <SymbolView name="ticket" size={13} tintColorClassName="accent-icon" />
+                  <Text className="text-xs font-t3-medium tabular-nums text-foreground">
+                    {credits}
+                  </Text>
+                </>
+              ) : null}
+            </View>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+  if (wide) {
+    return (
+      <View className="flex-row items-center gap-6 rounded-[24px] border-continuous bg-grouped-card p-4">
+        <View className="w-44 gap-1">{summary}</View>
+        <View className="min-w-0 flex-1 gap-1">
+          {bar}
+          {inlineLabels ? null : legend}
+        </View>
       </View>
+    );
+  }
+  return (
+    <View className="gap-3 rounded-[24px] border-continuous bg-grouped-card p-4">
+      {summary}
+      {bar}
+      {legend}
     </View>
   );
 }
@@ -241,13 +416,15 @@ export function UsageLimitsSection({
   failedLabels,
   selectedEnvironmentIds,
   cursorPrompt,
+  wide = false,
 }: {
   readonly now: number;
   readonly failedLabels: readonly string[];
   readonly selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null;
   readonly cursorPrompt?: ReactNode;
+  readonly wide?: boolean;
 }) {
-  const presentations = useAtomValue(environmentPresentations.presentationsAtom);
+  const presentations = useAtomValue(environmentPresentations.presentationsWithProvidersAtom);
   const selected =
     selectedEnvironmentIds === null
       ? presentations
@@ -293,19 +470,14 @@ export function UsageLimitsSection({
                   <PoolWindowCard
                     key={`${window.kind}:${window.id}`}
                     pool={window}
-                    color={
-                      pool.driver === "claudeAgent"
-                        ? colors.claude
-                        : pool.driver === "antigravity"
-                          ? colors.antigravity
-                          : colors.codex
-                    }
+                    color={colors[usageProviderKind(pool.driver) ?? "codex"]}
                     now={now}
                     environmentIds={
                       selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds]
                     }
                     label={details?.label}
                     description={details?.description}
+                    wide={wide}
                   />
                 );
               })}
@@ -368,10 +540,9 @@ type AccountScreenProps = StaticScreenProps<{
   now: number;
 }>;
 
-/** Resolve the account again so live quota and credit updates reach the open detail screen. */
 export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
   const insets = useSafeAreaInsets();
-  const presentations = useAtomValue(environmentPresentations.presentationsAtom);
+  const presentations = useAtomValue(environmentPresentations.presentationsWithProvidersAtom);
   const { accountKey, windowId, windowKind, environmentIds, now } = route.params;
   const selectedIds =
     environmentIds === null ? null : new Set(environmentIds.map((id) => EnvironmentId.make(id)));
