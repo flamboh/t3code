@@ -24,7 +24,7 @@ import {
   failedToolIconClassName,
   toolIconAcceptsTint,
 } from "./TimelineToolActivityIcon";
-import { toolGroupSummaryIconName, workEntryIconName } from "./TimelineWorkEntryRow.logic";
+import { workEntryIconName } from "./TimelineWorkEntryRow.logic";
 import {
   ReasoningTraceContent,
   SimpleWorkEntryRow,
@@ -167,6 +167,7 @@ function WorkingTimer({ createdAt, clock = false }: { createdAt: string; clock?:
 }
 
 const compactWorkEntryHeight = 24;
+const expandedWorkEntryHeight = 28;
 
 function ExpandedWorkGroupEntries({
   anchorKey,
@@ -258,7 +259,9 @@ function ExpandedWorkGroupEntries({
   }, [updateScrollFades]);
 
   const renderEntry = ({ item }: { item: TimelineWorkEntry }) => (
-    <SimpleWorkEntryRow key={item.id} workEntry={item} workspaceRoot={workspaceRoot} />
+    <div className="min-h-7">
+      <SimpleWorkEntryRow key={item.id} workEntry={item} workspaceRoot={workspaceRoot} />
+    </div>
   );
 
   const updateExpandedContentHeight = () => {
@@ -268,7 +271,7 @@ function ExpandedWorkGroupEntries({
       if (state?.indexByKey(entryId) === undefined) continue;
       height += Math.max(
         0,
-        (state.sizes.get(entryId) ?? compactWorkEntryHeight) - compactWorkEntryHeight,
+        (state.sizes.get(entryId) ?? expandedWorkEntryHeight) - expandedWorkEntryHeight,
       );
     }
     setExpandedContentHeight(height);
@@ -286,7 +289,7 @@ function ExpandedWorkGroupEntries({
           extraData={workspaceRoot}
           keyExtractor={workEntryKey}
           renderItem={renderEntry}
-          estimatedItemSize={compactWorkEntryHeight}
+          estimatedItemSize={expandedWorkEntryHeight}
           drawDistance={240}
           recycleItems
           {...(initialScrollIndex ? { initialScrollIndex } : {})}
@@ -678,8 +681,6 @@ export function WorkGroupToggleTimelineRow({
   return (
     <WorkGroupHeader
       label={row.summary}
-      iconName={row.toolSurface ?? toolGroupSummaryIconName(row.summaryKind)}
-      toolIcon={row.toolIcon}
       failed={row.hasFailure}
       expanded={row.expanded}
       onToggle={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
@@ -689,27 +690,22 @@ export function WorkGroupToggleTimelineRow({
 
 function WorkGroupHeader(props: {
   label: string;
-  iconName: WorkEntryIconName;
-  toolIcon?: ToolActivityIcon | undefined;
   failed?: boolean | undefined;
   expanded: boolean;
   onToggle: () => void;
 }) {
   return (
-    <WorkLogButton
-      aria-label={props.failed ? `${props.label}, tool call failed` : props.label}
-      aria-expanded={props.expanded}
-      onClick={props.onToggle}
-      icon={
-        <ToolActivityIconView
-          icon={props.toolIcon}
-          fallbackName={props.iconName}
-          className="size-3.5 shrink-0 stroke-2 text-muted-foreground"
-          muted
-        />
-      }
-      label={<span className="block truncate text-secondary-label">{props.label}</span>}
-    />
+    <div className={WORKING_BAR_CLASS_NAME}>
+      <WorkFoldToggle
+        togglable
+        expanded={props.expanded}
+        tone={props.failed ? "error" : "neutral"}
+        aria-label={props.failed ? `${props.label}, tool call failed` : props.label}
+        onClick={props.onToggle}
+      >
+        <span className="min-w-0 truncate">{props.label}</span>
+      </WorkFoldToggle>
+    </div>
   );
 }
 
