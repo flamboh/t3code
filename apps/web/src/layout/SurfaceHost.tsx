@@ -1467,6 +1467,7 @@ function LayoutChatSurface({
   // events are left alone so a pane's own autofocus cannot steal focus.
   const claimFocus = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return;
+    if (pressesTabClose(event)) return;
     const store = useLayoutStore.getState();
     if (selectFocusedTab(store.layout)?.id === tab.id) return;
     store.focusTab(tab.id);
@@ -1678,7 +1679,8 @@ function LayoutSurfaceTabSurface({
   // Focus that lands on the pane (cmd+J, alt+cmd+B, a launcher's letter, a
   // click on its tab) moves the keyboard in.
   usePaneKeyboard(slotRef, focused && !staged, surfaceKeyboardTarget);
-  const claimFocus = () => {
+  const claimFocus = (event: React.PointerEvent) => {
+    if (pressesTabClose(event)) return;
     const store = useLayoutStore.getState();
     if (selectFocusedTab(store.layout)?.id !== tabId) store.focusTab(tabId);
   };
@@ -1752,6 +1754,10 @@ function usePaneKeyboard(
     if (!handBack) return;
     return holdFocusedPaneKeyboard(() => moveDomFocusInto(pane, target(pane), true));
   }, [focused, handBack, paneRef, target]);
+}
+
+function pressesTabClose(event: React.PointerEvent): boolean {
+  return event.target instanceof Element && event.target.closest("[data-tab-close]") !== null;
 }
 
 /** Preserve focus held outside the strip unless explicitly handed back. An unready pane releases the
@@ -1913,7 +1919,8 @@ function LayoutLauncherSurface({
     related: false,
     visible: true,
   } satisfies LayoutPaneState;
-  const claimFocus = () => {
+  const claimFocus = (event: React.PointerEvent) => {
+    if (pressesTabClose(event)) return;
     const store = useLayoutStore.getState();
     if (selectFocusedTab(store.layout)?.id !== tabId) store.focusTab(tabId);
   };
@@ -1986,7 +1993,8 @@ function LayoutPageSurface({
   } satisfies LayoutPaneState;
   const settingsRef = useRef<HTMLDivElement | null>(null);
   usePaneKeyboard(settingsRef, focused && !staged, settingsKeyboardTarget);
-  const claimFocus = () => {
+  const claimFocus = (event: React.PointerEvent) => {
+    if (pressesTabClose(event)) return;
     const store = useLayoutStore.getState();
     if (selectFocusedTab(store.layout)?.id !== tabId) store.focusTab(tabId);
   };
