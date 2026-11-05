@@ -51,7 +51,7 @@ import { parseMarkdownWithMath } from "@t3tools/shared/markdownMath";
 import { collectThreadFindRanges } from "./threadFindHighlights";
 import { toastManager } from "../ui/toast";
 import type { CitedHistory } from "./citationProcedure";
-import type { TimelineNavigation } from "./timelineViewport";
+import type { TimelineNavigation, TimelineViewport } from "./timelineViewport";
 import { rememberTimelinePosition } from "./timelineScrollAnchoring";
 import {
   COMPOSER_CONTEXT_CLIPBOARD_MIME,
@@ -376,6 +376,7 @@ describe("MessagesTimeline work rows", () => {
 
   it("keeps live assistant text citable and expands the work window below a fixed bar", async () => {
     const runId = RunId.make("history-run");
+    const navigations: TimelineNavigation[] = [];
     await using screen = await renderTimeline(
       [
         message("Build it", { runId }),
@@ -388,6 +389,8 @@ describe("MessagesTimeline work rows", () => {
         isWorking: true,
         activeTurnStartedAt: CREATED_AT,
         latestRun: { runId, status: "running", startedAt: CREATED_AT, completedAt: null },
+        onViewportAttach: (viewport) =>
+          viewport.subscribe((navigation) => navigations.push(navigation)),
       },
     );
     await expect.element(screen.getByText("Live answer", { exact: true })).toBeVisible();
@@ -448,7 +451,11 @@ describe("MessagesTimeline work rows", () => {
       .element(screen.getByRole("button", { name: "Close work history" }))
       .toHaveAttribute("aria-expanded", "true");
     await expect.element(screen.getByText("History answer 0", { exact: true })).toBeInTheDocument();
+    expect(navigations).not.toContainEqual({ source: "command", releasesFollow: true });
     await Promise.all(history.getAnimations().map((animation) => animation.finished));
+    await vi.waitFor(() =>
+      expect(navigations).toContainEqual({ source: "command", releasesFollow: true }),
+    );
     expect(getComputedStyle(history).maxHeight).toBe("none");
     expect(
       screen.getByText("History answer 0", { exact: true }).element().getBoundingClientRect().top,
@@ -523,11 +530,11 @@ describe("MessagesTimeline work rows", () => {
     await screen.rerender(<MessagesTimeline {...props} timelineEntries={entries(31)} />);
     const arrivedHeight = history.clientHeight;
     await vi.waitFor(() => expect(history.clientHeight).toBeLessThan(arrivedHeight - 60));
+    expect(Math.max(...[...barTops].map((top) => Math.abs(top - barTop)))).toBeLessThan(2);
     for (const animation of history.getAnimations()) animation.finish();
     await vi.waitFor(() =>
       expect(history.querySelector('[data-slot="scroll-area-viewport"]')).not.toBeNull(),
     );
-    expect([...barTops]).toEqual([barTop]);
 
     history.style.transitionDuration = "";
     await bar.click();
@@ -551,6 +558,113 @@ describe("MessagesTimeline work rows", () => {
     await vi.waitFor(() => expect(history.clientHeight).toBeLessThan(expandedHeight - 200));
     expect(Math.max(...rowTops) - Math.min(...rowTops)).toBeLessThan(2);
     for (const animation of history.getAnimations()) animation.finish();
+  });
+
+  it("keeps following the end while the work history opens and collapses", async () => {
+    const runId = RunId.make("collapse-run");
+    const navigations: TimelineNavigation[] = [];
+    const props = {
+      ...baseProps(),
+      isWorking: true,
+      activeTurnStartedAt: CREATED_AT,
+      latestRun: { runId, status: "running" as const, startedAt: CREATED_AT, completedAt: null },
+      onViewportAttach: (viewport: TimelineViewport) =>
+        viewport.subscribe((navigation) => navigations.push(navigation)),
+    };
+    const entries = (steps: number) => [
+      ...Array.from({ length: 40 }, (_, index) =>
+        message(`Earlier ${index}`, {}, `earlier-${index}`),
+      ),
+      message("Build it", { runId }),
+      ...Array.from({ length: steps }, (_, index) =>
+        message(`Step ${index}`, { runId, role: "assistant" }, `step-${index}`),
+      ),
+    ];
+    await using screen = await renderElement(
+      <MessagesTimeline {...props} timelineEntries={entries(12)} />,
+    );
+    const bar = screen.getByRole("button", { name: "Open work history" });
+    await expect.element(bar).toBeVisible();
+    const viewport = props.listRef.current!.getScrollableNode()!;
+    const gap = () => viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop;
+    await vi.waitFor(() => expect(gap()).toBeLessThan(2));
+    const barElement = bar.element();
+    await bar.click();
+    const history = screen.getByRole("region", { name: "Work history" }).element();
+    await expect.element(screen.getByText("Step 0", { exact: true })).toBeInTheDocument();
+    await Promise.all(history.getAnimations().map((animation) => animation.finished));
+    await vi.waitFor(() => expect(gap()).toBeLessThan(2));
+
+    await screen.rerender(<MessagesTimeline {...props} timelineEntries={entries(13)} />);
+    await expect.element(screen.getByText("Step 12", { exact: true })).toBeInTheDocument();
+    await vi.waitFor(() => expect(gap()).toBeLessThan(2));
+
+    const barTop = barElement.getBoundingClientRect().top;
+    const expandedHeight = history.clientHeight;
+    const barTops = new Set<number>();
+    const resizes = new ResizeObserver(() => barTops.add(barElement.getBoundingClientRect().top));
+    resizes.observe(history);
+    using _resizes = { [Symbol.dispose]: () => resizes.disconnect() };
+    history.style.transitionDuration = "10s";
+    await screen.getByRole("button", { name: "Close work history" }).click();
+    await vi.waitFor(() => expect(history.clientHeight).toBeLessThan(expandedHeight - 20));
+    await screen.rerender(<MessagesTimeline {...props} timelineEntries={entries(14)} />);
+    const arrivedHeight = history.clientHeight;
+    await vi.waitFor(() => expect(history.clientHeight).toBeLessThan(arrivedHeight - 60));
+    for (const animation of history.getAnimations()) animation.finish();
+    await vi.waitFor(() =>
+      expect(history.querySelector('[data-slot="scroll-area-viewport"]')).not.toBeNull(),
+    );
+    expect(Math.min(...barTops)).toBeGreaterThan(barTop - 2);
+    await vi.waitFor(() => expect(gap()).toBeLessThan(2));
+
+    await screen.rerender(<MessagesTimeline {...props} timelineEntries={entries(15)} />);
+    await expect.element(screen.getByText("Step 14", { exact: true })).toBeInTheDocument();
+    await vi.waitFor(() => expect(gap()).toBeLessThan(2));
+    expect(navigations.filter((navigation) => navigation.source !== "pointer")).toEqual([]);
+  });
+
+  it("follows growth that lands after a smooth follow scroll starts", async () => {
+    const runId = RunId.make("tail-run");
+    const props = {
+      ...baseProps(),
+      isWorking: true,
+      activeTurnStartedAt: CREATED_AT,
+      latestRun: { runId, status: "running" as const, startedAt: CREATED_AT, completedAt: null },
+    };
+    const entries = (lines: number) => [
+      ...Array.from({ length: 40 }, (_, index) =>
+        message(`Earlier ${index}`, {}, `earlier-${index}`),
+      ),
+      message("Build it", { runId }),
+      message(
+        Array.from({ length: lines }, (_, index) => `Line ${index}`).join("\n\n"),
+        { runId, role: "assistant", streaming: true },
+        "answer",
+      ),
+    ];
+    await using screen = await renderElement(
+      <MessagesTimeline {...props} timelineEntries={entries(2)} />,
+    );
+    await expect.element(screen.getByText("Line 1", { exact: true })).toBeVisible();
+    const viewport = props.listRef.current!.getScrollableNode()!;
+    const gap = () => viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop;
+    await vi.waitFor(() => expect(gap()).toBeLessThan(2));
+    const realSetTimeout = globalThis.setTimeout;
+    using _followRetry = stubGlobal("setTimeout", ((
+      handler: () => void,
+      delay?: number,
+      ...args: unknown[]
+    ) =>
+      delay === 500 ? 0 : realSetTimeout(handler, delay, ...args)) as unknown as typeof setTimeout);
+
+    for (const lines of [12, 22, 32]) {
+      await screen.rerender(<MessagesTimeline {...props} timelineEntries={entries(lines)} />);
+      await expect
+        .element(screen.getByText(`Line ${lines - 1}`, { exact: true }))
+        .toBeInTheDocument();
+      await vi.waitFor(() => expect(gap()).toBeLessThan(2));
+    }
   });
 
   it.each(["delegated", "legacy", "missing"] as const)(
