@@ -223,7 +223,7 @@ export function ComposerControlsBar(props: {
         composerControlsCollapsed && "text-meta!",
         pickerIconOnly
           ? "min-w-0 shrink-0 [&>span:has(>[data-chat-provider-model-picker-label])]:-mx-0.5 [&_[data-chat-provider-model-picker-label]]:pointer-events-none [&_[data-chat-provider-model-picker-label]]:invisible [&_[data-chat-provider-model-picker-label]]:absolute [&_[data-chat-provider-model-picker-label]]:w-max [&_[data-chat-provider-model-picker-label]]:max-w-none"
-          : "min-w-13 shrink",
+          : "shrink-0",
       )}
       effortColumn={
         hasComposerModelOptions(traitsInput) ? (
