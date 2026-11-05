@@ -33,6 +33,7 @@ import {
   ADD_TO_MACHINE_LABEL_CLASS,
   type EnvMode,
   type EnvironmentOption,
+  readContextStripCompaction,
   resolveContextStripCompaction,
   type ContextStripCompaction,
   resolveCurrentWorkspaceLabel,
@@ -84,7 +85,7 @@ import { ComposerSurface } from "./chat/ComposerSurface";
 import { measureRestingComposerControls } from "./chat/restingComposerControlsMeasurement";
 import {
   resolveRestingComposerControlsMinimumWidth,
-  resolveRestingComposerControlsNaturalWidth,
+  resolveRestingComposerControlsNarrowestWidth,
 } from "./composerFooterLayout";
 import { NoProjectChip } from "./chat/NoProjectChip";
 import { useComposerMenuProps } from "./chat/composerEventScope";
@@ -810,11 +811,6 @@ const COMPOSER_CONTEXT_MOTION_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
 const COMPOSER_CONTEXT_LABEL_SELECTOR = "[data-composer-label]";
 const RESTING_CONTROLS_SELECTOR = '[data-chat-composer-resting-controls="true"]';
 
-function readStripCompaction(strip: HTMLElement): ContextStripCompaction {
-  const value = strip.dataset.compact;
-  return value === "labels" || value === "branch" ? value : "none";
-}
-
 /** A hidden or squeezed label's scrollWidth loses its tail, causing label/icon flapping. */
 function labelTextWidth(label: HTMLElement, range: Range): number {
   const walker = document.createTreeWalker(label, NodeFilter.SHOW_TEXT);
@@ -883,7 +879,7 @@ function useStripCompaction(): readonly [
       // Hidden tabs retain stage layout but must keep their last label mode.
       if (!current.checkVisibility()) return;
       // The committed attribute, not render state, so a stale closure cannot misread it.
-      const compact = readStripCompaction(current);
+      const compact = readContextStripCompaction(current.dataset.compact);
       const stripWidth = current.clientWidth;
       if (stripWidth === 0) return;
       const stripStyle = getComputedStyle(current);
@@ -911,6 +907,7 @@ function useStripCompaction(): readonly [
       };
       const stripGap = Number.parseFloat(stripStyle.columnGap) || 0;
       let needed = 0;
+      let labelsNeeded = 0;
       let groups = 0;
       for (const child of current.children) {
         if (!(child instanceof HTMLElement)) continue;
@@ -918,27 +915,35 @@ function useStripCompaction(): readonly [
         const controlsMeasurement = controls ? measureRestingComposerControls(controls) : null;
         if (controlsMeasurement) {
           child.style.minWidth = `${resolveRestingComposerControlsMinimumWidth(controlsMeasurement)}px`;
+          groups += 1;
+          needed += resolveRestingComposerControlsNarrowestWidth(controlsMeasurement, "none");
+          labelsNeeded += resolveRestingComposerControlsNarrowestWidth(
+            controlsMeasurement,
+            "labels",
+          );
+          continue;
         }
-        const width = controlsMeasurement
-          ? resolveRestingComposerControlsNaturalWidth(controlsMeasurement)
-          : contentWidth(child);
+        const width = contentWidth(child);
         if (width <= 1) continue;
         groups += 1;
         needed += width;
+        labelsNeeded += width;
       }
       needed += stripGap * Math.max(0, groups - 1);
+      labelsNeeded += stripGap * Math.max(0, groups - 1);
       const range = document.createRange();
-      let labelsSavedWidth = 0;
       for (const label of current.querySelectorAll<HTMLElement>(COMPOSER_CONTEXT_LABEL_SELECTOR)) {
         const textWidth = labelTextWidth(label, range);
-        needed += Math.max(0, textWidth - label.getBoundingClientRect().width);
-        if (label.dataset.composerLabel === "hide") labelsSavedWidth += textWidth;
+        const squeezedWidth = Math.max(0, textWidth - label.getBoundingClientRect().width);
+        needed += squeezedWidth;
+        labelsNeeded +=
+          label.dataset.composerLabel === "hide" ? squeezedWidth - textWidth : squeezedWidth;
       }
       const nextCompaction = resolveContextStripCompaction({
         current: compact,
         neededWidth: needed,
+        labelsNeededWidth: labelsNeeded,
         availableWidth: available,
-        labelsSavedWidth,
       });
       const firstMeasure = !measured;
       measured = true;
