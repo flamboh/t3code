@@ -1302,19 +1302,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
     </>
   );
 
-  const maintainScrollAtEnd =
-    citationPositioning ||
-    (restoringThreadPosition && rememberedPosition?.atEnd === false) ||
-    anchoredEndSpace ||
-    !liveFollowEnabled ||
-    fullscreenAppRowId !== null ||
-    disclosureToggleSettling ||
-    workingHistoryOpen ||
-    workingHistoryCollapsing
-      ? false
-      : isWorking && !prefersReducedMotion && settlingListIdentity === null
-        ? TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH
-        : TIMELINE_MAINTAIN_SCROLL_AT_END;
   const keepEndOnViewportResize = useStableCallback(() => {
     const list = listRef.current;
     const scrollNode = list?.getScrollableNode();
