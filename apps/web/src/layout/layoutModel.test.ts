@@ -97,8 +97,6 @@ describe("moveLayoutTab", () => {
   });
 });
 
-
-
 const column = (id: string, width: number) => ({
   id,
   width,

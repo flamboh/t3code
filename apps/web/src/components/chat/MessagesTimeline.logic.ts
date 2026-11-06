@@ -2512,7 +2512,7 @@ export function deriveMessagesTimelineRows(input: {
   );
   return groupTimelinePrompts(result).map((sourceRow, index) => {
     const row = supersededRowIds.has(sourceRow.id) ? { ...sourceRow, superseded: true } : sourceRow;
-    return     timelineRowIsWorkLog(row) && timelineRowIsWorkLog(result[index + 1])
+    return timelineRowIsWorkLog(row) && timelineRowIsWorkLog(result[index + 1])
       ? { ...row, continuesWorkLog: true }
       : row;
   });

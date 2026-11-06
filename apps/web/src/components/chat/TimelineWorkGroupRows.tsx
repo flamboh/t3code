@@ -913,7 +913,7 @@ function WorkingWindowView({
     if (open) return;
     setCollapseClips((windowRef.current?.scrollHeight ?? 0) > WORKING_WINDOW_COLLAPSED_HEIGHT);
   }, [open]);
-  const { onWorkingHistoryCollapsing, listRef, onWorkingHistoryMoving, onWorkingHistorySettled } = ctx;
+  const { listRef, onWorkingHistoryMoving, onWorkingHistorySettled } = ctx;
   const collapsing = !open && history !== null;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the list applies shrinks a frame late, so the collapse reports each frame's row size itself
   useLayoutEffect(() => {
