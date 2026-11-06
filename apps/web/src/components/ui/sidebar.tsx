@@ -130,6 +130,58 @@ function moveFocusOutOfCollapsingSidebar() {
   trigger?.focus({ preventScroll: true });
 }
 
+const SIDEBAR_SLIDE_ID = "sidebar-slide";
+
+function sidebarSlideTargets() {
+  const scope = '[data-panel-animations="true"]';
+  const containers = document.querySelectorAll<HTMLElement>(
+    `${scope} [data-slot="sidebar-container"]`,
+  );
+  const insets = document.querySelectorAll<HTMLElement>(`${scope} [data-slot="sidebar-inset"]`);
+  return [
+    ...Array.from(containers, (element) => ({ element, parent: null })),
+    ...Array.from(insets).flatMap((inset) => [
+      { element: inset, parent: null },
+      ...Array.from(
+        inset.querySelectorAll<HTMLElement>("[data-sidebar-slide-children] > *"),
+        (element) => ({ element, parent: inset }),
+      ),
+    ]),
+  ].map((target) => ({ ...target, start: target.element.getBoundingClientRect().left }));
+}
+
+function slideSidebar(commit: () => void) {
+  const targets = sidebarSlideTargets();
+  commit();
+  const first = targets[0];
+  if (!first) return;
+  window.requestAnimationFrame(() => {
+    for (const { element } of targets) {
+      for (const animation of element.getAnimations()) {
+        if (animation.id === SIDEBAR_SLIDE_ID) animation.cancel();
+      }
+    }
+    const offsets = new Map(
+      targets.map(({ element, start }) => [element, start - element.getBoundingClientRect().left]),
+    );
+    const duration = Number.parseFloat(
+      getComputedStyle(first.element).getPropertyValue("--panel-animation-duration"),
+    );
+    for (const { element, parent } of targets) {
+      const offset = (offsets.get(element) ?? 0) - (parent ? (offsets.get(parent) ?? 0) : 0);
+      if (!element.isConnected || Math.abs(offset) < 0.5) continue;
+      element.animate(
+        { transform: [`translateX(${offset}px)`, "translateX(0)"] },
+        {
+          duration: Number.isFinite(duration) ? duration : 0,
+          easing: "ease-out",
+          id: SIDEBAR_SLIDE_ID,
+        },
+      );
+    }
+  });
+}
+
 interface SidebarOpenState {
   readonly open: boolean;
   readonly openMobile: boolean;
@@ -151,7 +203,7 @@ function createSidebarOpenStore(defaultOpen: boolean) {
     }
     if (open !== state.open) {
       if (!isMobileViewport()) announceSidebarVisibility(open);
-      publish({ ...state, open });
+      slideSidebar(() => publish({ ...state, open }));
     }
     void persistSidebarOpen(open);
   };
@@ -361,7 +413,6 @@ function Sidebar({
         <div
           className={cn(
             "relative w-(--sidebar-width) bg-transparent",
-            "[[data-panel-animations=true]_&]:transition-[width] [[data-panel-animations=true]_&]:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:ease-out",
             "group-data-[collapsible=offcanvas]:w-0",
             "group-data-[side=right]:rotate-180",
             variant === "floating"
@@ -373,7 +424,6 @@ function Sidebar({
         <div
           className={cn(
             "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) md:flex",
-            "[[data-panel-animations=true]_&]:transition-[left,right,width] [[data-panel-animations=true]_&]:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:ease-out",
             side === "left"
               ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
               : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
@@ -621,7 +671,6 @@ function SidebarInset({
       className={cn(
         "relative flex min-w-0 w-full flex-1 flex-col",
         variant === "pane" && "bg-background surface-grain",
-        "[[data-panel-animations=true]_&]:transition-[margin-inline-start] [[data-panel-animations=true]_&]:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:ease-out",
         // The inset pane (pen mSaSF) on the window chrome: 12px from the window
         // and from the sidebar's content, centered on the chrome row at the top.
         // It stretches in the flex wrapper, so the route's own height yields.
