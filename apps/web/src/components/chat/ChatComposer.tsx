@@ -2597,7 +2597,6 @@ export function ChatComposer(props: ChatComposerProps) {
       pendingUserInputs,
       supportsQuestionAttachments,
       isLiteralPendingAnswer,
-      projectSelectionRequired,
       questionAttachmentTarget,
       attachmentTargetKey,
       fileStagingLimit,
@@ -2685,7 +2684,7 @@ export function ChatComposer(props: ChatComposerProps) {
       event.stopPropagation();
       if (folders.length > 0) addComposerFoldersStable(folders);
       if (files.length > 0) {
-        void addComposerAttachments(files, { skipImageInlineChip: bypassAutoAttachment });
+        void addComposerAttachments(files);
       }
       return;
     }

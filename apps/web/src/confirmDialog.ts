@@ -68,7 +68,7 @@ export function subscribeConfirmDialogHost(listener: () => void): () => void {
 /** Undefined means no themed host is available. */
 export function requestConfirmDialog(
   message: string,
-  options?: ConfirmDialogOptions,
+  options?: ConfirmDialogOptions & { readonly confirmLabel?: string },
 ): Promise<boolean> | undefined {
   if (listeners.size === 0) return undefined;
 
