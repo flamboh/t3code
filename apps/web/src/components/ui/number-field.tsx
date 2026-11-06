@@ -93,7 +93,7 @@ export function NumberFieldInput({
         // With a unit the value hugs it and the pair centers between the steppers.
         "group-data-has-unit/number-field:ms-auto group-data-has-unit/number-field:w-auto group-data-has-unit/number-field:min-w-[2ch] group-data-has-unit/number-field:max-w-[7ch] group-data-has-unit/number-field:grow-0 group-data-has-unit/number-field:pe-1 group-data-has-unit/number-field:text-end group-data-has-unit/number-field:field-sizing-content",
         "h-8.5 in-data-[size=sm]:h-7.5 w-full min-w-0 grow bg-transparent in-data-[size=sm]:px-[calc(--spacing(2.5)-1px)] px-[calc(--spacing(3)-1px)] text-center tabular-nums in-data-[size=sm]:leading-7.5 leading-8.5 outline-none [transition:background-color_5000000s_ease-in-out_0s] sm:h-7.5 sm:in-data-[size=sm]:h-6.5 sm:in-data-[size=sm]:leading-8.5 sm:leading-7.5",
-        "in-data-[size=compact]:h-6.5 in-data-[size=compact]:leading-6.5 in-data-[size=compact]:px-1 sm:in-data-[size=compact]:h-6.5 sm:in-data-[size=compact]:leading-6.5",
+        "in-data-[size=compact]:h-6.5 in-data-[size=compact]:leading-6.5 in-data-[size=compact]:px-2 sm:in-data-[size=compact]:h-6.5 sm:in-data-[size=compact]:leading-6.5",
         className,
       )}
       data-slot="number-field-input"
