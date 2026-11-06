@@ -1644,6 +1644,12 @@ function settleSupersededReasoning(entries: ReadonlyArray<TimelineEntry>) {
   });
 }
 
+function withoutRetriedPrompts(entries: ReadonlyArray<TimelineEntry>) {
+  return entries.filter(
+    (entry) => entry.kind !== "message" || entry.message.retryOfRunId === undefined,
+  );
+}
+
 function workShownAsFinalAnswerOnly(
   entry: TimelineEntry,
   pendingApprovalRequestIds: ReadonlySet<RuntimeRequestId> | undefined,
@@ -1714,7 +1720,7 @@ function timelineRowEntries(
   >,
 ) {
   const visibility = input.toolCallVisibility ?? "showAll";
-  const entries = input.timelineEntries;
+  const entries = withoutRetriedPrompts(input.timelineEntries);
   let shown = entries;
   if (visibility === "zen") {
     const answering = input.isWorking && input.latestRun?.turnEnded !== true;
