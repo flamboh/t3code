@@ -227,6 +227,7 @@ const TIMELINE_MAINTAIN_SCROLL_AT_END = {
   },
 } as const satisfies MaintainScrollAtEndOptions;
 const EMPTY_RUN_IDS: ReadonlySet<RunId> = new Set();
+const TIMELINE_SCROLL_IDLE_MS = 100;
 const TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH = {
   ...TIMELINE_MAINTAIN_SCROLL_AT_END,
   animated: true,
@@ -517,7 +518,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   // The open history belongs to the prompt that opened it; sending closes it.
   const [workingHistoryKey, setWorkingHistoryKey] = useState<string | null>(null);
   const [disclosureToggleSettling, setDisclosureToggleSettling] = useState(false);
-  const [workingHistoryCollapsing, setWorkingHistoryCollapsing] = useState(false);
+  const [workingHistoryMoving, setWorkingHistoryMoving] = useState(false);
   const disclosureAnchorKeyRef = useRef<string | null>(null);
   const disclosureSettleFrameRef = useRef<number | null>(null);
   const disclosureSettleSecondFrameRef = useRef<number | null>(null);
@@ -978,6 +979,42 @@ const ConversationTimeline = memo(function ConversationTimeline({
     size: true,
     shouldRestorePosition: shouldRestoreVisibleContentPosition,
   };
+  const followHeldOff =
+    citationPositioning ||
+    (restoringThreadPosition && rememberedPosition?.atEnd === false) ||
+    anchoredEndSpace !== undefined ||
+    !liveFollowEnabled ||
+    fullscreenAppRowId !== null;
+  const maintainScrollAtEnd =
+    followHeldOff || disclosureToggleSettling || workingHistoryMoving
+      ? false
+      : isWorking && !prefersReducedMotion && settlingListIdentity === null
+        ? TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH
+        : TIMELINE_MAINTAIN_SCROLL_AT_END;
+  const lastScrollAtRef = useRef(Number.NEGATIVE_INFINITY);
+  const scrollToFollowedEnd = (animated: boolean) => {
+    const node = listRef.current?.getScrollableNode();
+    if (!node) return;
+    const gap = node.scrollHeight - node.clientHeight - node.scrollTop;
+    if (gap > node.clientHeight) return "far";
+    if (gap > 1) {
+      node.scrollTo({
+        top: node.scrollHeight - node.clientHeight,
+        behavior: animated ? "smooth" : "instant",
+      });
+    }
+  };
+  const catchUpSmoothFollow = () => {
+    if (maintainScrollAtEnd === TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH) scrollToFollowedEnd(true);
+  };
+  const settleWorkingHistoryFollow = useStableCallback(() => {
+    if (!followHeldOff && scrollToFollowedEnd(!prefersReducedMotion) === "far") {
+      navigateTimeline();
+    }
+  });
+  const handleTimelineScrollEnd = (event: SyntheticEvent<HTMLDivElement>) => {
+    if (event.target === listRef.current?.getScrollableNode()) catchUpSmoothFollow();
+  };
 
   const refreshMinimap = useStableCallback(() => {
     const state = listRef.current?.getState?.();
@@ -1121,6 +1158,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
       setSettlingListIdentity((current) => (current === listIdentityKey ? null : current));
     }
     handleScroll();
+    if (performance.now() - lastScrollAtRef.current > TIMELINE_SCROLL_IDLE_MS)
+      catchUpSmoothFollow();
   });
   // The content lane only changes width with the viewport or the chat width
   // setting, never with streamed content; measuring per content frame would
@@ -1198,7 +1237,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
     onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocally ?? null,
     onOpenWorktreeSetupTerminal: onOpenWorktreeSetupTerminal ?? null,
     onToggleWorkingHistory,
-    onWorkingHistoryCollapsing: setWorkingHistoryCollapsing,
+    onWorkingHistoryMoving: setWorkingHistoryMoving,
+    onWorkingHistorySettled: settleWorkingHistoryFollow,
     onFocusComposer: onFocusComposer ?? null,
     workGroupViewState,
   };
@@ -1540,6 +1580,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
             ref={attachTimelineViewportElement}
             className="relative -mt-[var(--timeline-top-inset,0px)] h-[calc(100%+var(--timeline-top-inset,0px))] min-h-0"
             data-assistant-citation-viewport="true"
+            onScrollEndCapture={handleTimelineScrollEnd}
           >
             {onCiteAssistantText && citationThreadRef ? (
               <AssistantSelectionToolbar
@@ -1574,7 +1615,10 @@ const ConversationTimeline = memo(function ConversationTimeline({
                   : maintainVisibleContentPosition
               }
               maintainScrollAtEndThreshold={1}
-              onScroll={handleScroll}
+              onScroll={() => {
+                lastScrollAtRef.current = performance.now();
+                handleScroll();
+              }}
               onItemSizeChanged={handleItemSizeChanged}
               className="messages-timeline-scroll scrollbar-gutter-both h-full min-h-0 scroll-pt-[var(--timeline-top-inset,0px)] overflow-x-hidden overscroll-y-contain [overflow-anchor:none]"
               ListHeaderComponent={listHeader}
