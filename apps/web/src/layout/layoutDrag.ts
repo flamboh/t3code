@@ -16,6 +16,7 @@ import {
   type LayoutState,
   type LayoutTabDestination,
 } from "./layoutModel";
+import { notePaneDrop } from "../motion/paneDrop";
 import { saveLayoutNow, useLayoutStore } from "./layoutStore";
 
 export type LayoutDragSource =
@@ -334,7 +335,10 @@ export function dropLayoutDrag(): boolean {
   const current = dragState;
   setDragState(null);
   if (!current?.target) return false;
-  return commitLayoutDrop(current.source, current.target);
+  notePaneDrop(true);
+  const committed = commitLayoutDrop(current.source, current.target);
+  if (!committed) notePaneDrop(false);
+  return committed;
 }
 
 export function cancelLayoutDrag(): void {
