@@ -318,9 +318,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   const sendButton = (
     <button
       type={showResume ? "button" : "submit"}
-      className={cn(
-        COMPOSER_PILL_BUTTON_CLASS_NAME, "w-8",
-      )}
+      className={cn(COMPOSER_PILL_BUTTON_CLASS_NAME, "w-8")}
       {...pointerFocusProps}
       onClick={showResume ? onResume : onSubmitMessage}
       disabled={
