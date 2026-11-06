@@ -1155,25 +1155,7 @@ export function LayoutSurfaceHost({
     shown.workspaces.length > 1 && shown.workspaces[0]!.columns.length === 0
       ? shown.workspaces[0]!.id
       : null;
-  const emptyRows = staged
-    ? stage.rows
-        .filter((row) => row.workspace.columns.length === 0)
-        .map((row) => ({
-          id: row.workspace.id,
-          style: overviewSlotStyle(row, FULL_SLOT, stage.gap, HALF_PANE_GAP),
-          active: false,
-        }))
-    : stacked && workspaceStack
-      ? stackRows
-          .filter((row) => row.slots.length === 0)
-          .map((row) => ({
-            id: row.id,
-            style: stackSlotStyle(row, FULL_SLOT, workspaceStack.gap),
-            active: false,
-          }))
-      : emptyWorkspace
-        ? [{ id: workspace.id, style: FULL_STYLE, active }]
-        : [];
+  const emptyRows = staged ? stage.rows.filter((row) => row.workspace.columns.length === 0) : [];
   const pageTabs = shown.workspaces.flatMap((candidate) =>
     candidate.columns.flatMap((column) =>
       column.panes.flatMap((pane) => pane.tabs.filter((tab) => isLayoutPageContent(tab.content))),
@@ -1372,15 +1354,33 @@ export function LayoutSurfaceHost({
               overview={staged}
             />
           ))}
-          {emptyRows.map((row) => (
+          {staged ? (
+            emptyRows.map((row) => (
+              <LayoutEmptyWorkspace
+                key={row.workspace.id}
+                style={overviewSlotStyle(row, FULL_SLOT, stage.gap, HALF_PANE_GAP)}
+                top={row.workspace.id === topEmptyId}
+                active={false}
+              />
+            ))
+          ) : stacked && workspaceStack ? (
+            stackRows
+              .filter((row) => row.slots.length === 0)
+              .map((row) => (
+                <LayoutEmptyWorkspace
+                  key={row.id}
+                  style={stackSlotStyle(row, FULL_SLOT, workspaceStack.gap)}
+                  top={row.id === topEmptyId}
+                  active={false}
+                />
+              ))
+          ) : emptyWorkspace ? (
             <LayoutEmptyWorkspace
-              key={row.id}
-              workspaceId={row.id}
-              style={row.style}
-              top={row.id === topEmptyId}
-              active={row.active}
+              style={FULL_STYLE}
+              top={workspace.id === topEmptyId}
+              active={active}
             />
-          ))}
+          ) : null}
           {staged ? (
             <OverviewStageOverlay layout={shown} stage={stage} phase={overviewPhase} />
           ) : null}
@@ -1874,12 +1874,10 @@ function PaneCuts() {
  * or a drop, lands here.
  */
 function LayoutEmptyWorkspace({
-  workspaceId,
   style,
   top,
   active,
 }: {
-  workspaceId: string;
   style: React.CSSProperties;
   top: boolean;
   /** The strip's own empty workspace, not one under the overview or mid-switch. */
@@ -1915,7 +1913,7 @@ function LayoutEmptyWorkspace({
   return (
     <div
       ref={paneRef}
-      data-layout-empty-workspace={workspaceId}
+      data-layout-empty-workspace=""
       className={cn(
         "absolute flex flex-col",
         // Under the overview or mid-switch it draws its own pane, as panes do there.
