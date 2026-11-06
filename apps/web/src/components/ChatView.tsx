@@ -3463,6 +3463,7 @@ export default function ChatView(props: ChatViewProps) {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-clip" data-chat-column>
         {embedded ? null : (
           <ChatPaneHeader
+            data-sidebar-slide-children=""
             ref={threadPanelPopoverAnchorRef}
             reserveNativeControlsInset={
               reserveTitleBarControlInset && !inlineRightPanelOwnsTitleBar
