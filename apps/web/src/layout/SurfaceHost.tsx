@@ -16,7 +16,7 @@ import { cn, isMacPlatform } from "../lib/utils";
 import { sidewaysWheelScrollsStrip, wheelDeltaPx } from "../motion/gesture";
 import { keepClosingPane, usePaneMotion } from "../motion/paneMotion";
 import {
-  ChatPanelAnimationSuppressionProvider,
+  PanelAnimationSuppressionProvider,
   usePanelNavigationSuppression,
 } from "../panelAnimations";
 import {
@@ -1485,8 +1485,8 @@ function LayoutChatSurface({
     paneId,
     // Staged, every pane draws its own; a window-fixed header cluster would
     // land in the stage's corner, over whichever workspace sits on top.
-    split: visible && (split || staged),
-    narrow: visible && narrow,
+    split: split || staged,
+    narrow,
     leadingEdge,
     trailingEdge,
     focused: focused && !background,
@@ -1625,7 +1625,7 @@ const LayoutChatSurfaceBody = memo(function LayoutChatSurfaceBody({
     return registerWaitingChat(tabId, () => setRendered(true));
   }, [rendered, tabId]);
   return (
-    <ChatPanelAnimationSuppressionProvider value={panelAnimationsSuppressed}>
+    <PanelAnimationSuppressionProvider value={panelAnimationsSuppressed}>
       <LayoutPaneContext value={paneState}>
         {rendered ? (
           <ThreadRouteView
@@ -1655,7 +1655,7 @@ const LayoutChatSurfaceBody = memo(function LayoutChatSurfaceBody({
           <div aria-hidden className="min-h-0 min-w-0 flex-1 bg-background" />
         )}
       </LayoutPaneContext>
-    </ChatPanelAnimationSuppressionProvider>
+    </PanelAnimationSuppressionProvider>
   );
 });
 
