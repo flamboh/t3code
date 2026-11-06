@@ -228,11 +228,16 @@ function CommandGroup({
 
 function CommandGroupLabel({
   className,
+  tone = "default",
   ...props
-}: React.ComponentProps<typeof AutocompleteGroupLabel>) {
+}: React.ComponentProps<typeof AutocompleteGroupLabel> & { tone?: "default" | "muted" }) {
   return (
     <AutocompleteGroupLabel
-      className={cn("px-2.5 pt-2 pb-1 text-caption", className)}
+      className={cn(
+        "px-2.5 pt-2 pb-1 text-caption",
+        tone === "muted" && "text-(--command-muted-foreground,var(--contrast-muted-foreground))",
+        className,
+      )}
       data-slot="command-group-label"
       {...props}
     />
@@ -258,7 +263,7 @@ function CommandItem({
       automaticHighlight={false}
       className={cn(
         "min-h-8.5 px-2.5 py-1.5 text-control sm:min-h-8.5",
-        spacing === "composer" && "min-h-8 gap-2.5 rounded-[8px] px-2.5 py-0 sm:min-h-8",
+        spacing === "composer" && "min-h-8.5 gap-2.5 rounded-item px-2.5 py-1.5 sm:min-h-8.5",
         active === undefined
           ? "hover:surface-selected data-highlighted:surface-selected data-highlighted:text-strong-foreground data-selected:surface-selected data-selected:text-strong-foreground"
           : "cursor-pointer",
