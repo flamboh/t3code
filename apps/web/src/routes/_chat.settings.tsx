@@ -69,7 +69,7 @@ function SettingsScopeBoundary({ pathname, children }: { pathname: string; child
       </SettingsScopeNotice>
     );
   }
-  if (SETTINGS_DEVICE_ONLY_PATHS.has(pathname) || pathname === "/settings/projects") {
+  if (SETTINGS_DEVICE_ONLY_PATHS.has(pathname) || location.pathname === "/settings/projects") {
     return children;
   }
   if (scope.kind === "unavailable")
@@ -102,7 +102,7 @@ function SettingsContentLayout({ children }: { children: ReactNode }) {
   return (
     <AppRouteModal label="Settings" variant="app-panel">
       <div className="relative flex min-h-0 flex-1">
-        <SettingsSidebarNav pathname={location.pathname} />
+        <SettingsSidebarNav pathname={pathname} />
         <div
           {...contentArea}
           data-app-modal-pane=""
@@ -139,7 +139,7 @@ function SettingsPage({ children }: { children?: ReactNode }) {
   const page = (
     <SettingsScopeProvider
       search={rawSearch}
-      singleEnvironment={pathname === "/settings/providers" || pathname === "/settings/secrets"}
+      singleEnvironment={pathname === "/settings/providers" || location.pathname === "/settings/secrets"}
       onChange={(next) => {
         // Send every axis so retain middleware recognizes "all" as an explicit target.
         void navigate({
