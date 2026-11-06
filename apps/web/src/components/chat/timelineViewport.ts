@@ -122,6 +122,17 @@ export function attachTimelineViewport(
     top: scrollNode.scrollTop,
     height: scrollNode.scrollHeight,
   });
+  let pointerOverFrame = false;
+  const handlePointerOver = (event: PointerEvent) => {
+    pointerOverFrame = event.target instanceof HTMLIFrameElement;
+  };
+  const handlePointerLeave = () => {
+    pointerOverFrame = false;
+  };
+  const frameMayScroll = () =>
+    pointerOverFrame ||
+    (document.activeElement instanceof HTMLIFrameElement &&
+      scrollNode.contains(document.activeElement));
   const handleScroll = () => {
     if (
       scrolledUp({
@@ -129,6 +140,7 @@ export function attachTimelineViewport(
         height: scrollNode.scrollHeight,
         programmatic: programmaticHolds > 0,
       }) &&
+      frameMayScroll() &&
       // LegendList updates its scroll state on the next animation frame.
       resolveTimelineIsAtEnd({
         contentLength: scrollNode.scrollHeight,
@@ -143,6 +155,8 @@ export function attachTimelineViewport(
   scrollNode.addEventListener("wheel", handleWheel, { passive: true });
   scrollNode.addEventListener("touchmove", handleTouchMove, { passive: true });
   scrollNode.addEventListener("pointerdown", handlePointerDown, { passive: true });
+  scrollNode.addEventListener("pointerover", handlePointerOver, { passive: true });
+  scrollNode.addEventListener("pointerleave", handlePointerLeave, { passive: true });
   const unregisterKeyDown = registerCommands({}, { observe: handleKeyDown });
   return {
     scrollNode,
@@ -174,6 +188,8 @@ export function attachTimelineViewport(
       scrollNode.removeEventListener("wheel", handleWheel);
       scrollNode.removeEventListener("touchmove", handleTouchMove);
       scrollNode.removeEventListener("pointerdown", handlePointerDown);
+      scrollNode.removeEventListener("pointerover", handlePointerOver);
+      scrollNode.removeEventListener("pointerleave", handlePointerLeave);
       unregisterKeyDown();
     },
   };
