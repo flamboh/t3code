@@ -195,12 +195,12 @@ function fillSidebarInsetEdge(
   inset: HTMLElement,
   offset: number,
   timing: KeyframeAnimationOptions,
-) {
+): Animation | null {
   const opening = offset < 0;
   const edge = opening
     ? siblingSlot(inset.previousElementSibling, "sidebar-slide-surface")
     : siblingSlot(inset.nextElementSibling, "sidebar-slide-frame");
-  if (!edge) return;
+  if (!edge) return null;
   const rect = inset.getBoundingClientRect();
   edge.style.left = `${opening ? rect.right + offset : rect.right}px`;
   edge.style.width = `${opening ? -offset : window.innerWidth - rect.right}px`;
@@ -220,7 +220,7 @@ function fillSidebarInsetEdge(
       });
     }),
   );
-  edge.animate({ opacity: [1, 1] }, timing);
+  return edge.animate({ opacity: [1, 1] }, timing);
 }
 
 function cancelSidebarSlide(elements: Iterable<Element | null>) {
@@ -229,6 +229,41 @@ function cancelSidebarSlide(elements: Iterable<Element | null>) {
       if (animation.id === SIDEBAR_SLIDE_ID) animation.cancel();
     }
   }
+}
+
+function isSidebarSliding(element: Element) {
+  return element
+    .getAnimations()
+    .some(
+      (animation) =>
+        animation.id === SIDEBAR_SLIDE_ID &&
+        (animation.playState === "running" || animation.playState === "paused"),
+    );
+}
+
+function startSidebarSlide(animations: Animation[]) {
+  const layers = new Map<HTMLElement, string>();
+  for (const animation of animations) {
+    animation.pause();
+    const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
+    if (target instanceof HTMLElement) {
+      layers.set(
+        target,
+        target.dataset.slot?.startsWith("sidebar-slide-") ? "opacity" : "transform",
+      );
+    }
+  }
+  for (const [element, property] of layers) element.style.willChange = property;
+  window.requestAnimationFrame(() => {
+    for (const animation of animations) {
+      if (animation.playState === "paused") animation.play();
+    }
+  });
+  void Promise.allSettled(animations.map((animation) => animation.finished)).then(() => {
+    for (const element of layers.keys()) {
+      if (!isSidebarSliding(element)) element.style.willChange = "";
+    }
+  });
 }
 
 let sidebarSlidePending = false;
@@ -265,13 +300,17 @@ function slideSidebar(commit: () => void) {
       id: SIDEBAR_SLIDE_ID,
     };
     const slides = new Map<HTMLElement, number>();
+    const animations: Animation[] = [];
     for (const { element, parent, inset } of targets) {
       const ownOffset = offsets.get(element) ?? 0;
       if (parent && Math.abs(ownOffset) < 0.5) continue;
       const offset = ownOffset - (parent ? (offsets.get(parent) ?? 0) : 0);
       if (!element.isConnected || Math.abs(offset) < 0.5) continue;
-      if (inset) fillSidebarInsetEdge(element, offset, timing);
-      element.animate({ transform: [`translateX(${offset}px)`, "translateX(0)"] }, timing);
+      const edge = inset ? fillSidebarInsetEdge(element, offset, timing) : null;
+      if (edge) animations.push(edge);
+      animations.push(
+        element.animate({ transform: [`translateX(${offset}px)`, "translateX(0)"] }, timing),
+      );
       slides.set(element, offset);
     }
     anchors.forEach(({ element, inset, via }, index) => {
@@ -283,16 +322,19 @@ function slideSidebar(commit: () => void) {
       const x = start.left - contained.left;
       const y = start.top - contained.top;
       const from = via || insetOffset < 0 ? x + insetOffset : x;
-      element.animate(
-        {
-          transform: [
-            `translate(${from}px, ${y}px)`,
-            `translate(${x + insetOffset + viaOffset}px, ${y}px)`,
-          ],
-        },
-        timing,
+      animations.push(
+        element.animate(
+          {
+            transform: [
+              `translate(${from}px, ${y}px)`,
+              `translate(${x + insetOffset + viaOffset}px, ${y}px)`,
+            ],
+          },
+          timing,
+        ),
       );
     });
+    startSidebarSlide(animations);
   });
 }
 
