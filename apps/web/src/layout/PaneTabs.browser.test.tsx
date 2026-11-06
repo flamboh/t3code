@@ -37,7 +37,13 @@ vi.mock(import("../state/session"), async (original) => ({
 }));
 
 import { useRightPanelStore } from "../rightPanelStore";
-import { createLayoutLauncherContent, selectFocusedTab, createLayoutState, findLayoutTab, type LayoutTabContent } from "./layoutModel";
+import {
+  createLayoutLauncherContent,
+  selectFocusedTab,
+  createLayoutState,
+  findLayoutTab,
+  type LayoutTabContent,
+} from "./layoutModel";
 import { useLayoutStore } from "./layoutStore";
 import { LayoutPaneTab } from "./PaneTabs";
 

@@ -1,8 +1,20 @@
 import { describe, expect, it } from "vite-plus/test";
-import { resizeLayoutColumnEdge, selectLayoutPaneSlots, type LayoutState, moveLayoutTab, shareLayoutBeside, THREAD_TERMINAL_SURFACE_ID, createLayoutState, moveLayoutTabToWorkspace, openLayoutTab, selectFocusedTab, selectFocusedWorkspace, type LayoutTabContent } from "./layoutModel";
+import {
+  resizeLayoutColumnEdge,
+  selectLayoutPaneSlots,
+  type LayoutState,
+  moveLayoutTab,
+  shareLayoutBeside,
+  THREAD_TERMINAL_SURFACE_ID,
+  createLayoutState,
+  moveLayoutTabToWorkspace,
+  openLayoutTab,
+  selectFocusedTab,
+  selectFocusedWorkspace,
+  type LayoutTabContent,
+} from "./layoutModel";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
-
 
 const column = (id: string, width: number) => ({
   id,
@@ -51,8 +63,6 @@ describe("resizeLayoutColumnEdge", () => {
     expect(drawn).toEqual(pointers.map((pointer) => [pointer, pointer + 660]));
   });
 });
-
-
 
 const threadRef = scopeThreadRef(EnvironmentId.make("local"), ThreadId.make("thread"));
 const otherRef = scopeThreadRef(EnvironmentId.make("local"), ThreadId.make("other"));
@@ -133,8 +143,6 @@ describe("moveLayoutTab", () => {
     ]);
   });
 });
-
-
 
 function chat(id: string): LayoutTabContent {
   return {
