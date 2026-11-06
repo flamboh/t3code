@@ -1,8 +1,8 @@
 import { useAtomValue } from "@effect/atom-react";
-import { useEffect, useLayoutEffect, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useState, type ReactElement } from "react";
+import { createPortal } from "react-dom";
 
 import { Kbd } from "../components/ui/kbd";
-import { trackBrowserSurfaceSlot } from "../browser/browserSurfaceTracking";
 import { shortcutLabelForCommand } from "../keybindings";
 import { cn } from "../lib/utils";
 import { observeResize } from "../lib/observeResize";
@@ -10,6 +10,7 @@ import { useThreadShell } from "../state/entities";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { countedLayoutWorkspaces } from "./layoutCommands";
 import {
+  selectFocusedTab,
   selectFocusedWorkspace,
   selectLayoutWorkspaceLeadTab,
   type LayoutTab,
@@ -31,7 +32,6 @@ const HINT_VISIBLE_MS = 2400;
 const HINT_FADE_MS = 200;
 /** Room between the hint and the composer under it. */
 const HINT_GAP_PX = 12;
-const HINT_EDGE_PX = 16;
 const HINT_BOTTOM_PX = 108;
 
 /** Fades the hint after a beat, then clears it. */
@@ -53,62 +53,76 @@ function useHintLifetime(id: number): boolean {
 }
 
 /**
- * Centers a hint on the focused pane at the same height on every pane, lifted
- * a gap above its composer stack (banners, request cards and tray included)
- * when that grows taller. Follows the strip while it scrolls to the landed pane.
+ * Puts a hint inside the focused pane, so it rides the pane's own motion,
+ * centered at the same height on every pane and lifted a gap above its
+ * composer stack (banners, request cards and tray included) when that grows taller.
  */
 function useHintPlacement() {
-  const [hint, setHint] = useState<HTMLDivElement | null>(null);
-  const [style, setStyle] = useState<CSSProperties>();
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Measure the focused pane and observe viewport changes to position the hint.
+  const focusedTabId = useLayoutStore((state) => selectFocusedTab(state.layout)?.id ?? null);
+  const focusedWorkspaceId = useLayoutStore((state) => state.layout.focusedWorkspaceId);
+  const [anchor, setAnchor] = useState<HTMLSpanElement | null>(null);
+  const [placement, setPlacement] = useState<{ pane: HTMLElement | null; bottom: number | null }>({
+    pane: null,
+    bottom: null,
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Find the focused pane in the DOM and observe its composer's size.
   useLayoutEffect(() => {
-    const host = hint?.offsetParent;
-    if (!host) return;
+    const pane = focusedTabId
+      ? anchor?.parentElement?.querySelector<HTMLElement>(
+          `[data-layout-tab-id="${CSS.escape(focusedTabId)}"][data-layout-pane-id]`,
+        )
+      : anchor?.parentElement?.querySelector<HTMLElement>(
+          `[data-layout-empty-workspace="${CSS.escape(focusedWorkspaceId)}"]`,
+        );
     const place = () => {
-      const pane = host.querySelector("[data-layout-pane-focused='true'][data-layout-pane-id]");
-      if (!pane) return;
-      const hostRect = host.getBoundingClientRect();
-      const paneRect = pane.getBoundingClientRect();
-      const composer = pane.querySelector('[data-chat-composer-stack="true"]');
-      const rest = paneRect.bottom - HINT_BOTTOM_PX;
-      const floor = composer
-        ? Math.min(rest, composer.getBoundingClientRect().top - HINT_GAP_PX)
-        : rest;
-      const next = {
-        left: paneRect.left + paneRect.width / 2 - hostRect.left,
-        bottom: hostRect.bottom - floor,
-        maxWidth: paneRect.width - 2 * HINT_EDGE_PX,
-      };
-      setStyle((current) =>
-        current?.left === next.left &&
-        current.bottom === next.bottom &&
-        current.maxWidth === next.maxWidth
+      const composer = pane?.querySelector('[data-chat-composer-stack="true"]');
+      const paneBounds = pane?.getBoundingClientRect();
+      const scale = pane && paneBounds ? paneBounds.height / pane.offsetHeight : 0;
+      const lift =
+        paneBounds && composer && scale > 0
+          ? (paneBounds.bottom - composer.getBoundingClientRect().top) / scale + HINT_GAP_PX
+          : 0;
+      const bottom = lift > HINT_BOTTOM_PX ? lift : null;
+      setPlacement((current) =>
+        current.pane === (pane ?? null) && current.bottom === bottom
           ? current
-          : next,
+          : { pane: pane ?? null, bottom },
       );
     };
     place();
-    const pane = host.querySelector<HTMLElement>(
-      "[data-layout-pane-focused='true'][data-layout-pane-id]",
-    );
-    const composer = pane?.querySelector('[data-chat-composer-stack="true"]');
-    const stopResize = observeResize(
-      [host, ...(pane ? [pane] : []), ...(composer ? [composer] : [])],
-      place,
-    );
-    // Share the bounded geometry tracker: compositor transforms emit no layout events.
-    const stopMotion = pane
-      ? trackBrowserSurfaceSlot(pane, () => {
-          place();
-          return false;
-        })
-      : () => {};
+    if (!pane) return;
+    const composer = pane.querySelector('[data-chat-composer-stack="true"]');
+    const stopResize = observeResize([pane, ...(composer ? [composer] : [])], place);
+    if (composer) return stopResize;
+    let stopComposerResize = () => {};
+    const observer = new MutationObserver(() => {
+      const composer = pane.querySelector('[data-chat-composer-stack="true"]');
+      if (!composer) return;
+      stopComposerResize = observeResize(composer, place);
+      observer.disconnect();
+      place();
+    });
+    observer.observe(pane, { childList: true, subtree: true });
     return () => {
+      observer.disconnect();
+      stopComposerResize();
       stopResize();
-      stopMotion();
     };
-  }, [hint]);
-  return [setHint, style] as const;
+  }, [anchor, focusedTabId, focusedWorkspaceId]);
+  return {
+    anchorRef: setAnchor,
+    pane: placement.pane,
+    style: placement.bottom === null ? undefined : { bottom: placement.bottom },
+  };
+}
+
+function placeHint(placement: ReturnType<typeof useHintPlacement>, pill: ReactElement) {
+  return (
+    <>
+      <span ref={placement.anchorRef} hidden />
+      {placement.pane ? createPortal(pill, placement.pane) : pill}
+    </>
+  );
 }
 
 /**
@@ -121,28 +135,33 @@ export function LayoutStripHint() {
   // Any workspace switch (keys, sidebar, overview, wheel) names the workspace
   // it landed on for a second (pen qnrAZ), unless a move hint already says so.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Subscribe to imperative workspace changes that should display a navigation hint.
-  useEffect(
-    () =>
-      useLayoutStore.subscribe((state, previous) => {
-        if (state.layout.focusedWorkspaceId === previous.layout.focusedWorkspaceId) return;
-        if (state.overviewOpen) return;
-        if (state.hint?.kind === "workspace" && state.hint.id !== previous.hint?.id) return;
-        const workspaces = countedLayoutWorkspaces(state.layout);
-        const workspace = selectFocusedWorkspace(state.layout);
-        // One workspace has nothing to tell apart.
-        if (workspaces.length < 2) {
-          if (state.hint?.kind === "workspace-name") state.clearHint(state.hint.id);
-          return;
-        }
-        state.showHint({
-          kind: "workspace-name",
-          workspaceId: workspace.id,
-          index: workspaces.indexOf(workspace),
-          count: workspaces.length,
-        });
-      }),
-    [],
-  );
+  useEffect(() => {
+    let overviewOpenedOn: string | null = null;
+    return useLayoutStore.subscribe((state, previous) => {
+      if (state.overviewOpen) {
+        if (previous.overviewOpen) return;
+        overviewOpenedOn = previous.layout.focusedWorkspaceId;
+        if (state.hint) state.clearHint(state.hint.id);
+        return;
+      }
+      const left = previous.overviewOpen ? overviewOpenedOn : previous.layout.focusedWorkspaceId;
+      if (state.layout.focusedWorkspaceId === left) return;
+      if (state.hint?.kind === "workspace" && state.hint.id !== previous.hint?.id) return;
+      const workspaces = countedLayoutWorkspaces(state.layout);
+      const workspace = selectFocusedWorkspace(state.layout);
+      // One workspace has nothing to tell apart.
+      if (workspaces.length < 2) {
+        if (state.hint?.kind === "workspace-name") state.clearHint(state.hint.id);
+        return;
+      }
+      state.showHint({
+        kind: "workspace-name",
+        workspaceId: workspace.id,
+        index: workspaces.indexOf(workspace),
+        count: workspaces.length,
+      });
+    });
+  }, []);
 
   if (!hint) return null;
   if (hint.kind === "terminal") return <TerminalHintPill key={hint.id} hint={hint} />;
@@ -155,11 +174,11 @@ function TerminalHintPill({ hint }: { hint: Extract<LayoutHintState, { kind: "te
   const thread = useThreadShell(hint.threadRef);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const shortcut = shortcutLabelForCommand(keybindings, "terminal.toggle");
-  const [placementRef, placement] = useHintPlacement();
-  return (
+  const placement = useHintPlacement();
+  return placeHint(
+    placement,
     <div
-      ref={placementRef}
-      style={placement}
+      style={placement.style}
       role="status"
       aria-live="polite"
       data-layout-hint="terminal"
@@ -176,7 +195,7 @@ function TerminalHintPill({ hint }: { hint: Extract<LayoutHintState, { kind: "te
           <Kbd>{shortcut}</Kbd>
         </span>
       ) : null}
-    </div>
+    </div>,
   );
 }
 
@@ -215,17 +234,18 @@ function WorkspaceHintPill({
       : null;
   const small = hint.kind === "workspace-name";
   const firstBar = Math.max(0, Math.min(hint.index - 2, hint.count - WORKSPACE_BARS));
-  const [placementRef, placement] = useHintPlacement();
-  return (
+  const placement = useHintPlacement();
+  return placeHint(
+    placement,
     <div
-      ref={placementRef}
-      style={placement}
+      style={placement.style}
       role="status"
       aria-live="polite"
       data-layout-hint={hint.kind}
       className={cn(
-        "pointer-events-none absolute bottom-27 left-1/2 z-40 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 rounded-lg px-3 surface-tooltip transition-opacity duration-200 motion-reduce:transition-none",
+        "pointer-events-none absolute left-1/2 z-40 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 rounded-lg px-3 surface-tooltip transition-opacity duration-200 motion-reduce:transition-none",
         small ? "h-7.5" : "h-8.5 gap-2.5",
+        workspace?.columns.length === 0 ? "bottom-12" : "bottom-27",
         leaving && "opacity-0",
       )}
     >
@@ -253,7 +273,7 @@ function WorkspaceHintPill({
           <Kbd>{keys}</Kbd>
         </span>
       ) : null}
-    </div>
+    </div>,
   );
 }
 
@@ -262,11 +282,11 @@ function ColumnHintPill({ hint }: { hint: Extract<LayoutHintState, { kind: "colu
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const label = hint.command ? shortcutLabelForCommand(keybindings, hint.command) : null;
   const keys = label?.replace(/(Left|Right|Up|Down)$/, (name) => ARROWS[name] ?? name) ?? null;
-  const [placementRef, placement] = useHintPlacement();
-  return (
+  const placement = useHintPlacement();
+  return placeHint(
+    placement,
     <div
-      ref={placementRef}
-      style={placement}
+      style={placement.style}
       role="status"
       aria-live="polite"
       data-layout-hint="column"
@@ -294,6 +314,6 @@ function ColumnHintPill({ hint }: { hint: Extract<LayoutHintState, { kind: "colu
           <Kbd>{keys}</Kbd>
         </span>
       ) : null}
-    </div>
+    </div>,
   );
 }
