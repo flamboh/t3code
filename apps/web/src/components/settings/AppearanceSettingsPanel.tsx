@@ -264,7 +264,6 @@ export function AppearanceSettingsPanel() {
                 }}
               >
                 <SelectTrigger
-                variant="well"
                   variant="well"
                   size="compact"
                   className="w-full min-w-0"
@@ -305,7 +304,6 @@ export function AppearanceSettingsPanel() {
                 }}
               >
                 <SelectTrigger
-                variant="well"
                   variant="well"
                   size="compact"
                   className="w-full min-w-0"
