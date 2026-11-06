@@ -32,6 +32,7 @@ function setupChatWithSidePane() {
       dataset: { layoutPaneId: column.panes[0]!.id },
       getBoundingClientRect: () => rect(index * 500, index * 500 + 500),
       querySelectorAll: () => [],
+      querySelector: () => null,
     }),
   );
   vi.stubGlobal("document", {
