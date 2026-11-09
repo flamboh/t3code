@@ -1,5 +1,5 @@
 import { workspaceAreaProps } from "../lib/workspaceFocus";
-import { Outlet, createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
+import { Outlet, createFileRoute, redirect, useMatches, useNavigate } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
 import { RestoreDeviceDefaultsButton } from "../components/settings/SettingsPanels";
 
@@ -92,7 +92,7 @@ function SettingsScopeBoundary({ pathname, children }: { pathname: string; child
 
 function SettingsContentLayout({ children }: { children: ReactNode }) {
   const contentArea = workspaceAreaProps("settings", 1, "Settings content");
-  const { pathname } = useLayoutPageLocation();
+  const pathname = useMatches({ select: (matches) => matches.at(-1)!.pathname });
   const { search, environment } = useSettingsScope();
   const contentScopeKey =
     pathname === "/settings/diagnostics" || pathname === "/settings/providers"
