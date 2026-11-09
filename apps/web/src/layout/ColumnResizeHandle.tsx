@@ -138,13 +138,14 @@ export function LayoutResizeHandles({
   stripWidth: number;
   unitWidth: number;
   scrollerRef: RefObject<HTMLDivElement | null>;
-  onPreview: (layout: LayoutState | null) => void;
+  onPreview: (preview: { layout: LayoutState; heldStripPx: number } | null) => void;
 }) {
   const [drag, setDrag] = useState<ActiveDrag | null>(null);
   const dragRef = useRef<ActiveDrag | null>(null);
   const baseLayoutRef = useRef<LayoutState>(layout);
   const frameRef = useRef<number | null>(null);
   const pointerRef = useRef({ x: 0, y: 0, scrollLeft: 0 });
+  const heldStripPxRef = useRef(0);
 
   const cancelFrame = () => {
     if (frameRef.current === null) return;
@@ -187,13 +188,16 @@ export function LayoutResizeHandles({
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     baseLayoutRef.current = layout;
+    heldStripPxRef.current = scrollerRef.current?.scrollWidth ?? 0;
     pointerRef.current = {
       x: event.clientX,
       y: event.clientY,
       scrollLeft: scrollerRef.current?.scrollLeft ?? 0,
     };
     updateDrag(active);
-    if (active.kind === "column") onPreview(applyDrag(layout, active));
+    if (active.kind === "column") {
+      onPreview({ layout: applyDrag(layout, active), heldStripPx: heldStripPxRef.current });
+    }
   };
 
   const dragAtPointer = (active: ActiveDrag, event: PointerEvent<HTMLDivElement>): ActiveDrag => {
@@ -227,7 +231,10 @@ export function LayoutResizeHandles({
       const latest = dragRef.current;
       if (!latest) return;
       setDrag(latest);
-      onPreview(applyDrag(baseLayoutRef.current, latest));
+      onPreview({
+        layout: applyDrag(baseLayoutRef.current, latest),
+        heldStripPx: heldStripPxRef.current,
+      });
     });
   };
 
