@@ -1852,7 +1852,7 @@ function ComposerPromptEditorTiptapInner(
               onCopyCapture={(event) => handleCopyCut(event, false)}
               onCutCapture={(event) => handleCopyCut(event, true)}
             />
-            {isEmpty && placeholder ? (
+            {isEmpty && contextRecords.size === 0 && placeholder ? (
               <div
                 data-composer-placeholder=""
                 className={cn(
