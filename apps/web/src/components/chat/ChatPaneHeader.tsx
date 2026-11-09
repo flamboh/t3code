@@ -51,9 +51,8 @@ export function chatPaneHeaderClassName({
   reserveNativeControlsInset: boolean;
 }): string {
   return cn(
-    // Keep tab menus above the timeline. Ease the collapsed-sidebar inset with the sidebar so the
-    // tab moves with its pane.
-    "relative z-10 bg-background md:pl-0 [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
+    // Keep tab menus above the timeline.
+    "relative z-10 bg-background md:pl-0",
     isElectron
       ? cn(
           "drag-region flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center px-3 sm:px-5",
