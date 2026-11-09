@@ -31,6 +31,7 @@ function setupChatWithSidePane() {
     (column, index) => ({
       dataset: { layoutPaneId: column.panes[0]!.id },
       getBoundingClientRect: () => rect(index * 500, index * 500 + 500),
+      querySelector: () => null,
       querySelectorAll: () => [],
     }),
   );
