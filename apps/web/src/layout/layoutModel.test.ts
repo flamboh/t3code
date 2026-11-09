@@ -10,7 +10,9 @@ import {
   openLayoutKeptTab,
   openLayoutTab,
   replaceLayoutTabContent,
+  resizeLayoutColumnEdge,
   selectFocusedTab,
+  selectLayoutPaneSlots,
   showLayoutContent,
   type LayoutState,
   type LayoutTab,
@@ -18,6 +20,7 @@ import {
 } from "./layoutModel";
 import type { DraftId } from "../composerDraftStore";
 import type { ThreadRouteTarget } from "../threadRoutes";
+import type { LayoutWhenNoRoom } from "./layoutBehavior";
 
 const environmentId = EnvironmentId.make("local");
 const threadRef = scopeThreadRef(environmentId, ThreadId.make("thread"));
@@ -127,6 +130,26 @@ function shapeOf(state: LayoutState): Shape[] {
         ),
       ),
     );
+}
+
+const column = (id: string, width: number) => ({
+  id,
+  width,
+  panes: [{ id: `${id}-pane`, tabs: [], activeTabId: null, size: 1 }],
+});
+
+function drawnRightEdges(
+  state: LayoutState,
+  viewportWidth: number,
+  whenNoRoom: LayoutWhenNoRoom = "shrink-then-scroll",
+): number[] {
+  const { slots, stripWidth } = selectLayoutPaneSlots(state.workspaces[0]!, {
+    width: viewportWidth,
+    whenNoRoom,
+  });
+  return slots.map((slot) =>
+    Math.round((slot.rect.left + slot.rect.width) * stripWidth * viewportWidth),
+  );
 }
 
 describe("showLayoutContent", () => {
@@ -305,5 +328,75 @@ describe("layoutChatSwaps", () => {
         ({ from, to }) => `${name(from)}>${name(to)}`,
       ),
     ).toEqual(swaps);
+  });
+});
+
+describe("resizeLayoutColumnEdge", () => {
+  it("keeps the dragged edge under the pointer when the strip was arranged wider than the window", () => {
+    const viewportWidth = 1000;
+    const base: LayoutState = {
+      focusedWorkspaceId: "workspace",
+      workspaces: [
+        {
+          id: "workspace",
+          name: null,
+          focusedPaneId: null,
+          cameraWidth: 1200,
+          columns: [column("chat", 0.5), column("terminal", 0.55)],
+        },
+      ],
+    };
+    const { unitWidth } = selectLayoutPaneSlots(base.workspaces[0]!, {
+      width: viewportWidth,
+      whenNoRoom: "shrink-then-scroll",
+    });
+    expect(drawnRightEdges(base, viewportWidth)).toEqual([600, 1260]);
+
+    const pointers = Array.from({ length: 41 }, (_, index) => 300 + index * 10);
+    const drawn = pointers.map((pointer) =>
+      drawnRightEdges(
+        resizeLayoutColumnEdge(
+          base,
+          "chat",
+          pointer / viewportWidth,
+          "shrink-then-scroll",
+          viewportWidth,
+          unitWidth,
+        ),
+        viewportWidth,
+      ),
+    );
+    expect(drawn).toEqual(pointers.map((pointer) => [pointer, pointer + 660]));
+  });
+
+  it("lands the dragged edge where it is released when columns always shrink to fit", () => {
+    const viewportWidth = 1000;
+    const base: LayoutState = {
+      focusedWorkspaceId: "workspace",
+      workspaces: [
+        {
+          id: "workspace",
+          name: null,
+          focusedPaneId: null,
+          cameraWidth: viewportWidth,
+          columns: [column("chat", 0.4), column("diff", 0.4), column("terminal", 0.4)],
+        },
+      ],
+    };
+    const { unitWidth } = selectLayoutPaneSlots(base.workspaces[0]!, {
+      width: viewportWidth,
+      whenNoRoom: "always-shrink",
+    });
+    expect(drawnRightEdges(base, viewportWidth, "always-shrink")).toEqual([333, 667, 1000]);
+
+    const released = resizeLayoutColumnEdge(
+      base,
+      "diff",
+      (600 - 1000 / 3) / viewportWidth,
+      "always-shrink",
+      viewportWidth,
+      unitWidth,
+    );
+    expect(drawnRightEdges(released, viewportWidth, "always-shrink")).toEqual([333, 600, 1000]);
   });
 });
