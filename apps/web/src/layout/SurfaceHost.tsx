@@ -1205,7 +1205,7 @@ export function LayoutSurfaceHost({
         )}
       >
         {staged ? (
-          // The window chrome behind the zoomed-out stage, over the sidebar (pen rg38s).
+          // The window chrome behind the zoomed-out stage (pen rg38s).
           <div
             aria-hidden
             data-chrome-scope=""
