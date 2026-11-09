@@ -1271,18 +1271,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
     </>
   );
 
-  const maintainScrollAtEnd =
-    citationPositioning ||
-    (restoringThreadPosition && rememberedPosition?.atEnd === false) ||
-    anchoredEndSpace ||
-    !liveFollowEnabled ||
-    fullscreenAppRowId !== null ||
-    workingHistoryOpen ||
-    workingHistoryCollapsing
-      ? false
-      : isWorking && !prefersReducedMotion && settlingListIdentity === null
-        ? TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH
-        : TIMELINE_MAINTAIN_SCROLL_AT_END;
   const keepEndOnViewportResize = useStableCallback(() => {
     const list = listRef.current;
     const scrollNode = list?.getScrollableNode();
@@ -1563,7 +1551,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
                   : maintainVisibleContentPosition
               }
               maintainScrollAtEndThreshold={1}
-              immediateWebShrinks={workingHistoryCollapsing}
+              immediateWebShrinks={workingHistoryMoving}
               onScroll={handleScroll}
               onItemSizeChanged={scheduleMinimapRefresh}
               className="messages-timeline-scroll scrollbar-gutter-both h-full min-h-0 scroll-pt-[var(--timeline-top-inset,0px)] overflow-x-hidden overscroll-y-contain [overflow-anchor:none]"
