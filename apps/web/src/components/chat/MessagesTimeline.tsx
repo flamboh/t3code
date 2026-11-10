@@ -534,7 +534,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     const list = listRef.current;
     if (list) {
       list.cancelScroll();
-      list.anchorVisibleContent({ key: "working-indicator-row" });
+      if (workingHistoryKey !== key) list.anchorVisibleContent({ key: "working-indicator-row" });
     }
     setWorkingHistoryKey((current) => (current === key ? null : key));
   };
@@ -1547,6 +1547,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
                   : maintainVisibleContentPosition
               }
               maintainScrollAtEndThreshold={1}
+              immediateWebShrinks={workingHistoryCollapsing}
               onScroll={handleScroll}
               onItemSizeChanged={scheduleMinimapRefresh}
               className="messages-timeline-scroll scrollbar-gutter-both h-full min-h-0 scroll-pt-[var(--timeline-top-inset,0px)] overflow-x-hidden overscroll-y-contain [overflow-anchor:none]"
