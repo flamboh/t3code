@@ -520,7 +520,7 @@ function boxClip(box: Box, visual: Box, round: string) {
   return `inset(${visual.top - box.top}px ${box.right - visual.right}px ${box.bottom - visual.bottom}px ${visual.left - box.left}px round ${round})`;
 }
 
-function addFill(block: HTMLElement, box: DOMRect, start: Box, timing: KeyframeAnimationOptions) {
+function fillPaint(block: HTMLElement, box: DOMRect, start: Box) {
   const reach = Math.ceil(
     Math.max(box.left - start.left, start.right - box.right, box.top - start.top, 0),
   );
@@ -535,7 +535,14 @@ function addFill(block: HTMLElement, box: DOMRect, start: Box, timing: KeyframeA
     : block.matches('[data-slot="sidebar-inset"]')
       ? null
       : paintAt(block, box.left + 2, box.bottom - 2);
-  if (!paint || !isOpaqueColor(paint.backgroundColor)) return null;
+  return paint && isOpaqueColor(paint.backgroundColor) ? { reach, paint } : null;
+}
+
+function addFill(
+  block: HTMLElement,
+  { reach, paint }: NonNullable<ReturnType<typeof fillPaint>>,
+  timing: KeyframeAnimationOptions,
+) {
   const fill = document.createElement("div");
   fill.setAttribute("aria-hidden", "true");
   fill.dataset.sidebarFlipFill = "";
@@ -636,8 +643,10 @@ function flip(commit: () => void, mode: "glide" | "under") {
         }
       }
 
-      for (const block of moving) {
-        const { element, box, start } = block;
+      const paints = moving.map(({ element, box, start }) => fillPaint(element, box, start));
+      const rounds = moving.map(({ element }) => radii(element));
+      for (const [index, block] of moving.entries()) {
+        const { element } = block;
         for (const anchor of block.anchors) {
           if (deltas.has(anchor.element)) openClipsBetween(anchor.element, element);
         }
@@ -646,12 +655,12 @@ function flip(commit: () => void, mode: "glide" | "under") {
         if (getComputedStyle(element).overflowX !== "visible") {
           overrideStyle(element, "overflow", "visible");
         }
-        const fill = addFill(element, box, start, timing);
-        if (fill) animations.push(fill);
+        const paint = paints[index];
+        if (paint) animations.push(addFill(element, paint, timing));
       }
 
-      for (const { element, box, start } of moving) {
-        const round = radii(element);
+      for (const [index, { element, box, start }] of moving.entries()) {
+        const round = rounds[index] ?? "0px";
         animations.push(
           element.animate(
             { clipPath: [boxClip(box, start, round), boxClip(box, box, round)] },
