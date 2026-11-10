@@ -3074,7 +3074,7 @@ export function applyWorkingWindow(
     failedTests: deriveFailedTests(items),
     retryAttempt: deriveRetryAttempt(items),
     stopping: interruptRequested && !interruptSettled,
-    answering: answer?.kind === "text" && answer.message.streaming,
+    answering: answer !== undefined,
     historyOpen: historyOpenKey === key,
   };
   // Steers move above the bar, next to the prompt they continue.
