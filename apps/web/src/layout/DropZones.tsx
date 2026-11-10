@@ -28,6 +28,12 @@ const EXTEND_THICKNESS = 6;
 const EXTEND_GAP = 4;
 /** The dragged row covers the composer, so the mention pill's middle sits this far above it. */
 const MENTION_PILL_LIFT = 24;
+const GHOST_OFFSET_X = 24;
+const GHOST_OFFSET_Y = 14;
+const PILL_GAP = 8;
+const MARKER_GAP = 3;
+const PILL_CLASS =
+  "flex h-6.5 items-center gap-1.5 rounded-control bg-strong-foreground px-2.5 text-meta whitespace-nowrap text-background shadow-drag-label";
 
 type Box = { left: number; top: number; width: number; height: number };
 
@@ -58,6 +64,14 @@ function targetZone(state: LayoutDragState, target: LayoutDropTarget): Box | nul
   if (!pane) return null;
   const { rect } = pane;
   if (target.kind === "into") {
+    if (pane.tabRow) {
+      return box({
+        left: pane.tabRow.left - ZONE_INSET / 2,
+        top: pane.tabRow.top - ZONE_INSET / 2,
+        right: pane.tabRow.right + ZONE_INSET / 2,
+        bottom: pane.tabRow.bottom + ZONE_INSET / 2,
+      });
+    }
     return box({
       left: rect.left + ZONE_INSET / 2,
       top: rect.top + ZONE_INSET / 2,
@@ -84,6 +98,42 @@ function targetZone(state: LayoutDragState, target: LayoutDropTarget): Box | nul
     case "down":
       return box({ ...body, top: midY + half });
   }
+}
+
+function intoTabs(state: LayoutDragState, target: LayoutDropTarget) {
+  if (target.kind !== "into") return null;
+  const tabs = state.panes.find((pane) => pane.paneId === target.paneId)?.tabs ?? [];
+  return {
+    tabs: tabs.filter((tab) => tab.id !== state.movingTabId),
+    reorder: tabs.some((tab) => tab.id === state.movingTabId),
+    index: target.index,
+  };
+}
+
+function InsertionMarker({
+  tabs,
+  index,
+}: {
+  tabs: readonly { rect: LayoutDragRect }[];
+  index: number | undefined;
+}) {
+  if (index === undefined) return null;
+  const before = tabs[index - 1];
+  const after = tabs[index];
+  const anchor = after ?? before;
+  if (!anchor) return null;
+  const left =
+    before && after
+      ? (before.rect.right + after.rect.left) / 2
+      : after
+        ? after.rect.left - MARKER_GAP
+        : anchor.rect.right + MARKER_GAP;
+  return (
+    <div
+      className="absolute w-0.5 -translate-x-1/2 rounded-full bg-strong-foreground"
+      style={{ left, top: anchor.rect.top, height: anchor.rect.bottom - anchor.rect.top }}
+    />
+  );
 }
 
 function PillIcon({ target }: { target: LayoutDropTarget }) {
@@ -205,7 +255,9 @@ function DraggedTabGhostBody({ tab, point }: { tab: LayoutTab; point: { x: numbe
   return (
     <div
       className={cn(PANE_TAB_CLASS, "absolute left-0 top-0 surface-popover")}
-      style={{ transform: `translate(${point.x - 24}px, ${point.y - 14}px) rotate(-2deg)` }}
+      style={{
+        transform: `translate(${point.x - GHOST_OFFSET_X}px, ${point.y - GHOST_OFFSET_Y}px) rotate(-2deg)`,
+      }}
     >
       {label.icon}
       <span className="min-w-0 truncate">{label.title}</span>
@@ -226,7 +278,7 @@ function zonesClipPath(composers: readonly LayoutDragRect[]): string | undefined
 function DropPill({ x, y, children }: { x: number; y: number; children: ReactNode }) {
   return (
     <div
-      className="absolute flex h-6.5 -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-control bg-strong-foreground px-2.5 text-meta whitespace-nowrap text-background shadow-drag-label"
+      className={cn("absolute -translate-x-1/2 -translate-y-1/2", PILL_CLASS)}
       style={{ left: x, top: y }}
     >
       {children}
@@ -239,6 +291,7 @@ export function LayoutDropZones() {
   const state = useLayoutDragState();
   if (!state) return null;
   const zone = state.target ? targetZone(state, state.target) : null;
+  const into = state.target ? intoTabs(state, state.target) : null;
   return createPortal(
     <div
       data-layout-drag-overlay=""
@@ -261,11 +314,27 @@ export function LayoutDropZones() {
         {state.source.kind === "tab" ? (
           <DraggedTabGhost tabId={state.source.tabId} point={state.point} />
         ) : null}
+        {into ? <InsertionMarker tabs={into.tabs} index={into.index} /> : null}
         {zone && state.target ? (
-          <DropPill x={zone.left + zone.width / 2} y={zone.top + zone.height / 2}>
-            <PillIcon target={state.target} />
-            {layoutDropLabel(state.target)}
-          </DropPill>
+          into ? (
+            <div
+              className="absolute left-2 flex justify-end-safe"
+              style={{
+                top: zone.top + zone.height + PILL_GAP,
+                width: Math.max(0, state.point.x - GHOST_OFFSET_X - PILL_GAP * 2),
+              }}
+            >
+              <div className={PILL_CLASS}>
+                <PillIcon target={state.target} />
+                {layoutDropLabel(state.target, into.reorder)}
+              </div>
+            </div>
+          ) : (
+            <DropPill x={zone.left + zone.width / 2} y={zone.top + zone.height / 2}>
+              <PillIcon target={state.target} />
+              {layoutDropLabel(state.target, false)}
+            </DropPill>
+          )
         ) : null}
         {state.composer ? (
           <DropPill
