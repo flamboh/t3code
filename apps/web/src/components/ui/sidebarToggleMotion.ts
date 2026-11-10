@@ -628,18 +628,29 @@ function flip(commit: () => void, mode: "glide" | "under") {
         return still ? [] : [{ ...block, box }];
       });
       const deltas = new Map<HTMLElement, number>();
+      const probes = new Map<HTMLElement, { measure: () => number | null; end: number }>();
       for (const { box, anchors } of moving) {
         for (const anchor of anchors) {
-          const { element } = anchor;
+          const { element, text } = anchor;
           if (!element.isConnected) continue;
           const end = element.getBoundingClientRect();
-          const textEnd = anchor.text?.isConnected ? textLeft(anchor.text, range) : null;
-          let delta: number;
-          if (anchor.textStart !== null && textEnd !== null) delta = anchor.textStart - textEnd;
-          else if (Math.abs(end.left - box.left) <= Math.abs(box.right - end.right))
-            delta = anchor.start.left - end.left;
-          else delta = anchor.start.right - end.right;
-          deltas.set(element, delta);
+          const textEnd = text?.isConnected ? textLeft(text, range) : null;
+          if (anchor.textStart !== null && text && textEnd !== null) {
+            deltas.set(element, anchor.textStart - textEnd);
+            probes.set(element, { measure: () => textLeft(text, range), end: textEnd });
+          } else if (Math.abs(end.left - box.left) <= Math.abs(box.right - end.right)) {
+            deltas.set(element, anchor.start.left - end.left);
+            probes.set(element, {
+              measure: () => element.getBoundingClientRect().left,
+              end: end.left,
+            });
+          } else {
+            deltas.set(element, anchor.start.right - end.right);
+            probes.set(element, {
+              measure: () => element.getBoundingClientRect().right,
+              end: end.right,
+            });
+          }
         }
       }
 
@@ -677,6 +688,13 @@ function flip(commit: () => void, mode: "glide" | "under") {
         }
       }
 
+      const tracks: {
+        measure: () => number | null;
+        end: number;
+        offset: number;
+        animation: Animation;
+        keyframes: (value: number) => Keyframe[] | PropertyIndexedKeyframes;
+      }[] = [];
       for (const [element, delta] of deltas) {
         let parent = element.parentElement;
         let parentDelta = 0;
@@ -689,16 +707,39 @@ function flip(commit: () => void, mode: "glide" | "under") {
           parent = parent.parentElement;
         }
         const offset = delta - parentDelta;
-        if (Math.abs(offset) < 0.5) continue;
-        animations.push(
-          element.animate(
-            getComputedStyle(element).transform === "none"
-              ? { transform: [`translateX(${offset}px)`, "translateX(0)"] }
-              : { translate: [`${offset}px 0`, "0 0"] },
-            timing,
-          ),
-        );
+        const probe = probes.get(element);
+        if (Math.abs(offset) < 0.5 && (parent || !probe)) continue;
+        const usesTransform = getComputedStyle(element).transform === "none";
+        const keyframes = (value: number) =>
+          usesTransform
+            ? { transform: [`translateX(${value}px)`, "translateX(0)"] }
+            : { translate: [`${value}px 0`, "0 0"] };
+        const animation = element.animate(keyframes(offset), timing);
+        animations.push(animation);
+        if (!parent && probe) tracks.push({ ...probe, animation, offset, keyframes });
       }
+
+      const settle = (frames: number) => {
+        if (frames === 0) return;
+        window.requestAnimationFrame(() => {
+          if (session !== flipSession) return;
+          for (const track of tracks) {
+            const progress = track.animation.effect?.getComputedTiming().progress;
+            if (progress === null || progress === undefined) continue;
+            const position = track.measure();
+            if (position === null) continue;
+            const rest = position - track.offset * (1 - progress);
+            if (Math.abs(rest - track.end) < 0.5) continue;
+            track.offset += track.end - rest;
+            track.end = rest;
+            if (track.animation.effect instanceof KeyframeEffect) {
+              track.animation.effect.setKeyframes(track.keyframes(track.offset));
+            }
+          }
+          settle(frames - 1);
+        });
+      };
+      settle(4);
 
       void Promise.all(animations.map((animation) => animation.finished)).then(
         () => {
