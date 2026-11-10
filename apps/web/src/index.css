@@ -1759,6 +1759,32 @@ html[data-theme-id]:not([data-theme-id=""]):not(.black-chrome) {
   background-blend-mode: var(--chrome-art-blend, normal);
 }
 
+html[data-sidebar-toggle="resize"] [data-panel-animations="true"] {
+  & [data-slot="sidebar-gap"] {
+    transition: width var(--panel-animation-duration) ease-out;
+  }
+
+  & [data-slot="sidebar-container"] {
+    transition-property: left, right, width;
+    transition-duration: var(--panel-animation-duration);
+    transition-timing-function: ease-out;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html[data-sidebar-toggle="resize"] [data-panel-animations="true"] [data-sidebar-slide-children] {
+    transition:
+      padding-left var(--panel-animation-duration) ease-out,
+      padding-right var(--panel-animation-duration) ease-out;
+  }
+
+  html:is([data-sidebar-toggle="resize"], [data-sidebar-toggle="slide-all"])
+    [data-panel-animations="true"]
+    [data-chat-header] {
+    transition: padding-left var(--panel-animation-duration) ease-out;
+  }
+}
+
 /* Over the art the sidebar goes transparent and its secondary text takes the
    art's tint, as alpha over the image instead of fixed grays. */
 @media (width >= 48rem) {
