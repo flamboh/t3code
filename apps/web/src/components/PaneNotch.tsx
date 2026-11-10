@@ -177,6 +177,7 @@ export function PaneNotch({
       <span
         aria-hidden
         data-pane-notch-corner={side === "left" ? "" : side}
+        data-sidebar-slide-stay=""
       />
       <div
         ref={notchRef}

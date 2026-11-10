@@ -30,6 +30,7 @@ import {
 import { resolveSidebarState, type ResponsiveSidebarState } from "./sidebarState";
 import * as Schema from "effect/Schema";
 import { announceSidebarVisibility } from "~/lib/accessibilityAnnouncements";
+import { animateSidebarToggle } from "./sidebarToggleMotion";
 
 const SIDEBAR_WIDTH = "16rem";
 const SIDEBAR_WIDTH_MOBILE = "calc(100vw - var(--spacing) * 3)";
@@ -133,172 +134,6 @@ function moveFocusOutOfCollapsingSidebar() {
   trigger?.focus({ preventScroll: true });
 }
 
-const SIDEBAR_SLIDE_ID = "sidebar-slide";
-
-function sidebarSlideElements(slot: string) {
-  return Array.from(
-    document.querySelectorAll<HTMLElement>(`[data-panel-animations="true"] [data-slot="${slot}"]`),
-  );
-}
-
-function sidebarSlideSurface(inset: HTMLElement): HTMLElement | null {
-  const surface = inset.previousElementSibling;
-  return surface instanceof HTMLElement && surface.dataset.slot === "sidebar-slide-surface"
-    ? surface
-    : null;
-}
-
-function sidebarInsetVisibleLeft(inset: HTMLElement) {
-  const left = inset.getBoundingClientRect().left;
-  const surface = sidebarSlideSurface(inset);
-  if (surface?.getAnimations().some((animation) => animation.id === SIDEBAR_SLIDE_ID)) {
-    return Math.min(left, surface.getBoundingClientRect().left);
-  }
-  const clip = /inset\(([^)]*)\)/.exec(getComputedStyle(inset).clipPath)?.[1];
-  const sides = clip?.split(" round ")[0]?.trim().split(/\s+/) ?? [];
-  const clipLeft = Number.parseFloat(sides[3] ?? sides[1] ?? sides[0] ?? "0");
-  return left + (Number.isFinite(clipLeft) ? clipLeft : 0);
-}
-
-function isOpaqueColor(color: string) {
-  const alpha = /(?:,|\/)\s*([\d.]+%?)\s*\)$/.exec(color)?.[1];
-  return alpha === undefined || Number.parseFloat(alpha) >= (alpha.endsWith("%") ? 100 : 1);
-}
-
-function sidebarInsetPaint(inset: HTMLElement, x: number, y: number) {
-  const element = document
-    .elementsFromPoint(x, y)
-    .find(
-      (candidate) =>
-        inset.contains(candidate) && isOpaqueColor(getComputedStyle(candidate).backgroundColor),
-    );
-  const style = getComputedStyle(element ?? inset);
-  return {
-    backgroundColor: style.backgroundColor,
-    backgroundImage: style.backgroundImage,
-    backgroundSize: style.backgroundSize,
-  };
-}
-
-function sidebarInsetEdgeRows(inset: HTMLElement, rect: DOMRect) {
-  const notchFeet = Array.from(
-    inset.querySelectorAll<HTMLElement>('[data-pane-notch-corner=""]'),
-  ).filter(
-    (element) =>
-      element.offsetWidth > 0 && Math.abs(element.getBoundingClientRect().left - rect.left) <= 1,
-  );
-  const panes = Array.from(inset.querySelectorAll<HTMLElement>("[data-layout-pane-id]"));
-  const rows = (panes.length > 0 ? panes : [inset]).flatMap((pane) => {
-    const paneRect = pane.getBoundingClientRect();
-    if (paneRect.width === 0 || paneRect.left > rect.left + 1 || paneRect.right <= rect.left) {
-      return [];
-    }
-    const notchFoot = notchFeet.find((element) => {
-      const footTop = element.getBoundingClientRect().top;
-      return footTop >= paneRect.top - 1 && footTop < paneRect.bottom;
-    });
-    const top = Math.max(notchFoot?.getBoundingClientRect().top ?? paneRect.top, rect.top);
-    const bottom = Math.min(paneRect.bottom, rect.bottom);
-    return [{ top, bottom, notchFoot }];
-  });
-  return rows.length > 0 ? rows : [{ top: rect.top, bottom: rect.bottom, notchFoot: undefined }];
-}
-
-function revealSidebarInset(inset: HTMLElement, offset: number, timing: KeyframeAnimationOptions) {
-  const rect = inset.getBoundingClientRect();
-  const radius = getComputedStyle(inset).borderBottomLeftRadius;
-  const clip = (left: number) =>
-    `inset(${-rect.top}px ${rect.right - window.innerWidth}px 0 ${left}px round 0 0 ${radius} ${radius})`;
-  inset.animate({ clipPath: [clip(offset), clip(0)] }, timing);
-}
-
-function coverSidebarInset(inset: HTMLElement, offset: number, timing: KeyframeAnimationOptions) {
-  const surface = sidebarSlideSurface(inset);
-  if (!surface) return;
-  const rect = inset.getBoundingClientRect();
-  const radius = Number.parseFloat(getComputedStyle(inset).borderBottomLeftRadius) || 0;
-  surface.style.left = `${rect.left - offset}px`;
-  surface.style.width = `${offset + radius}px`;
-  const rows = sidebarInsetEdgeRows(inset, rect);
-  surface.replaceChildren(
-    ...rows.map(({ top, bottom }) => {
-      const piece = document.createElement("div");
-      piece.className = "absolute inset-x-0 rounded-pane";
-      Object.assign(piece.style, {
-        top: `${top}px`,
-        height: `${bottom - top}px`,
-        ...sidebarInsetPaint(inset, rect.left + 2, top + 2),
-      });
-      return piece;
-    }),
-  );
-  for (const { notchFoot } of rows)
-    notchFoot?.animate({ visibility: ["hidden", "hidden"] }, timing);
-  surface.animate(
-    { opacity: [1, 1], transform: ["translateX(0)", `translateX(${offset}px)`] },
-    timing,
-  );
-}
-
-function cancelSidebarSlide(elements: Iterable<Element | null>) {
-  for (const element of elements) {
-    for (const animation of element?.getAnimations() ?? []) {
-      if (animation.id === SIDEBAR_SLIDE_ID) animation.cancel();
-    }
-  }
-}
-
-let sidebarSlidePending = false;
-
-function slideSidebar(commit: () => void) {
-  if (sidebarSlidePending) {
-    commit();
-    return;
-  }
-  const containers = sidebarSlideElements("sidebar-container").map((element) => ({
-    element,
-    start: element.getBoundingClientRect().left,
-  }));
-  const insets = sidebarSlideElements("sidebar-inset").map((element) => ({
-    element,
-    start: sidebarInsetVisibleLeft(element),
-  }));
-  commit();
-  const first = containers[0];
-  if (!first) return;
-  sidebarSlidePending = true;
-  window.requestAnimationFrame(() => {
-    sidebarSlidePending = false;
-    cancelSidebarSlide([
-      ...containers.map(({ element }) => element),
-      ...insets.flatMap(({ element }) => [
-        element,
-        sidebarSlideSurface(element),
-        ...element.querySelectorAll('[data-pane-notch-corner=""]'),
-      ]),
-    ]);
-    const duration = Number.parseFloat(
-      getComputedStyle(first.element).getPropertyValue("--panel-animation-duration"),
-    );
-    const timing: KeyframeAnimationOptions = {
-      duration: Number.isFinite(duration) ? duration : 0,
-      easing: "ease-out",
-      id: SIDEBAR_SLIDE_ID,
-    };
-    for (const { element, start } of containers) {
-      const offset = start - element.getBoundingClientRect().left;
-      if (!element.isConnected || Math.abs(offset) < 0.5) continue;
-      element.animate({ transform: [`translateX(${offset}px)`, "translateX(0)"] }, timing);
-    }
-    for (const { element, start } of insets) {
-      const offset = element.getBoundingClientRect().left - start;
-      if (!element.isConnected || Math.abs(offset) < 0.5) continue;
-      if (offset < 0) revealSidebarInset(element, -offset, timing);
-      else coverSidebarInset(element, offset, timing);
-    }
-  });
-}
-
 interface SidebarOpenState {
   readonly open: boolean;
   readonly openMobile: boolean;
@@ -323,7 +158,7 @@ function createSidebarOpenStore(defaultOpen: boolean, storageKey: string | undef
     }
     if (open !== state.open) {
       if (!isMobileViewport()) announceSidebarVisibility(open);
-      slideSidebar(() => publish({ ...state, open }));
+      animateSidebarToggle(() => publish({ ...state, open }));
     }
     if (storageKey) writeLocalStorageValue(storageKey, open, defaultOpen, Schema.Boolean);
   };
@@ -810,6 +645,11 @@ function SidebarInset({
         )}
         data-slot="sidebar-inset"
         {...props}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-y-0 hidden bg-(--app-chrome-background) opacity-0 surface-grain md:peer-data-[variant=inset]:block"
+        data-slot="sidebar-slide-frame"
       />
     </>
   );
