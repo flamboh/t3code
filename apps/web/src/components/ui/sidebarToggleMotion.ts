@@ -387,7 +387,7 @@ function isOnScreen(rect: Box) {
 function textLeft(node: Text, range: Range) {
   range.selectNodeContents(node);
   const rect = range.getBoundingClientRect();
-  return rect.width > 0 ? rect.left : null;
+  return rect.width >= 4 ? rect.left : null;
 }
 
 function leftmostText(area: HTMLElement): Text | null {
@@ -402,7 +402,7 @@ function leftmostText(area: HTMLElement): Text | null {
     if (!(node instanceof Text) || !node.data.trim()) continue;
     range.selectNodeContents(node);
     const rect = range.getBoundingClientRect();
-    if (rect.width === 0 || rect.bottom < top || rect.top > bottom) continue;
+    if (rect.width < 4 || rect.height < 4 || rect.bottom < top || rect.top > bottom) continue;
     if (rect.left < box.left - 1 || rect.right > box.right + 1) continue;
     seen += 1;
     if (!best || rect.left < best.left - 0.5) best = { node, left: rect.left };
