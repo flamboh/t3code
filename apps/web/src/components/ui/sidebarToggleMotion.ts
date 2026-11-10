@@ -413,7 +413,7 @@ function leftmostText(area: HTMLElement): Text | null {
 }
 
 const FLIP_ANCHORS =
-  '[data-pane-notch], [data-workspace-titlebar-controls], [data-workspace-area]:not([data-workspace-area="tabs"])';
+  '[data-pane-notch], [data-workspace-titlebar-controls], [data-workspace-area]:not([data-workspace-area="tabs"]), [data-right-panel-surface-content]';
 
 interface FlipAnchor {
   readonly element: HTMLElement;
@@ -437,7 +437,10 @@ function flipAnchors(block: HTMLElement): FlipAnchor[] {
     const start = element.getBoundingClientRect();
     if (!isOnScreen(start)) return [];
     const text =
-      element.matches("[data-workspace-area]") || found.length === 0 ? leftmostText(element) : null;
+      element.matches("[data-workspace-area], [data-right-panel-surface-content]") ||
+      found.length === 0
+        ? leftmostText(element)
+        : null;
     return [{ element, start, text, textStart: text ? textLeft(text, range) : null }];
   });
 }
