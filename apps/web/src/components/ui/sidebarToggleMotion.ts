@@ -459,15 +459,26 @@ function flipBlocks(insets: readonly HTMLElement[]): FlipBlock[] {
 
 interface FlipOverride {
   readonly element: HTMLElement;
-  readonly overflow: string;
+  readonly property: "overflow" | "visibility";
+  readonly value: string;
 }
 
 let flipOverrides: FlipOverride[] = [];
 let flipFills: HTMLElement[] = [];
 let flipSession = 0;
 
+function overrideStyle(element: HTMLElement, property: FlipOverride["property"], value: string) {
+  if (
+    flipOverrides.some((override) => override.element === element && override.property === property)
+  ) {
+    return;
+  }
+  flipOverrides.push({ element, property, value: element.style[property] });
+  element.style[property] = value;
+}
+
 function restoreFlip() {
-  for (const { element, overflow } of flipOverrides) element.style.overflow = overflow;
+  for (const { element, property, value } of flipOverrides) element.style[property] = value;
   for (const fill of flipFills) fill.remove();
   flipOverrides = [];
   flipFills = [];
@@ -479,15 +490,12 @@ function openClipsBetween(from: HTMLElement, to: HTMLElement) {
     element;
     element = element.parentElement
   ) {
-    if (!flipOverrides.some((override) => override.element === element)) {
-      const style = getComputedStyle(element);
-      const clips = [style.overflowX, style.overflowY].some(
-        (value) => value === "hidden" || value === "clip",
-      );
-      if (clips && element.scrollLeft === 0 && element.scrollTop === 0) {
-        flipOverrides.push({ element, overflow: element.style.overflow });
-        element.style.overflow = "visible";
-      }
+    const style = getComputedStyle(element);
+    const clips = [style.overflowX, style.overflowY].some(
+      (value) => value === "hidden" || value === "clip",
+    );
+    if (clips && element.scrollLeft === 0 && element.scrollTop === 0) {
+      overrideStyle(element, "overflow", "visible");
     }
     if (element === to) break;
   }
@@ -633,8 +641,7 @@ function flip(commit: () => void, mode: "glide" | "under") {
         const inset = element.closest<HTMLElement>('[data-slot="sidebar-inset"]');
         if (inset && inset !== element) openClipsBetween(element, inset);
         if (getComputedStyle(element).overflowX !== "visible") {
-          flipOverrides.push({ element, overflow: element.style.overflow });
-          element.style.overflow = "visible";
+          overrideStyle(element, "overflow", "visible");
         }
         const fill = addFill(element, box, start, timing);
         if (fill) animations.push(fill);
@@ -651,7 +658,7 @@ function flip(commit: () => void, mode: "glide" | "under") {
         for (const cut of element.querySelectorAll<HTMLElement>(
           ":scope > [data-pane-cut], [data-pane-notch-corner]",
         )) {
-          animations.push(cut.animate({ visibility: ["hidden", "hidden"] }, timing));
+          overrideStyle(cut, "visibility", "hidden");
         }
       }
 
@@ -670,8 +677,10 @@ function flip(commit: () => void, mode: "glide" | "under") {
         if (Math.abs(offset) < 0.5) continue;
         animations.push(
           element.animate(
-            { transform: [`translateX(${offset}px)`, "translateX(0)"] },
-            { ...timing, composite: "add" },
+            getComputedStyle(element).transform === "none"
+              ? { transform: [`translateX(${offset}px)`, "translateX(0)"] }
+              : { translate: [`${offset}px 0`, "0 0"] },
+            timing,
           ),
         );
       }
