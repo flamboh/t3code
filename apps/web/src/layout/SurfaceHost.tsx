@@ -17,7 +17,7 @@ import { cn, isMacPlatform } from "../lib/utils";
 import { sidewaysWheelScrollsStrip, wheelDeltaPx } from "../motion/gesture";
 import { usePaneMotion } from "../motion/paneMotion";
 import {
-  PanelAnimationSuppressionProvider,
+  ChatPanelAnimationSuppressionProvider,
   usePanelNavigationSuppression,
 } from "../panelAnimations";
 import {
@@ -1498,8 +1498,8 @@ function LayoutChatSurface({
     paneId,
     // Staged, every pane draws its own; a window-fixed header cluster would
     // land in the stage's corner, over whichever workspace sits on top.
-    split: split || staged,
-    narrow,
+    split: visible && (split || staged),
+    narrow: visible && narrow,
     leadingEdge,
     trailingEdge,
     focused: focused && !background,
@@ -1680,7 +1680,7 @@ const LayoutChatSurfaceBody = memo(function LayoutChatSurfaceBody({
     });
   }, [rendered, shownTarget, tabId, target]);
   return (
-    <PanelAnimationSuppressionProvider value={panelAnimationsSuppressed}>
+    <ChatPanelAnimationSuppressionProvider value={panelAnimationsSuppressed}>
       <LayoutPaneContext value={paneState}>
         {rendered ? (
           <DeferredChatContext value={request.deferred}>
@@ -1712,7 +1712,7 @@ const LayoutChatSurfaceBody = memo(function LayoutChatSurfaceBody({
           <div aria-hidden className="min-h-0 min-w-0 flex-1 bg-background" />
         )}
       </LayoutPaneContext>
-    </PanelAnimationSuppressionProvider>
+    </ChatPanelAnimationSuppressionProvider>
   );
 });
 

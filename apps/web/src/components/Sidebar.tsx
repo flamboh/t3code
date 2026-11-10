@@ -984,6 +984,49 @@ function revealSidebarShelf(header: HTMLElement) {
   revealSidebarRow(viewport, header);
 }
 
+function useSidebarSnooze(
+  snoozeThread: ReturnType<typeof useThreadActions>["snoozeThread"],
+  planForwardNavigation: (
+    threadKey: string,
+    coParkingKeys?: ReadonlySet<string>,
+  ) => (() => void) | null,
+  router: AnyRouter,
+) {
+  const snoozingThreadKeysRef = useRef(new Set<string>());
+  return async (
+    threadRef: ScopedThreadRef,
+    preset: Pick<SnoozePreset, "snoozedUntil">,
+    opts: { coSnoozingKeys?: ReadonlySet<string> } = {},
+  ) => {
+    const threadKey = scopedThreadKey(threadRef);
+    if (snoozingThreadKeysRef.current.has(threadKey)) {
+      return { status: "skipped" } as const;
+    }
+    snoozingThreadKeysRef.current.add(threadKey);
+    const navigateAfterSnooze = planForwardNavigation(threadKey, opts.coSnoozingKeys);
+    const result = await snoozeThread(threadRef, preset.snoozedUntil);
+    snoozingThreadKeysRef.current.delete(threadKey);
+    if (result._tag === "Failure") {
+      return isAtomCommandInterrupted(result)
+        ? ({ status: "interrupted" } as const)
+        : ({ status: "failure", error: squashAtomCommandFailure(result) } as const);
+    }
+    if (
+      shouldNavigateAfterThreadPark({
+        threadKey,
+        currentThreadKey: readRouteThreadKey(router),
+        action: "snooze",
+        // oxlint-disable-next-line react/purity -- runs in an event handler (oxc#27309)
+        now: new Date().toISOString(),
+        thread: readThreadShell(threadRef),
+      })
+    ) {
+      navigateAfterSnooze?.();
+    }
+    return { status: "success" } as const;
+  };
+}
+
 export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReveal }) {
   const {
     projects,
@@ -1150,7 +1193,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     action: SidebarSweepAction;
     keys: ReadonlySet<string>;
   } | null>(null);
-  const snoozingThreadKeysRef = useRef(new Set<string>());
   const removeFromSelection = useThreadSelectionStore((s) => s.removeFromSelection);
   const modifiersHeld = useShortcutModifierSelector((_, held) => held);
   const terminalFocused = useTerminalFocus(modifiersHeld);
@@ -2417,38 +2459,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       }
     })();
   };
-  const performSnooze = async (
-    threadRef: ScopedThreadRef,
-    preset: Pick<SnoozePreset, "snoozedUntil">,
-    opts: { coSnoozingKeys?: ReadonlySet<string> } = {},
-  ) => {
-    const threadKey = scopedThreadKey(threadRef);
-    if (snoozingThreadKeysRef.current.has(threadKey)) {
-      return { status: "skipped" } as const;
-    }
-    snoozingThreadKeysRef.current.add(threadKey);
-    const navigateAfterSnooze = planForwardNavigation(threadKey, opts.coSnoozingKeys);
-    const result = await snoozeThread(threadRef, preset.snoozedUntil);
-    snoozingThreadKeysRef.current.delete(threadKey);
-    if (result._tag === "Failure") {
-      return isAtomCommandInterrupted(result)
-        ? ({ status: "interrupted" } as const)
-        : ({ status: "failure", error: squashAtomCommandFailure(result) } as const);
-    }
-    if (
-      shouldNavigateAfterThreadPark({
-        threadKey,
-        currentThreadKey: readRouteThreadKey(router),
-        action: "snooze",
-        // oxlint-disable-next-line react/purity -- runs in an event handler (oxc#27309)
-        now: new Date().toISOString(),
-        thread: readThreadShell(threadRef),
-      })
-    ) {
-      navigateAfterSnooze?.();
-    }
-    return { status: "success" } as const;
-  };
+  const performSnooze = useSidebarSnooze(snoozeThread, planForwardNavigation, router);
   const attemptSnooze = (
     threadRef: ScopedThreadRef,
     preset: Pick<SnoozePreset, "snoozedUntil">,
