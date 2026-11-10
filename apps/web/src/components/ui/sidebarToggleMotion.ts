@@ -459,7 +459,7 @@ function flipBlocks(insets: readonly HTMLElement[]): FlipBlock[] {
 
 interface FlipOverride {
   readonly element: HTMLElement;
-  readonly property: "overflow" | "visibility";
+  readonly property: "overflow" | "visibility" | "anchor-name";
   readonly value: string;
 }
 
@@ -473,12 +473,15 @@ function overrideStyle(element: HTMLElement, property: FlipOverride["property"],
   ) {
     return;
   }
-  flipOverrides.push({ element, property, value: element.style[property] });
-  element.style[property] = value;
+  flipOverrides.push({ element, property, value: element.style.getPropertyValue(property) });
+  element.style.setProperty(property, value);
 }
 
 function restoreFlip() {
-  for (const { element, property, value } of flipOverrides) element.style[property] = value;
+  for (const { element, property, value } of flipOverrides) {
+    if (value) element.style.setProperty(property, value);
+    else element.style.removeProperty(property);
+  }
   for (const fill of flipFills) fill.remove();
   flipOverrides = [];
   flipFills = [];
@@ -659,6 +662,9 @@ function flip(commit: () => void, mode: "glide" | "under") {
           ":scope > [data-pane-cut], [data-pane-notch-corner]",
         )) {
           overrideStyle(cut, "visibility", "hidden");
+        }
+        for (const notch of element.querySelectorAll<HTMLElement>('[data-pane-notch=""]')) {
+          overrideStyle(notch, "anchor-name", "none");
         }
       }
 
