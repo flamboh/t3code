@@ -1,3 +1,5 @@
+import { observeResize } from "~/lib/observeResize";
+
 const SIDEBAR_SLIDE_ID = "sidebar-slide";
 const SIDEBAR_TOGGLE_STORAGE_KEY = "t3code:sidebar-toggle-style";
 
@@ -719,23 +721,33 @@ function flip(commit: () => void, mode: "glide" | "under") {
         if (!parent && probe) tracks.push({ ...probe, animation, offset, keyframes });
       }
 
-      const settle = (frames: number) => {
-        if (frames === 0) return;
-        window.requestAnimationFrame(() => {
-          if (session !== flipSession) return;
-          for (const track of tracks) {
-            const progress = track.animation.effect?.getComputedTiming().progress;
-            if (progress === null || progress === undefined) continue;
-            const position = track.measure();
-            if (position === null) continue;
-            const rest = position - track.offset * (1 - progress);
-            if (Math.abs(rest - track.end) < 0.5) continue;
-            track.offset += track.end - rest;
-            track.end = rest;
-            if (track.animation.effect instanceof KeyframeEffect) {
-              track.animation.effect.setKeyframes(track.keyframes(track.offset));
-            }
+      const retarget = () => {
+        if (session !== flipSession) return;
+        for (const track of tracks) {
+          const progress = track.animation.effect?.getComputedTiming().progress;
+          if (progress === null || progress === undefined) continue;
+          const position = track.measure();
+          if (position === null) continue;
+          const rest = position - track.offset * (1 - progress);
+          if (Math.abs(rest - track.end) < 0.5) continue;
+          track.offset += track.end - rest;
+          track.end = rest;
+          if (track.animation.effect instanceof KeyframeEffect) {
+            track.animation.effect.setKeyframes(track.keyframes(track.offset));
           }
+        }
+      };
+      const stopObserving = observeResize(
+        moving.map(({ element }) => element),
+        () => queueMicrotask(retarget),
+      );
+      const settle = (frames: number) => {
+        if (frames === 0 || session !== flipSession) {
+          stopObserving();
+          return;
+        }
+        window.requestAnimationFrame(() => {
+          retarget();
           settle(frames - 1);
         });
       };
