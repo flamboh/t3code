@@ -226,10 +226,12 @@ const AUTOMATION_PROMPT = "Triage the inbox\n\nLabel every new issue and close d
 describe("MessagesTimeline work rows", () => {
   it("keeps a tall HTML preview in place when its last accordion opens at the bottom", async () => {
     const props = baseProps();
-    const html = injectHtmlRenderBootstrap(`<div style="height:1400px">Earlier preview content</div>
-      <details><summary>More rows</summary><div style="height:900px">More rows</div></details>
-      <script>addEventListener('message', e => { if(e.data === 'toggle') document.querySelector('details').open = !document.querySelector('details').open; });</script>`);
+    const html = injectHtmlRenderBootstrap(`
+      <script>addEventListener('message', e => { if(e.data === 'toggle') document.querySelector('details').open = !document.querySelector('details').open; });</script>
+      <div style="height:1400px">Earlier preview content</div>
+      <details><summary>More rows</summary><div style="height:900px">More rows</div></details>`);
     const src = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    const contentHeights = vi.fn<(height: number) => void>();
     using _url = { [Symbol.dispose]: () => URL.revokeObjectURL(src) };
     function Preview() {
       const [height, setHeight] = useState(1437);
@@ -239,7 +241,10 @@ describe("MessagesTimeline work rows", () => {
             src={src}
             title="Tall preview"
             className="size-full"
-            onContentHeight={setHeight}
+            onContentHeight={(height) => {
+              contentHeights(height);
+              setHeight(height);
+            }}
           />
         </div>
       );
@@ -266,6 +271,7 @@ describe("MessagesTimeline work rows", () => {
     const viewport = props.listRef.current!.getScrollableNode()!;
     const frame = screen.getByTitle("Tall preview").element() as HTMLIFrameElement;
     await vi.waitFor(() => {
+      expect(contentHeights).toHaveBeenLastCalledWith(1437);
       expect(frame.clientHeight).toBe(1437);
       expect(viewport.scrollTop).toBeGreaterThan(0);
       expect(viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop).toBeLessThan(2);
