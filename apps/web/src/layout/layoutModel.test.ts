@@ -4,7 +4,9 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   createLayoutState,
+  decodePersistedLayoutState,
   ghostLoneLayoutChats,
+  isBlankLayoutWorkspace,
   layoutChatSwaps,
   moveLayoutTab,
   moveLayoutTabToWorkspace,
@@ -107,7 +109,7 @@ function layoutOf(...shapes: Shape[]): LayoutState {
 function shapeOf(state: LayoutState): Shape[] {
   const focused = selectFocusedTab(state);
   return state.workspaces
-    .filter((workspace) => workspace.columns.length > 0)
+    .filter((workspace, index, all) => index < all.length - 1 || !isBlankLayoutWorkspace(workspace))
     .map((workspace) =>
       workspace.columns.map((column) =>
         column.panes.map((pane) =>
@@ -330,7 +332,7 @@ describe("placeLayoutTabs", () => {
       case: "into another workspace from an empty middle one",
       layout: focusOn(layoutOf([[["A"]]], [], [[["C"]]], []), "w1"),
       placement: { kind: "after", tabId: "C" },
-      expected: [[[["A"]]], [[["C*", "X"]]]],
+      expected: [[[["A"]]], [[["+!"]]], [[["C*", "X"]]]],
     },
     {
       case: "into another workspace from the empty last one",
@@ -342,7 +344,7 @@ describe("placeLayoutTabs", () => {
       case: "into a new workspace from an empty middle one",
       layout: focusOn(layoutOf([[["A"]]], [], [[["C"]]], []), "w1"),
       placement: { kind: "column", workspaceId: "w3", index: 0 },
-      expected: [[[["A"]]], [[["C"]]], [[["X"]]]],
+      expected: [[[["A"]]], [[["+!"]]], [[["C"]]], [[["X"]]]],
     },
     {
       case: "an exact side split from an empty workspace preserves focus",
@@ -384,6 +386,63 @@ describe("ghost tabs", () => {
   it("start as the lone chat of a layout saved before ghosts", () => {
     expect(shapeOf(ghostLoneLayoutChats(layoutOf([[["A!"]]])))).toEqual([[[["~A!"]]]]);
     expect(shapeOf(ghostLoneLayoutChats(layoutOf([[["A!", "B"]]])))).toEqual([[[["A!", "B"]]]]);
+  });
+});
+
+describe("blank workspaces", () => {
+  const launcher: LayoutTabContent = { kind: "launcher", id: "new", context: null };
+  it.each<{ case: string; open: (state: LayoutState) => LayoutState; expected: Shape[] }>([
+    {
+      case: "a thread opened as a new tab takes the blank tab's place",
+      open: (state) => openLayoutTab(state, chatOf("D"), { placement: "active-pane" }),
+      expected: [[[["D!"]]]],
+    },
+    {
+      case: "a thread opened in a new column takes the blank tab's place",
+      open: (state) => openLayoutTab(state, chatOf("D"), { placement: "new-column" }),
+      expected: [[[["D!"]]]],
+    },
+    {
+      case: "a thread split below takes the blank tab's place",
+      open: (state) => openLayoutTab(state, chatOf("D"), { placement: "split-down" }),
+      expected: [[[["D!"]]]],
+    },
+    {
+      case: "a surface placed in the background takes the blank tab's place",
+      open: (state) =>
+        placeLayoutTabs(
+          state,
+          [tabOf("t:A")],
+          { kind: "column", workspaceId: "w0", index: 1 },
+          { activate: null, focus: false },
+        ),
+      expected: [[[["t:A!"]]]],
+    },
+    {
+      case: "another blank tab sits beside it",
+      open: (state) => openLayoutTab(state, launcher, { placement: "active-pane" }),
+      expected: [[[["+", "+!"]]]],
+    },
+  ])("$case", ({ open, expected }) => {
+    expect(shapeOf(open(layoutOf([[["+!"]]])))).toEqual(expected);
+  });
+
+  it("gives up the spare's blank tab to a tab moved down into it", () => {
+    const moved = moveLayoutTabToWorkspace(layoutOf([[["A!"], ["B"]]], [[["+"]]]), 1);
+    expect(shapeOf(moved)).toEqual([[[["B"]]], [[["A!"]]]]);
+    expect(moved.workspaces.map(isBlankLayoutWorkspace)).toEqual([false, false, true]);
+  });
+
+  it("loads a layout saved with tabless empty workspaces as blank tabs", () => {
+    const saved = JSON.parse(
+      JSON.stringify({ ...layoutOf([[["A"]]], [], []), focusedWorkspaceId: "w1" }),
+    );
+    const loaded = decodePersistedLayoutState(saved);
+    expect(tabContents(loaded)).toEqual([
+      [chatOf("A")],
+      [{ kind: "launcher", id: expect.any(String), context: null }],
+    ]);
+    expect(selectFocusedTab(loaded)?.content.kind).toBe("launcher");
   });
 });
 
@@ -539,7 +598,8 @@ describe("moveLayoutTabToWorkspace", () => {
 
     const moved = moveLayoutTabToWorkspace(state, -1);
 
-    expect(tabContents(moved)).toEqual([[second], [first], []]);
+    expect(tabContents(moved).slice(0, 2)).toEqual([[second], [first]]);
+    expect(moved.workspaces.map(isBlankLayoutWorkspace)).toEqual([false, false, true]);
     expect(selectFocusedWorkspace(moved)).toBe(moved.workspaces[0]);
     expect(selectFocusedTab(moved)?.content).toBe(second);
   });
