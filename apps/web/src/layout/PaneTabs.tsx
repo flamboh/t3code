@@ -79,6 +79,7 @@ import {
   THREAD_TERMINAL_SURFACE_ID,
   type LayoutState,
   type LayoutTab,
+  canCloseLayoutTab,
 } from "./layoutModel";
 import {
   closeLayoutTabByUser,
@@ -558,7 +559,7 @@ export type LayoutTabMenuId =
   | "layout:close-tab"
   | "layout:close-other-tabs";
 
-/** Layout actions for a tab's context menu (pen lLm7Y 3). Every tab can close. */
+/** Layout actions for a tab's context menu (pen lLm7Y 3). */
 export function buildLayoutTabMenuItems(
   layout: LayoutState,
   tabId: string,
@@ -612,13 +613,15 @@ export function buildLayoutTabMenuItems(
       separatorBefore: true,
     });
   }
-  items.push({
-    id: "layout:close-tab",
-    label: "Close",
-    icon: "x",
-    ...keys("tab.close"),
-    separatorBefore: !items.some((item) => item.id === "layout:copy-link"),
-  });
+  if (canCloseLayoutTab(layout, tabId)) {
+    items.push({
+      id: "layout:close-tab",
+      label: "Close",
+      icon: "x",
+      ...keys("tab.close"),
+      separatorBefore: !items.some((item) => item.id === "layout:copy-link"),
+    });
+  }
   if (hasSiblings) {
     items.push({ id: "layout:close-other-tabs", label: "Close others", icon: "copy-x" });
   }
