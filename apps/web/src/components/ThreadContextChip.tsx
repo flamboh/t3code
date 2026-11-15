@@ -1,8 +1,10 @@
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { ThreadContextRecord, ProjectId } from "@t3tools/contracts";
 import { Link } from "@tanstack/react-router";
 import { MessagesSquareIcon } from "lucide-react";
 
+import { followLayoutCompanions } from "~/layout/openRules";
+import { useLayoutStore } from "~/layout/layoutStore";
 import { useProject, useThreadShell } from "~/state/entities";
 import { orchestrationEnvironment } from "~/state/orchestration";
 import { useEnvironmentQuery } from "~/state/query";
@@ -15,7 +17,6 @@ export function ThreadContextChip(props: {
   projectId?: ProjectId | null;
   copyMarkdown?: string;
   unreadable?: boolean;
-  link?: boolean;
 }) {
   const { environmentId, threadId } = props.record;
   const shell = useThreadShell({ environmentId, threadId });
@@ -36,14 +37,6 @@ export function ThreadContextChip(props: {
   ) : (
     <MessagesSquareIcon />
   );
-  if (props.link === false) {
-    return (
-      <ContextChip kind="thread" aria-label={`Thread, ${title}`}>
-        {icon}
-        <ContextChipLabel>{title}</ContextChipLabel>
-      </ContextChip>
-    );
-  }
   return (
     <Tooltip>
       <TooltipTrigger
@@ -51,7 +44,21 @@ export function ThreadContextChip(props: {
           <ContextChip
             kind="thread"
             {...(props.unreadable ? { state: "invalid" as const } : {})}
-            render={<Link to="/$environmentId/$threadId" params={{ environmentId, threadId }} />}
+            render={
+              <Link
+                to="/$environmentId/$threadId"
+                params={{ environmentId, threadId }}
+                onClick={(event) => {
+                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                  followLayoutCompanions(() =>
+                    useLayoutStore.getState().focusChat({
+                      kind: "server",
+                      threadRef: scopeThreadRef(environmentId, threadId),
+                    }),
+                  );
+                }}
+              />
+            }
             aria-label={`Thread, ${title}`}
             data-markdown-copy={props.copyMarkdown}
             className="no-underline"
