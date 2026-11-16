@@ -46,6 +46,13 @@ export function endUserStripScroll(): void {
 
 /** Spring the camera from where it shows now to `target` (a scrollLeft), keeping its velocity. */
 export function moveStripCamera(scroller: HTMLElement, stage: HTMLElement, target: number): void {
+  ((globalThis as any).__stripLog ??= []).push({
+    t: performance.now(),
+    k: "camera",
+    from: scroller.scrollLeft,
+    target,
+    stack: new Error().stack,
+  });
   claimStripScroll(scroller);
   userScrollAt = Number.NEGATIVE_INFINITY;
   let from = scroller.scrollLeft;
@@ -90,6 +97,11 @@ export function stripCameraPosition(scroller: HTMLElement): number {
  */
 export function settleStripCamera(): void {
   if (!current) return;
+  ((globalThis as any).__stripLog ??= []).push({
+    t: performance.now(),
+    k: "settle-camera",
+    value: current.run.value(),
+  });
   const { scroller, run } = current;
   const camera = run.value();
   run.cancel();

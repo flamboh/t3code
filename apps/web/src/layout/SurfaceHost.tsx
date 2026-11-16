@@ -343,6 +343,12 @@ function useSettledWidth(ref: React.RefObject<HTMLElement | null>): number {
         return;
       }
       frame = null;
+      ((globalThis as any).__stripLog ??= []).push({
+        t: performance.now(),
+        k: "settled-width",
+        width: element.clientWidth,
+        box: element.getBoundingClientRect().width,
+      });
       setWidth(element.clientWidth);
     };
     const stopObserving = observeResize(element, () => {
@@ -392,7 +398,34 @@ function useStripResizeScroll(
       offset = next;
       scroller.style.left = next === 0 ? "" : `${next}px`;
     };
+    const scrollLeftDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, "scrollLeft")!;
+    Object.defineProperty(scroller, "scrollLeft", {
+      configurable: true,
+      get() {
+        return scrollLeftDescriptor.get!.call(this);
+      },
+      set(value: number) {
+        ((globalThis as any).__stripLog ??= []).push({
+          t: performance.now(),
+          k: "write",
+          value,
+          before: scrollLeftDescriptor.get!.call(this),
+          stack: new Error().stack,
+        });
+        scrollLeftDescriptor.set!.call(this, value);
+      },
+    });
     const adopt = () => {
+      ((globalThis as any).__stripLog ??= []).push({
+        t: performance.now(),
+        k: "adopt",
+        now: scroller.scrollLeft,
+        landed,
+        target,
+        owed,
+        offset,
+        stack: new Error().stack,
+      });
       target = landed = scroller.scrollLeft;
       owed = 0;
       measureSlack();
@@ -428,6 +461,24 @@ function useStripResizeScroll(
       let next = Math.min(Math.max(0, wanted), room);
       owed = Math.max(0, -wanted);
       owedStage = stage;
+      ((globalThis as any).__stripLog ??= []).push({
+        t: performance.now(),
+        k: "resize",
+        boxLeft,
+        boxRight,
+        width,
+        shift,
+        endMoved,
+        grew,
+        now,
+        landed,
+        clamped,
+        target,
+        owed,
+        wanted,
+        next,
+        room,
+      });
       const focused = endMoved ? focusedSpanRef.current : null;
       if (focused) owed = 0;
       if (focused && focused.left < next - 1) next = focused.left;
@@ -858,6 +909,18 @@ export function LayoutSurfaceHost({
     const scroller = scrollerRef.current;
     const element = stageRef.current;
     const span = `${focusedPaneId}:${focusedLeft}:${focusedWidth}`;
+    ((globalThis as any).__stripLog ??= []).push({
+      t: performance.now(),
+      k: "reveal-run",
+      span,
+      memory: revealedSpan.current,
+      staged,
+      stacked,
+      dragging,
+      viewportWidth,
+      clientWidth: scrollerRef.current?.clientWidth,
+      scrollLeft: scrollerRef.current?.scrollLeft,
+    });
     if (!scroller || !element || staged || stacked || dragging || focusedPaneId === null) {
       revealedSpan.current = null;
       return;
@@ -877,6 +940,16 @@ export function LayoutSurfaceHost({
       let target: number | null = null;
       if (left < viewLeft - 1) target = left;
       else if (right > viewRight + 1) target = Math.min(left, right - scroller.clientWidth);
+      ((globalThis as any).__stripLog ??= []).push({
+        t: performance.now(),
+        k: "reveal-decide",
+        span,
+        left,
+        right,
+        viewLeft,
+        viewRight,
+        target,
+      });
       if (target === null) return;
       // The scroll lands at once and the stage springs there on the compositor,
       // so the composer's caret scroll, right after, finds the pane in place.
