@@ -283,9 +283,6 @@ function LayoutTabGhostLabel({ tab }: { tab: LayoutTab }) {
 }
 
 function DraggedContentLabel({ source }: { source: LayoutDragContentSource }) {
-  if (source.kind === "new-tab") {
-    return <LayoutTabGhostLabel tab={{ id: source.content.id, content: source.content }} />;
-  }
   if (source.kind !== "surface" || source.surface.kind === "thread-terminal") {
     return <LayoutTabGhostLabel tab={{ id: "dragged", content: layoutDragContent(source) }} />;
   }
