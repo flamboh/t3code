@@ -2020,6 +2020,13 @@ function PaneCuts() {
         </span>
       </span>
       <span aria-hidden data-pane-cut="end-bottom" />
+      <span aria-hidden data-pane-cut="cover-top" />
+      <span aria-hidden data-pane-cut="cover-foot-notch">
+        <span>
+          <span />
+        </span>
+      </span>
+      <span aria-hidden data-pane-cut="cover-rim-notch" />
     </>
   );
 }
