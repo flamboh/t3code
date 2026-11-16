@@ -1510,6 +1510,9 @@ export function LayoutSurfaceHost({
           />
         ) : null}
       </div>
+      {active && split && !staged ? (
+        <div aria-hidden data-layout-controls-cover="" data-chrome-scope="" />
+      ) : null}
       <ThreadSurfaceServices />
       {pagePlane}
       {active ? (
