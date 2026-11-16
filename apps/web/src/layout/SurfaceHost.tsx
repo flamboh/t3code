@@ -1317,7 +1317,7 @@ export function LayoutSurfaceHost({
           // row below would scroll that row into view under the motion.
           stacked
             ? "overflow-clip"
-            : stripWidth > 1 && !staged
+            : (stripWidth > 1 || stripSize.minPx > 0) && !staged
               ? "overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               : "overflow-hidden",
         )}
