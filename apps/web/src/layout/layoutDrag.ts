@@ -33,6 +33,7 @@ import { useDiffPanelStore } from "../diffPanelStore";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { notePaneDrop } from "../motion/paneDrop";
 import {
+  rightPanelHostRef,
   selectThreadRightPanelState,
   useRightPanelStore,
   type RightPanelSurface,
@@ -287,7 +288,17 @@ export function layoutDragContent(source: LayoutDragContentSource): LayoutTabCon
   }
   if (source.kind === "pull-requests") return { kind: "pull-requests" };
   if (source.kind === "new-tab") return source.content;
-  return { kind: "surface", threadRef: source.threadRef, surfaceId: source.surface.id };
+  return {
+    kind: "surface",
+    threadRef: layoutDragSurfaceOwner(source),
+    surfaceId: source.surface.id,
+  };
+}
+
+function layoutDragSurfaceOwner(source: Extract<LayoutDragSource, { kind: "surface" }>) {
+  return source.surface.kind === "thread-terminal"
+    ? source.threadRef
+    : rightPanelHostRef(source.threadRef);
 }
 
 function layoutDragSourceTab(
@@ -429,16 +440,14 @@ export function commitLayoutDrop(source: LayoutDragSource, target: LayoutDropTar
   ) {
     store.focusWorkspace(destination.workspaceId);
   } else if (source.kind === "surface") {
+    const owner = layoutDragSurfaceOwner(source);
     const existing = layoutDragSourceTab(store.layout, source) !== null;
-    const panel = selectThreadRightPanelState(
-      useRightPanelStore.getState().byThreadKey,
-      source.threadRef,
-    );
+    const panel = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, owner);
     const reopensOthers =
       source.surface.kind !== "thread-terminal" &&
       !panel.isOpen &&
       panel.surfaces.some((surface) => surface.id !== source.surface.id);
-    if (!existing && !reopensOthers) requestLayoutSurfacePlacement(source.threadRef, destination);
+    if (!existing && !reopensOthers) requestLayoutSurfacePlacement(owner, destination);
     openLayoutDragSurface(source.threadRef, source.surface);
     const layout = useLayoutStore.getState().layout;
     const placed = existing || reopensOthers ? layoutDragSourceTab(layout, source) : null;
