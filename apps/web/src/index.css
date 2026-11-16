@@ -545,7 +545,29 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   }
 }
 
+[data-layout-controls-cover] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: none;
+  width: calc(var(--workspace-titlebar-content-left) - var(--workspace-titlebar-control-gap) + 1px);
+  height: var(--pane-notch-height);
+  background-color: var(--app-chrome-background);
+  background-image: var(--surface-grain);
+  background-size: var(--surface-grain-size);
+  pointer-events: none;
+}
+
+@media (width >= 48rem) {
+  [data-slot="sidebar"][data-variant="inset"][data-state="collapsed"]
+    ~ [data-slot="sidebar-inset"]
+    > [data-layout-controls-cover] {
+    display: block;
+  }
+}
+
 /* Over the channel art the cuts repaint the art, as the notch does. */
+[data-chrome-art] [data-layout-controls-cover],
 [data-chrome-art] [data-pane-cut]::before,
 [data-chrome-art] [data-pane-cut] > span > span {
   background: var(--chrome-art-paint);
