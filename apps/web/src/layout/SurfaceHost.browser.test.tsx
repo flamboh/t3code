@@ -1,6 +1,7 @@
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { expect, it, vi } from "vite-plus/test";
+import { flushSync } from "react-dom";
 import { page, userEvent } from "vite-plus/test/browser";
 import "~/index.css";
 
@@ -25,17 +26,22 @@ import {
   createLayoutTab,
   findLayoutChatForThread,
   findLayoutSurfaceTabs,
+  LAYOUT_READABLE_COLUMN_PX,
   selectFocusedTab,
   type LayoutColumn,
   type LayoutTab,
 } from "./layoutModel";
-import { useLayoutStore } from "./layoutStore";
+import {
+  readableLayoutColumnShare,
+  setLayoutStripViewportWidth,
+  useLayoutStore,
+} from "./layoutStore";
 import { LayoutSurfaceHost } from "./SurfaceHost";
 import { requestLayoutSurfacePlacement, useLayoutSurfaceSync } from "./surfaceSync";
 
 const TOUR_KEY = "t3code:layout-tour:v1";
 
-function setup() {
+function setup(columnWidth = 2 / 3) {
   const settings = getClientSettings();
   const behavior = useLayoutBehaviorStore.getState().behavior;
   __setClientSettingsForTests({ ...settings, scrollingWorkspacesEnabled: true });
@@ -49,7 +55,7 @@ function setup() {
   store.openTab(createLayoutLauncherContent(null), { placement: "active-pane" });
   const layout = useLayoutStore.getState().layout;
   const workspace = layout.workspaces[0]!;
-  const columns = workspace.columns.map((column) => ({ ...column, width: 2 / 3 }));
+  const columns = workspace.columns.map((column) => ({ ...column, width: columnWidth }));
   const [second] = columns[1]!.panes[0]!.tabs;
   useLayoutStore.setState({
     layout: {
@@ -74,15 +80,19 @@ function Host() {
   return <LayoutSurfaceHost layout={layout} />;
 }
 
-async function renderHost({ insetSidebar = false } = {}) {
-  await page.viewport(900, 600);
+async function renderHost({ insetSidebar = false, edges = [0, 0], viewport = 900 } = {}) {
+  await page.viewport(viewport, 600);
   const container = document.createElement("div");
-  container.style.cssText = "position:fixed;inset:0;display:flex;";
+  container.style.cssText = `position:fixed;inset:0;display:flex;padding:0 ${edges[1]}px 0 ${edges[0]}px;`;
   // The pane chrome (index.css) styles an inset that follows the app's inset sidebar.
   const sidebar = insetSidebar ? <div data-slot="sidebar" data-variant="inset" hidden /> : null;
   return render(
     <>
       {sidebar}
+      <div
+        data-sidebar-gap=""
+        style={{ flex: "none", width: 0, transition: "width 150ms ease-out" }}
+      />
       <Host />
     </>,
     { container },
@@ -117,6 +127,160 @@ it("shows a tab in an unfocused pane that runs off screen with one click on it",
   await vi.waitFor(() => expect(focusedTabId()).toBe(tabs.second.id));
 });
 
+async function renderStrip({
+  edges = [0, 0],
+  viewport = 900,
+  camera = 900,
+  columnWidth = 2 / 3,
+} = {}) {
+  setLayoutStripViewportWidth(camera);
+  await using stack = new AsyncDisposableStack();
+  stack.use(setup(columnWidth));
+  const screen = stack.use(await renderHost({ edges, viewport }));
+  const strip = screen.container.querySelector<HTMLElement>("[data-layout-strip]")!;
+  const gap = screen.container.querySelector<HTMLElement>("[data-sidebar-gap]")!;
+  const settled = async (width: number) => {
+    await vi.waitFor(() =>
+      expect(Math.abs(gap.getBoundingClientRect().width - width)).toBeLessThan(0.02),
+    );
+    await vi.waitFor(() =>
+      expect(readableLayoutColumnShare()).toBe(LAYOUT_READABLE_COLUMN_PX / strip.clientWidth),
+    );
+  };
+  await settled(0);
+  await vi.waitFor(() => expect(strip.scrollWidth).toBeGreaterThan(strip.clientWidth + 100));
+  const pane = inSecondPane("[data-pane-header]").closest<HTMLElement>("[data-layout-pane-id]")!;
+  const paneLeft = () => pane.getBoundingClientRect().left;
+  const seen: number[] = [];
+  const sample = () => seen.push(paneLeft());
+  const observer = new ResizeObserver(sample);
+  observer.observe(strip);
+  stack.defer(() => observer.disconnect());
+  const scrollTo = async (left: number) => {
+    strip.scrollLeft = left;
+    await vi.waitFor(() => expect(strip.scrollLeft).toBe(left));
+    await vi.waitFor(() =>
+      expect(paneLeft()).toBeCloseTo(
+        strip.getBoundingClientRect().left + pane.offsetLeft - strip.scrollLeft,
+        3,
+      ),
+    );
+    seen.length = 0;
+  };
+  const toggle = async (width: number) => {
+    gap.style.width = `${width}px`;
+    await settled(width);
+  };
+  const owned = stack.move();
+  return {
+    strip,
+    gap,
+    seen,
+    paneLeft,
+    scrollTo,
+    toggle,
+    [Symbol.asyncDispose]: () => owned.disposeAsync(),
+  };
+}
+
+const STILL = 0.01;
+
+it.each([
+  ["at the strip's end", 247.6, 1, [0, 0]],
+  ["midway along the strip", 247.6, 0.5, [0, 0]],
+  ["at the strip's end beside a resized sidebar", 300.5, 1, [0, 0]],
+  ["midway along the strip beside a resized sidebar", 300.5, 0.6, [0, 0]],
+  ["at the end of a strip with fractional edges", 256, 1, [9.25, 0.3]],
+  ["at the end of a strip with fractional edges beside a resized sidebar", 247.5, 1, [8.5, 9.4]],
+])(
+  "keeps the panes in place on screen while the sidebar opens and closes %s",
+  async (_, sidebar, along, edges) => {
+    await using host = await renderStrip({ edges });
+    const { strip } = host;
+    await host.scrollTo(Math.round((strip.scrollWidth - strip.clientWidth) * along));
+    const resting = host.paneLeft();
+    for (let cycle = 0; cycle < 3; cycle++) {
+      await host.toggle(sidebar);
+      expect(host.paneLeft()).toBeCloseTo(resting, 2);
+      await host.toggle(0);
+      expect(host.paneLeft()).toBeCloseTo(resting, 2);
+    }
+    expect(host.seen.length).toBeGreaterThan(6);
+    for (const left of host.seen) expect(Math.abs(left - resting)).toBeLessThan(STILL);
+  },
+);
+
+it("keeps the panes in place when the host renders while the sidebar slides", async () => {
+  await using host = await renderStrip();
+  await host.scrollTo(host.strip.scrollWidth - host.strip.clientWidth);
+  const resting = host.paneLeft();
+  let renders = 0;
+  const rerender = new ResizeObserver(() => {
+    if (renders++ > 2) return;
+    flushSync(() => useLayoutStore.setState({ layout: { ...useLayoutStore.getState().layout } }));
+    host.seen.push(host.paneLeft());
+  });
+  rerender.observe(host.strip);
+  try {
+    await host.toggle(256);
+    await host.toggle(0);
+  } finally {
+    rerender.disconnect();
+  }
+  expect(renders).toBeGreaterThan(2);
+  expect(host.paneLeft()).toBeCloseTo(resting, 2);
+  for (const left of host.seen) expect(Math.abs(left - resting)).toBeLessThan(STILL);
+});
+
+it.each([
+  ["a width that rounds the focused span down", 1134, true],
+  ["another width that rounds it down", 1162, true],
+  ["a width that keeps its rounding", 1158, false],
+])("keeps the strip where it is when it settles at %s", async (_, width, flips) => {
+  const viewport = 1440;
+  const camera = 1094;
+  await using host = await renderStrip({ viewport, camera, columnWidth: 0.75 });
+  const focusedSpan = (strip: number) => {
+    const stripPx = Math.max(strip, 1.5 * Math.max(camera, strip / 1.5));
+    return Math.round(((0.75 * camera) / stripPx) * ((stripPx / strip) * strip));
+  };
+  expect(focusedSpan(width) !== focusedSpan(viewport)).toBe(flips);
+  await host.toggle(viewport - 1174);
+  await host.scrollTo(host.strip.scrollWidth - host.strip.clientWidth);
+  const resting = host.paneLeft();
+  const before = host.strip.scrollLeft;
+  await host.toggle(viewport - width);
+  expect(host.strip.clientWidth).toBe(width);
+  expect(host.strip.scrollLeft).toBe(before + 1174 - width);
+  expect(host.paneLeft()).toBeCloseTo(resting, 2);
+  for (const left of host.seen) expect(Math.abs(left - resting)).toBeLessThan(STILL);
+});
+
+it("gives a scroll back after closing the sidebar had to clamp it", async () => {
+  await using host = await renderStrip();
+  await host.toggle(300.5);
+  await host.scrollTo(100);
+  const resting = host.paneLeft();
+  for (let cycle = 0; cycle < 2; cycle++) {
+    await host.toggle(0);
+    expect(host.strip.scrollLeft).toBe(0);
+    await host.toggle(300.5);
+    expect(host.paneLeft()).toBeCloseTo(resting, 2);
+  }
+});
+
+it("keeps the panes in place when the sidebar reopens before it has closed", async () => {
+  await using host = await renderStrip();
+  await host.toggle(300.5);
+  await host.scrollTo(host.strip.scrollWidth - host.strip.clientWidth);
+  const resting = host.paneLeft();
+  host.gap.style.width = "0px";
+  await vi.waitFor(() => expect(host.seen.length).toBeGreaterThan(3));
+  await host.toggle(300.5);
+  expect(host.paneLeft()).toBeCloseTo(resting, 2);
+  for (const left of host.seen) expect(Math.abs(left - resting)).toBeLessThan(STILL);
+});
+
 const secondPaneStrip = () => inSecondPane("[data-layout-tab-strip]");
 const joinOffset = (strip: HTMLElement) =>
   strip.querySelector<HTMLElement>("[data-pane-join]")!.style.getPropertyValue("--jx");
@@ -124,6 +288,23 @@ const tabOffset = (strip: HTMLElement, tabId: string) => {
   const tab = strip.querySelector<HTMLElement>(`[data-layout-pane-tab="${tabId}"]`)!;
   const left = tab.getBoundingClientRect().left - strip.getBoundingClientRect().left;
   return `${Math.round(left + strip.scrollLeft)}px`;
+};
+const expectPaneLitUnderJoin = (strip: HTMLElement) => {
+  const pane = strip.closest<HTMLElement>("[data-layout-pane-id]")!;
+  const paneLeft = pane.getBoundingClientRect().left;
+  const box = strip.getBoundingClientRect();
+  const tab = strip.querySelector<HTMLElement>("[data-joined]")!.getBoundingClientRect();
+  const start = Math.max(tab.left - 10, box.left) - paneLeft;
+  const end = Math.min(tab.right + 10, box.left + strip.clientWidth) - paneLeft;
+  const lit = ["--pane-lit-start", "--pane-lit-end"].map((property) =>
+    pane.style.getPropertyValue(property),
+  );
+  if (end <= start) {
+    expect(lit).toEqual(["", ""]);
+    return;
+  }
+  expect(Number.parseFloat(lit[0]!)).toBeCloseTo(start, -0.5);
+  expect(Number.parseFloat(lit[1]!)).toBeCloseTo(end, -0.5);
 };
 
 it("scrolls overflowing pane tabs from the add button without moving the workspace", async () => {
@@ -149,6 +330,7 @@ it("scrolls overflowing pane tabs from the add button without moving the workspa
   expect(workspace.scrollLeft).toBe(before);
   const active = strip.querySelector<HTMLElement>("[data-joined]")!;
   expect(joinOffset(strip)).toBe(tabOffset(strip, active.dataset.layoutPaneTab!));
+  await vi.waitFor(() => expectPaneLitUnderJoin(strip));
 
   await userEvent.wheel(header.querySelector('button[aria-label="New tab"]')!, {
     delta: { x: -140 },
@@ -162,6 +344,7 @@ it("scrolls overflowing pane tabs from the add button without moving the workspa
   await vi.waitFor(() =>
     expect(strip.closest("[data-pane-header]")?.hasAttribute("data-tab-row-overflow")).toBe(false),
   );
+  await vi.waitFor(() => expectPaneLitUnderJoin(strip));
 });
 
 it("keeps a pane's tab strip and moves its joined tab when the pane switches tabs", async () => {
