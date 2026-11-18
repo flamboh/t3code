@@ -542,7 +542,7 @@ function slideOnPress(entry: PaneStrip, event: PointerEvent): void {
 }
 
 /** Reveal the active tab in a strip wider than its pane, keeping the joined tab's ears inside. */
-function revealPaneTab(strip: HTMLElement, tabId: string | null): boolean {
+function revealPaneTab(strip: HTMLElement, tabId: string | null, smooth: boolean): boolean {
   const tab = findStripTab(strip, tabId);
   if (!tab) return false;
   const bounds = strip.getBoundingClientRect();
@@ -556,10 +556,11 @@ function revealPaneTab(strip: HTMLElement, tabId: string | null): boolean {
   const start = bounds.left + clipped + PANE_JOIN_EAR_PX + PANE_STRIP_FADE_PX;
   const end = bounds.right - PANE_JOIN_EAR_PX - PANE_JOIN_TAIL_PX;
   // A file tab's trailing breadcrumb names the file; reveal it before its thread label.
-  if (rect.width > end - start && tab.dataset.layoutTabReveal === "end")
-    strip.scrollLeft += rect.right - end;
-  else if (rect.left < start) strip.scrollLeft -= start - rect.left;
-  else if (rect.right > end) strip.scrollLeft += rect.right - end;
+  const scroll = (by: number) =>
+    strip.scrollTo({ left: strip.scrollLeft + by, behavior: smooth ? "smooth" : "instant" });
+  if (rect.width > end - start && tab.dataset.layoutTabReveal === "end") scroll(rect.right - end);
+  else if (rect.left < start) scroll(rect.left - start);
+  else if (rect.right > end) scroll(rect.right - end);
   return true;
 }
 
@@ -603,7 +604,10 @@ export function LayoutPaneTabStrip({
     if (strip.parentNode !== slot) moveInto(slot, strip);
     showStripLayer(layer, strip, true);
     const place = (motion: number) => {
-      if (pendingReveals.has(strip) && revealPaneTab(strip, tabId)) pendingReveals.delete(strip);
+      const smooth = entry.width > 0 && entry.motionMs > 0;
+      if (pendingReveals.has(strip) && revealPaneTab(strip, tabId, smooth)) {
+        pendingReveals.delete(strip);
+      }
       placePaneJoin(entry, tabId, motion);
     };
     holdPaneStrip(entry, place, motionMs);
