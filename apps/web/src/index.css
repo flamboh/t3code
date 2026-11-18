@@ -1879,6 +1879,108 @@ html[data-theme-id]:not([data-theme-id=""]):not(.black-chrome) {
   transition: translate var(--panel-animation-duration) ease-out;
 }
 
+@media (width >= 48rem) {
+  :root:not(.black-chrome)[data-cut-tab-fade="a"]
+    [data-slot="sidebar"][data-variant="inset"]
+    ~ [data-slot="sidebar-inset"]
+    [data-pane-join-start]
+    [data-pane-notch=""]
+    [data-layout-tab-strip]::before,
+  :root:not(.black-chrome)[data-cut-tab-fade="d"]
+    [data-slot="sidebar"][data-variant="inset"]
+    ~ [data-slot="sidebar-inset"]
+    [data-pane-join-start]
+    [data-pane-notch=""]
+    [data-layout-tab-strip]::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: var(--strip-overflow-start, 0px);
+    z-index: 1;
+    width: calc((var(--pane-join-ear) + var(--cut-tab-fade)) * var(--strip-overflowing-start, 0));
+    height: var(--pane-join-h);
+    background: linear-gradient(to right, var(--pane-join-fill) var(--pane-join-ear), transparent);
+    pointer-events: none;
+  }
+  :root:not(.black-chrome)[data-cut-tab-fade="a"]
+    [data-slot="sidebar"][data-variant="inset"]
+    ~ [data-slot="sidebar-inset"]
+    [data-pane-join-start]
+    [data-pane-notch=""]
+    [data-layout-tab-strip] {
+    --cut-tab-fade: 1.5rem;
+  }
+  :root:not(.black-chrome)[data-cut-tab-fade="d"]
+    [data-slot="sidebar"][data-variant="inset"]
+    ~ [data-slot="sidebar-inset"]
+    [data-pane-join-start]
+    [data-pane-notch=""]
+    [data-layout-tab-strip] {
+    --cut-tab-fade: 0.75rem;
+  }
+  :root:not(.black-chrome)[data-cut-tab-fade="b"]
+    [data-slot="sidebar"][data-variant="inset"]
+    ~ [data-slot="sidebar-inset"]
+    [data-pane-join-start]
+    [data-pane-notch=""]
+    [data-layout-tab-strip] {
+    mask-image:
+      radial-gradient(
+        circle calc(var(--pane-join-h) * var(--strip-overflowing-start, 0)) at var(--pane-join-ear)
+          var(--pane-join-h),
+        #000 35%,
+        transparent 100%
+      ),
+      linear-gradient(
+        to right,
+        transparent var(--pane-join-ear),
+        #000 calc(var(--pane-join-ear) + 1.5rem * var(--strip-overflowing-start, 0))
+      ),
+      linear-gradient(
+        to right,
+        transparent var(--strip-fade-lead),
+        #000 var(--strip-fade-lead),
+        #000 calc(var(--strip-fade-end-at) - var(--strip-fade-end)),
+        transparent var(--strip-fade-end-at)
+      );
+    mask-composite: add, intersect;
+  }
+  :root:not(.black-chrome)[data-cut-tab-fade="c"]
+    [data-slot="sidebar"][data-variant="inset"]
+    ~ [data-slot="sidebar-inset"]
+    [data-pane-join-start]
+    [data-pane-notch=""]
+    [data-layout-tab-strip] {
+    --strip-fade-start: min(1.5rem, var(--strip-overflow-start, 0px));
+  }
+  :root:not(.black-chrome)[data-cut-tab-fade="e"]
+    [data-slot="sidebar"][data-variant="inset"]
+    ~ [data-slot="sidebar-inset"]
+    [data-pane-join-start]
+    [data-pane-notch=""]
+    [data-layout-tab-strip] {
+    mask-image:
+      linear-gradient(to bottom right, transparent 0%, #000 55%), linear-gradient(#000, #000),
+      linear-gradient(
+        to right,
+        transparent var(--strip-fade-lead),
+        #000 var(--strip-fade-lead),
+        #000 calc(var(--strip-fade-end-at) - var(--strip-fade-end)),
+        transparent var(--strip-fade-end-at)
+      );
+    mask-position:
+      var(--pane-join-ear) 0,
+      calc(var(--pane-join-ear) + 3rem * var(--strip-overflowing-start, 0)) 0,
+      0 0;
+    mask-size:
+      calc(3rem * var(--strip-overflowing-start, 0)) var(--pane-join-h),
+      100% 100%,
+      100% 100%;
+    mask-repeat: no-repeat;
+    mask-composite: add, intersect;
+  }
+}
+
 /* Over the art the sidebar goes transparent and its secondary text takes the
    art's tint, as alpha over the image instead of fixed grays. */
 @media (width >= 48rem) {
