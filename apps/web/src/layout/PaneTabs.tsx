@@ -587,9 +587,10 @@ function revealPaneTab(strip: HTMLElement, tabId: string | null): number | null 
 function scrollWithSlide(entry: PaneStrip, left: number): void {
   const { strip, slide } = entry;
   const from = strip.scrollLeft;
+  const to = Math.min(Math.max(0, left), strip.scrollWidth - strip.clientWidth);
   const start = slide?.effect?.getComputedTiming().progress;
   if (!slide || start == null || start >= 1) {
-    strip.scrollLeft = left;
+    strip.scrollLeft = to;
     return;
   }
   let written = from;
@@ -598,7 +599,7 @@ function scrollWithSlide(entry: PaneStrip, left: number): void {
     const progress =
       slide.playState === "finished" ? 1 : slide.effect?.getComputedTiming().progress;
     if (progress == null) return;
-    written = from + ((left - from) * (progress - start)) / (1 - start);
+    written = from + ((to - from) * (progress - start)) / (1 - start);
     strip.scrollLeft = written;
     if (progress < 1) requestAnimationFrame(follow);
   };
